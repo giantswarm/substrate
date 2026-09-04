@@ -43,6 +43,7 @@ See `values.yaml` for the full set; the important keys:
 | `postgres.enabled` | `true` | Deploy the bundled PostgreSQL instance |
 | `postgres.readWriteConnectionString` | `""` (in-cluster) | Runtime connection; required for external PostgreSQL |
 | `postgres.ownerConnectionString` | `""` (read/write connection) | Connection for migrations and partition maintenance |
+| `postgres.connectionStringSecretRef` | disabled | Read the read/write connection string from a Secret, and the owner connection too unless `postgres.ownerConnectionString` is set; its name defaults to `<release>-postgres-connection` when enabled |
 | `postgres.readWriteRole` | `postgres` | Role assumed by runtime connections |
 | `postgres.ownerRole` | `postgres` | Role assumed by migration and partition maintenance connections |
 | `postgres.schema` | `public` | Store the Substrate tables in this PostgreSQL schema |

@@ -29,6 +29,14 @@ postgres:
   readWriteConnectionString: ""
   # Defaults to the read/write connection; each pool assumes its own role.
   ownerConnectionString: ""
+  # Read the read/write connection string from a Secret instead of
+  # values/ConfigMap. The owner connection reads the same key unless
+  # ownerConnectionString is set.
+  connectionStringSecretRef:
+    # When enabled with no name, use the release-scoped postgres-connection name.
+    enabled: false
+    name: ""
+    key: connectionString
   readWriteRole: postgres
   ownerRole: postgres
   schema: public
