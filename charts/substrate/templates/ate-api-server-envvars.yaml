@@ -14,11 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */}}
 
-{{- if not .Values.postgres.readWriteConnectionStringSecretRef.name }}
-{{- fail "postgres.readWriteConnectionStringSecretRef.name is required" }}
+{{- $secretEnabled := include "substrate.postgres.connectionStringSecretEnabled" . -}}
+{{- if and .Values.postgres.readWriteConnectionString $secretEnabled }}
+{{- fail "postgres.readWriteConnectionString and postgres.connectionStringSecretRef are mutually exclusive" }}
 {{- end }}
-{{- if not .Values.postgres.ownerConnectionStringSecretRef.name }}
-{{- fail "postgres.ownerConnectionStringSecretRef.name is required" }}
+{{- if and (not .Values.postgres.enabled) (empty .Values.postgres.readWriteConnectionString) (not $secretEnabled) }}
+{{- fail "postgres.readWriteConnectionString is required when postgres.enabled=false, unless postgres.connectionStringSecretRef names a Secret" }}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap
@@ -26,4 +27,12 @@ metadata:
   name: {{ .Values.ateApiServerEnvVarsConfigMap }}
   namespace: {{ .Release.Namespace }}
 data:
+  {{- if not $secretEnabled }}
+  ATE_API_POSTGRES_READ_WRITE_CONNECTION_STRING: {{ $readWriteDSN | quote }}
+  ATE_API_POSTGRES_OWNER_CONNECTION_STRING: {{ .Values.postgres.ownerConnectionString | default $readWriteDSN | quote }}
+  {{- else if .Values.postgres.ownerConnectionString }}
+  ATE_API_POSTGRES_OWNER_CONNECTION_STRING: {{ .Values.postgres.ownerConnectionString | quote }}
+  {{- end }}
+  ATE_API_POSTGRES_READ_WRITE_ROLE: {{ .Values.postgres.readWriteRole | quote }}
+  ATE_API_POSTGRES_OWNER_ROLE: {{ .Values.postgres.ownerRole | quote }}
   ATE_API_POSTGRES_SCHEMA: {{ .Values.postgres.schema | quote }}

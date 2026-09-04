@@ -24,21 +24,29 @@
 createNamespace: false
 
 postgres:
-  # Project database login certificates only when the connection strings use them.
-  clientCertificates:
+  enabled: true
+  storageSize: 1Gi
+  readWriteConnectionString: ""
+  # Defaults to the read/write connection; each pool assumes its own role.
+  ownerConnectionString: ""
+  # Read the read/write connection string from a Secret instead of
+  # values/ConfigMap. The owner connection reads the same key unless
+  # ownerConnectionString is set.
+  connectionStringSecretRef:
+    # When enabled with no name, use the release-scoped postgres-connection name.
     enabled: false
-  # Read the read/write connection string from a pre-created Secret.
-  readWriteConnectionStringSecretRef:
-    name: substrate-postgres-readwrite
-    key: readWriteConnectionString
-  # Read the owner connection string from a pre-created Secret.
-  ownerConnectionStringSecretRef:
-    name: substrate-postgres-owner
-    key: ownerConnectionString
-  # Roles assumed on each connection. Use distinct roles for installs sharing a database.
-  readWriteRole: substrate_readwrite
-  ownerRole: substrate_owner
-  schema: substrate
+    name: ""
+    key: connectionString
+  readWriteRole: postgres
+  ownerRole: postgres
+  schema: public
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 2Gi
 
 rustfs:
   enabled: true

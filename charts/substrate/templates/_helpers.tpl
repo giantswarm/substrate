@@ -84,6 +84,10 @@ Plaintext HTTP URL that clients use to reach atenet-router.
 
 {{- define "substrate.postgres.ownerSecretName" -}}
 {{- .Values.postgres.ownerConnectionStringSecretRef.name -}}
+{{/* PostgreSQL connection Secret, when configured. */}}
+{{- define "substrate.postgres.connectionStringSecretEnabled" -}}
+{{- $ref := .Values.postgres.connectionStringSecretRef | default dict -}}
+{{- if or (get $ref "enabled") (get $ref "name") -}}true{{- end -}}
 {{- end -}}
 
 {{/*
