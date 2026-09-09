@@ -959,6 +959,18 @@ func TestValidateEgressPolicyRules(t *testing.T) {
 			}
 			defaults.Apply(req.EgressPolicy)
 			assertValidateErr(t, ValidateCreateActorEgressPolicyRequest(context.Background(), req), tc.want)
+			t.Run("actor template", func(t *testing.T) {
+				template := validActorTemplate(func(template *ateapipb.ActorTemplate) {
+					template.DefaultEgressPolicy = &ateapipb.EgressPolicyTemplate{Rules: req.EgressPolicy.Rules}
+				})
+				var want field.ErrorList
+				for _, err := range tc.want {
+					copy := *err
+					copy.Field = strings.Replace(copy.Field, "egress_policy", "actor_template.default_egress_policy", 1)
+					want = append(want, &copy)
+				}
+				assertValidateErr(t, ValidateCreateActorTemplateRequest(context.Background(), &ateapipb.CreateActorTemplateRequest{ActorTemplate: template}), want)
+			})
 		})
 	}
 }
