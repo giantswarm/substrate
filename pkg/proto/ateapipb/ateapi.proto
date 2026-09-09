@@ -466,9 +466,13 @@ message EgressPolicy {
 // EgressPolicyTemplate defines an initial Actor egress policy without resource
 // metadata. Rules have the same meaning and validation as EgressPolicy.rules.
 message EgressPolicyTemplate {
+  // Rules are evaluated in order, with the same semantics as EgressPolicy.rules.
+  // A request is denied when no rule matches.
+  //
   // +k8s:optional
   // +k8s:maxItems=256
   // +k8s:listType=atomic # rule order matters
+  // +k8s:customValidation # no two rules tie on a name and port
   repeated EgressRule rules = 1;
 }
 

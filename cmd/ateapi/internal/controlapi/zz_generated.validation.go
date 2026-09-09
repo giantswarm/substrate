@@ -2892,6 +2892,10 @@ func Validate_EgressPolicyTemplate(
 			if earlyReturn {
 				return // do not proceed
 			}
+			// custom validation
+			if e := ValidateCustom_EgressPolicyTemplate_Rules(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
 			// iterate the list and call the type's validation function
 			if e := validate.EachPtrSliceVal(ctx, op, fldPath, obj, oldObj, nil, nil, Validate_EgressRule); len(e) != 0 {
 				errs = append(errs, e...)

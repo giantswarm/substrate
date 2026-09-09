@@ -212,6 +212,12 @@ func ValidateCustom_EgressPolicy_Rules(_ context.Context, _ operation.Operation,
 	return errs
 }
 
+// ValidateCustom_EgressPolicyTemplate_Rules holds a template's rules to the
+// policy's tie check: an actor receives them verbatim as its default policy.
+func ValidateCustom_EgressPolicyTemplate_Rules(ctx context.Context, op operation.Operation, p *field.Path, rules, oldRules []*ateapipb.EgressRule) field.ErrorList {
+	return ValidateCustom_EgressPolicy_Rules(ctx, op, p, rules, oldRules)
+}
+
 // ruleMatchFields is what a rule matches on: the union member, its hostnames,
 // and its ports. Everything is empty for a rule that sets no member.
 func ruleMatchFields(rule *ateapipb.EgressRule) (member string, hostnames []string, ports *ateapipb.Ports) {
