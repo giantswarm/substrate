@@ -1,0 +1,251 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork (giantswarm/substrate): publishes the Giant Swarm line of Agent
+# Substrate to ghcr.io/giantswarm/substrate — every push to the `giantswarm`
+# branch as a dev build, every `v*` tag as a release (FORK.md, "Publishing").
+# What is published: the six images the agent platform runs (ateapi,
+# atecontroller, atelet, atenet, podcertcontroller, ateom-gvisor; multi-arch,
+# built with ko like upstream's release.yaml), a digest-true mirror of the
+# agentgateway image the chart deploys, and the charts substrate-crds and
+# substrate with their image defaults stamped to this registry. Every own
+# image is scanned before the charts that reference it are pushed.
+name: publish
+
+on:
+  push:
+    branches:
+      - giantswarm
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (default: the tag without "v", or a dev version derived from the commit)'
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
+  UPSTREAM_REPO: kagent-dev/substrate
+  COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Resolve the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          if [ -n "${INPUT_VERSION}" ]; then
+            version="${INPUT_VERSION}"
+          elif [ "${GITHUB_REF_TYPE}" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            # Dev version in the schema giantswarm's gitsemver emits today:
+            #   <base>-dev.<branch lowercased, [a-z0-9-]>.<committer date UTC YYYY-MM-DD>.<HH-MM-SS>.h<sha7>
+            # base = the next patch of the pin, the nearest upstream release tag
+            # reachable from the branch (the line's own tags carry a
+            # pre-release suffix and are excluded). Consumers select the channel
+            # with a Flux semverFilter on the branch part
+            # (`.*-dev\.giantswarm\..*`); the timestamp keeps semver order across
+            # rebuilds. When gitsemver moves to the RFC schema
+            # `<base>-b<crc32(branch) hex8>t<YYYYMMDDHHMMSS>c<sha7>`, change this
+            # block and the consumers' filter together.
+            git fetch --quiet "https://github.com/${UPSTREAM_REPO}.git" 'refs/tags/v*:refs/tags/v*'
+            pin=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
+            IFS=. read -r major minor patch <<<"${pin#v}"
+            base="${major}.${minor}.$((patch + 1))"
+            branch=$(printf '%s' "${GITHUB_REF_NAME}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+            stamp=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%d.%H-%M-%S "${GITHUB_SHA}")
+            version="${base}-dev.${branch}.${stamp}.h${GITHUB_SHA:0:7}"
+            echo "pin ${pin} -> dev base ${base}"
+          fi
+          if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'${version}' is not a semver version"
+            exit 1
+          fi
+          echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
+
+  images:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: imjasonh/setup-crane@feee3b6bb0d4c68370f256a4502498c9227e5c6b # v0.7
+      - name: Build and push the component images
+        # ko cross-compiles both platforms (no QEMU) onto the distroless base
+        # .ko.yaml pins; --image-refs records the pushed reference with its
+        # digest for the scan and the ledger.
+        run: |
+          set -o errexit -o nounset -o pipefail
+          : > image-refs.txt
+          for component in ${COMPONENTS}; do
+            KO_DOCKER_REPO="${REGISTRY}/${component}" ./hack/run-tool.sh ko build \
+              --bare --platform linux/amd64,linux/arm64 \
+              --tags "${VERSION}" --image-refs "ref-${component}.txt" \
+              "./cmd/${component}"
+            cat "ref-${component}.txt" >> image-refs.txt
+          done
+      - name: Mirror the agentgateway image the chart deploys
+        # atenet-router and atenet-egress run upstream's agentgateway build
+        # (charts/substrate/values.yaml images.agentgateway), an image this
+        # repository does not build. Copied by digest, under its upstream tag,
+        # so the chart published below deploys only images of this registry.
+        run: |
+          set -o errexit -o nounset -o pipefail
+          src=$(sed -n 's/^  agentgateway: //p' charts/substrate/values.yaml)
+          test -n "${src}"
+          dst="${REGISTRY}/agentgateway:${src##*:}"
+          crane copy "${src}" "${dst}"
+          echo "${dst}@$(crane digest "${dst}")" >> image-refs.txt
+      - name: Record the digests
+        run: |
+          {
+            echo "## Images ${VERSION}"
+            echo
+            echo '| Image | Digest |'
+            echo '|---|---|'
+            sed -E 's/^([^@]+)@(sha256:[0-9a-f]+)$/| `\1` | `\2` |/' image-refs.txt
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat image-refs.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: image-refs
+          path: image-refs.txt
+          if-no-files-found: error
+
+  scan:
+    needs:
+      - version
+      - images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ateapi
+          - atecontroller
+          - atelet
+          - atenet
+          - podcertcontroller
+          - ateom-gvisor
+          - agentgateway
+    env:
+      # The trivy database mirrors, tried in order (ghcr rate-limits anonymous pulls).
+      TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: image-refs
+      - uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pick the image by digest
+        id: ref
+        run: |
+          set -o errexit -o nounset -o pipefail
+          ref=$(grep -E "^${REGISTRY}/${{ matrix.image }}[:@]" image-refs.txt | tail -1)
+          test -n "${ref}"
+          echo "ref=${ref}" | tee -a "$GITHUB_OUTPUT"
+      - name: Scan
+        # Own images gate the charts: a fixable HIGH or CRITICAL finding fails
+        # the publish (fix it — bump the module, or time-box it in .trivyignore
+        # with an expiry when upstream has no fix). The mirrored agentgateway
+        # image is upstream's build and reports only: findings there go to
+        # kagent-dev/substrate.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.ref.outputs.ref }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: ${{ matrix.image == 'agentgateway' && '0' || '1' }}
+
+  charts:
+    needs:
+      - version
+      - scan
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      - name: Package and push the charts
+        # The chart's image defaults are stamped to this registry and version
+        # (image.tag explicitly, although the helper falls back to
+        # .Chart.AppVersion: `helm show values` is documentation); the checks
+        # make a missed anchor fail the job instead of shipping upstream's
+        # defaults. The chart version is the artifact version, as upstream does.
+        run: |
+          set -o errexit -o nounset -o pipefail
+          values=charts/substrate/values.yaml
+          sed -i \
+            -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
+            -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
+            -e "s|^  agentgateway: ghcr.io/kagent-dev/substrate/agentgateway:|  agentgateway: ${REGISTRY}/agentgateway:|" \
+            "${values}"
+          grep -q "^  registry: ${REGISTRY}$" "${values}"
+          grep -q "^  tag: \"${VERSION}\"$" "${values}"
+          grep -q "^  agentgateway: ${REGISTRY}/agentgateway:" "${values}"
+          if grep -n "kagent-dev/substrate" "${values}"; then
+            echo "::error::${values} still references upstream's registry after stamping"
+            exit 1
+          fi
+
+          mkdir -p dist
+          for chart in substrate-crds substrate; do
+            helm package "charts/${chart}" --destination dist --version "${VERSION}" --app-version "${VERSION}"
+          done
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          {
+            echo "## Charts ${VERSION}"
+            echo
+            echo '| Chart | Digest |'
+            echo '|---|---|'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for chart in substrate-crds substrate; do
+            out=$(helm push "dist/${chart}-${VERSION}.tgz" "oci://${REGISTRY}/helm" 2>&1)
+            echo "${out}"
+            digest=$(sed -n 's/^Digest: //p' <<<"${out}")
+            echo "| \`oci://${REGISTRY}/helm/${chart}:${VERSION}\` | \`${digest}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
