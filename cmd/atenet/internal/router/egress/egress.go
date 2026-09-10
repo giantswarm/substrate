@@ -120,7 +120,9 @@ func (h *Handler) HandleRequestHeaders(ctx context.Context, md *extproc.RequestM
 	if err := validateIdentity(identity); err != nil {
 		return extproc.Result{}, err
 	}
-	if err := h.validateActor(ctx, identity); err != nil {
+	// For a CONNECT the :authority is the actor's original destination
+	// (IP:port).
+	if err := h.validateActor(ctx, identity, md.Host); err != nil {
 		return extproc.Result{}, err
 	}
 
@@ -128,8 +130,6 @@ func (h *Handler) HandleRequestHeaders(ctx context.Context, md *extproc.RequestM
 		slog.String("atespace", identity.Atespace),
 		slog.String("actor", identity.ActorName),
 		slog.String("actorUid", identity.ActorUid),
-		// For a CONNECT the :authority is the actor's original destination
-		// (IP:port).
 		slog.String("destination", md.Host))
 
 	// Identity is authenticated; let the CONNECT proceed unchanged.
@@ -155,9 +155,11 @@ func validateIdentity(identity *substratex509.ActorIdentity) error {
 
 // validateActor checks the identity a certificate certifies against the control
 // plane's current view of that actor: it still exists, it is the actor the
-// certificate was issued to, and it is running. Every error it returns is
-// already a client-facing ext_proc denial.
-func (h *Handler) validateActor(ctx context.Context, identity *substratex509.ActorIdentity) error {
+// certificate was issued to, and it is placed on a worker — running, or
+// resuming onto the worker that minted the certificate. Every error it returns
+// is already a client-facing ext_proc denial; destination is the CONNECT's
+// target, for the log.
+func (h *Handler) validateActor(ctx context.Context, identity *substratex509.ActorIdentity, destination string) error {
 	atespace := identity.Atespace
 	actorName := identity.ActorName
 	actorUID := identity.ActorUid
@@ -184,12 +186,29 @@ func (h *Handler) validateActor(ctx context.Context, identity *substratex509.Act
 			"egress denied: actor %q/%q is not the actor this certificate was issued to", atespace, actorName)
 	}
 
-	// The actor performing egress must actually be running.
-	if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+	// The actor performing egress must be placed on a worker. RUNNING is the
+	// steady state; RESUMING is the workload booting or restoring on the
+	// worker that minted this certificate for exactly that placement (the
+	// credential broker mints only for a worker's current assignment), and a
+	// workload that fetches what it needs to become ready — models, skills,
+	// packages — does so before it serves readyz. Every other state means the
+	// actor has left its worker or is leaving it, and a certificate still
+	// within its lifetime must not open a tunnel on its behalf.
+	switch state := actor.GetStatus().GetState(); state {
+	case ateapipb.ActorState_ACTOR_STATE_RUNNING, ateapipb.ActorState_ACTOR_STATE_RESUMING:
+		return nil
+	default:
+		// Logged with the destination: from inside the sandbox this denial
+		// is indistinguishable from a network failure.
+		slog.WarnContext(ctx, "egress denied: actor is not placed on a worker",
+			slog.String("atespace", atespace),
+			slog.String("actor", actorName),
+			slog.String("actorUid", actorUID),
+			slog.String("state", state.String()),
+			slog.String("destination", destination))
 		return extproc.NewReqError(envoy_type.StatusCode_Forbidden,
-			"egress denied: actor %q/%q is %s, not running", atespace, actorName, actor.GetStatus().GetState())
+			"egress denied: actor %q/%q is %s, not placed on a worker", atespace, actorName, state)
 	}
-	return nil
 }
 
 // authenticateActorCertificate turns the mTLS peer certificate Envoy recorded
