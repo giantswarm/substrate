@@ -407,6 +407,12 @@ func (s *AteomService) coldBootActor(ctx context.Context, p actorBootParams) (re
 		}
 	}()
 
+	// Egress is armed before the guest boots (see activateActorEgress);
+	// ingress waits for the wakeup probe below.
+	if err := s.activateActorEgress(p.attribution(), egress); err != nil {
+		return err
+	}
+
 	// Guest sizing + agent kernel params.
 	memMiB, vcpus, kparams := s.guestConfig()
 
@@ -581,7 +587,7 @@ func (s *AteomService) coldBootActor(ctx context.Context, p actorBootParams) (re
 		slog.Duration("since_boot", time.Since(tBooted)))
 
 	ra := &runningActor{chCmd: chCmd, vfsdCmd: vfsdCmd, apiSocket: apiSocket, baseID: actorUID, guestAgent: ac, workloadIDs: workloadIDs(ctrs)}
-	if err := s.activateActorNetworking(p.attribution(), egress); err != nil {
+	if err := s.activateActorIngress(p.attribution()); err != nil {
 		return err
 	}
 	s.setRunningVM(actorUID, ra)
