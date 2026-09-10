@@ -17,10 +17,12 @@
 # branch as a dev build, every `v*` tag as a release (FORK.md, "Publishing").
 # What is published: the six images the agent platform runs (ateapi,
 # atecontroller, atelet, atenet, podcertcontroller, ateom-gvisor; multi-arch,
-# built with ko like upstream's release.yaml), a digest-true mirror of the
-# agentgateway image the chart deploys, and the charts substrate-crds and
-# substrate with their image defaults stamped to this registry. Every own
-# image is scanned before the charts that reference it are pushed.
+# built with ko like upstream's release.yaml) and the charts substrate-crds and
+# substrate with their image defaults stamped to this registry — including the
+# agentgateway image atenet-router and atenet-egress run, which comes from the
+# Giant Swarm line of agentgateway (giantswarm/agentgateway-upstream, pinned
+# below) instead of upstream's build. Every own image is scanned before the
+# charts that reference it are pushed.
 name: publish
 
 on:
@@ -43,6 +45,13 @@ env:
   REGISTRY: ghcr.io/${{ github.repository }}
   UPSTREAM_REPO: kagent-dev/substrate
   COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
+  # The agentgateway build atenet-router and atenet-egress run: a release of
+  # the Giant Swarm line of agentgateway (FORK.md, "Publishing" and
+  # https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md),
+  # stamped into the chart's images.agentgateway at package time and scanned
+  # with the own images. Move it together with the pin (its FORK.md,
+  # "Convergence with the Substrate line").
+  AGENTGATEWAY_IMAGE: ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.1
 
 jobs:
   version:
@@ -120,18 +129,13 @@ jobs:
               "./cmd/${component}"
             cat "ref-${component}.txt" >> image-refs.txt
           done
-      - name: Mirror the agentgateway image the chart deploys
-        # atenet-router and atenet-egress run upstream's agentgateway build
-        # (charts/substrate/values.yaml images.agentgateway), an image this
-        # repository does not build. Copied by digest, under its upstream tag,
-        # so the chart published below deploys only images of this registry.
+      - name: Resolve the agentgateway image the chart deploys
+        # atenet-router and atenet-egress run the Giant Swarm line's
+        # agentgateway (AGENTGATEWAY_IMAGE), not upstream's build; recorded by
+        # digest with the own images so the scan and the ledger see it.
         run: |
           set -o errexit -o nounset -o pipefail
-          src=$(sed -n 's/^  agentgateway: //p' charts/substrate/values.yaml)
-          test -n "${src}"
-          dst="${REGISTRY}/agentgateway:${src##*:}"
-          crane copy "${src}" "${dst}"
-          echo "${dst}@$(crane digest "${dst}")" >> image-refs.txt
+          echo "${AGENTGATEWAY_IMAGE%%:*}@$(crane digest "${AGENTGATEWAY_IMAGE}")" >> image-refs.txt
       - name: Record the digests
         run: |
           {
@@ -182,15 +186,20 @@ jobs:
         id: ref
         run: |
           set -o errexit -o nounset -o pipefail
-          ref=$(grep -E "^${REGISTRY}/${{ matrix.image }}[:@]" image-refs.txt | tail -1)
+          if [ "${{ matrix.image }}" = agentgateway ]; then
+            ref=$(grep -E "^${AGENTGATEWAY_IMAGE%%:*}@" image-refs.txt | tail -1)
+          else
+            ref=$(grep -E "^${REGISTRY}/${{ matrix.image }}[:@]" image-refs.txt | tail -1)
+          fi
           test -n "${ref}"
           echo "ref=${ref}" | tee -a "$GITHUB_OUTPUT"
       - name: Scan
         # Own images gate the charts: a fixable HIGH or CRITICAL finding fails
         # the publish (fix it — bump the module, or time-box it in .trivyignore
-        # with an expiry when upstream has no fix). The mirrored agentgateway
-        # image is upstream's build and reports only: findings there go to
-        # kagent-dev/substrate.
+        # with an expiry when upstream has no fix). The agentgateway image is
+        # the Giant Swarm line's build and reports only here: its scan gates
+        # its own publish in giantswarm/agentgateway-upstream, and a finding is
+        # fixed there.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.ref.outputs.ref }}
@@ -222,11 +231,11 @@ jobs:
           sed -i \
             -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
             -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
-            -e "s|^  agentgateway: ghcr.io/kagent-dev/substrate/agentgateway:|  agentgateway: ${REGISTRY}/agentgateway:|" \
+            -e "s|^  agentgateway: ghcr.io/kagent-dev/substrate/agentgateway:.*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
             "${values}"
           grep -q "^  registry: ${REGISTRY}$" "${values}"
           grep -q "^  tag: \"${VERSION}\"$" "${values}"
-          grep -q "^  agentgateway: ${REGISTRY}/agentgateway:" "${values}"
+          grep -q "^  agentgateway: ${AGENTGATEWAY_IMAGE}$" "${values}"
           if grep -n "kagent-dev/substrate" "${values}"; then
             echo "::error::${values} still references upstream's registry after stamping"
             exit 1

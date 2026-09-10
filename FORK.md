@@ -27,6 +27,7 @@ kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/
 |---|---|
 | Upstream tag | **v0.0.26** (2026-09-06; tag commit `0cb6a535`) |
 | Why this one | `giantswarm/kagent-upstream` pins `github.com/kagent-dev/substrate v0.0.26` in `go/go.mod` (the `replace` of `github.com/agent-substrate/substrate`): the ate-api gRPC contract between kagent's client and Substrate's server must match. |
+| agentgateway it runs | `AGENTGATEWAY_IMAGE` in `publish.yaml`: a release of the agentgateway line. Upstream's chart pins `ghcr.io/kagent-dev/substrate/agentgateway:c0f5597c7cb8` at v0.0.26 (a build of upstream agentgateway from 2026-08-30 with no revision label, substrate-wise v1.5.0) and `ghcr.io/agentgateway/agentgateway:v0.0.0-alpha.9f9744cf` on `main` (kagent-dev/substrate#28, upstream commit `9f9744cf` — the new substrate ingress header, agentgateway#3409). The line's pin follows: v1.5.0-based releases for this pin, ≥ `9f9744cf` for the first pin containing #28 (the agentgateway line's `FORK.md`, "Convergence with the Substrate line"). |
 | When it moves | only together with kagent's pin, proven in agentlab first (`agentlab configure --defaults --chart-branch poc/kagent-main && agentlab up` and the proofs) — see "Re-pin". Not on a schedule. |
 | Derived how | `git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' giantswarm` with upstream's tags fetched; the line's own tags carry a pre-release suffix and are excluded. The workflows compute it, nothing records it twice. |
 
@@ -109,8 +110,8 @@ nothing is ever pushed by hand.
 |---|---|
 | Control plane and node images | `ghcr.io/giantswarm/substrate/{ateapi,atecontroller,atelet,atenet,podcertcontroller}:<version>` — linux/amd64 + linux/arm64, built with ko from `./cmd/<name>` on the distroless base `.ko.yaml` pins |
 | Worker image | `ghcr.io/giantswarm/substrate/ateom-gvisor:<version>` — the `WorkerPool.spec.workerImage` of the platform's pool |
-| agentgateway | `ghcr.io/giantswarm/substrate/agentgateway:<upstream tag>` — a digest-true `crane copy` of upstream's `images.agentgateway` (atenet-router and atenet-egress run it; this repository does not build it) |
-| Charts | `oci://ghcr.io/giantswarm/substrate/helm/substrate-crds:<version>`, `oci://ghcr.io/giantswarm/substrate/helm/substrate:<version>` — `image.registry`, `image.tag` and `images.agentgateway` stamped to this registry; `version` = `appVersion` = the image tag |
+| agentgateway | not built or mirrored here any more: `images.agentgateway` is stamped to a **release of the Giant Swarm line of agentgateway** — `ghcr.io/giantswarm/agentgateway-upstream/agentgateway:vX.Y.Z-gs.N`, `AGENTGATEWAY_IMAGE` in `publish.yaml` — which atenet-router and atenet-egress run ([giantswarm/agentgateway-upstream `FORK.md`](https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md), tracking [giantswarm/giantswarm#37758](https://github.com/giantswarm/giantswarm/issues/37758)) |
+| Charts | `oci://ghcr.io/giantswarm/substrate/helm/substrate-crds:<version>`, `oci://ghcr.io/giantswarm/substrate/helm/substrate:<version>` — `image.registry` and `image.tag` stamped to this registry, `images.agentgateway` to the agentgateway line's release; `version` = `appVersion` = the image tag |
 
 Not published from here: `ateom-microvm` and the demo images (the platform runs gVisor workers only),
 `kubectl-ate` binaries (use upstream's release), PyPI packages. Third-party images stay as upstream pins them
@@ -142,8 +143,8 @@ digests are recorded here:
 **Scans.** Every own image is scanned with Trivy (HIGH and CRITICAL, fixable only) after the push and before the
 charts that reference it are published. A fixable finding fails the publish: bump the module (upstream first) or,
 when upstream has no fix, add a time-boxed entry to `.trivyignore` (`CVE-… exp:YYYY-MM-DD # reason, tracking
-issue`) — an expired entry fails again and is re-triaged, not extended. The mirrored agentgateway image is
-scanned report-only; its findings belong upstream. `govulncheck` covers the Go module graph on every push, pull
+issue`) — an expired entry fails again and is re-triaged, not extended. The agentgateway image is scanned
+report-only here: it is the agentgateway line's build, its scan gates its own publish and a finding is fixed there. `govulncheck` covers the Go module graph on every push, pull
 request and weekly.
 
 ## Consumers
