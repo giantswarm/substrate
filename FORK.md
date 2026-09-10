@@ -37,7 +37,7 @@ Everything on `giantswarm` that is not in the pin (`git log v0.0.26..giantswarm`
 | Patch | Purpose | Fork commit | Upstream |
 |---|---|---|---|
 | Grant atelet cluster-wide read access to sandbox configs | atelet's sandbox-asset prewarm degraded on the second test cluster without the RBAC ([#37742](https://github.com/giantswarm/giantswarm/issues/37742) row 10) | `74b45f9e` (`git cherry-pick -x a7505e9c`) | [kagent-dev/substrate#33](https://github.com/kagent-dev/substrate/pull/33), merged 2026-09-08, not in v0.0.26 — falls away at the re-pin onto the first tag that contains it |
-| Fork infrastructure: this file, the README pointer, `.github/CODEOWNERS`, `.github/workflows/publish.yaml`, `.github/workflows/sync-upstream.yaml`, `.trivyignore`, and the branch triggers of `pr-workflow.yaml`, `helm-e2e.yaml`, `govulncheck.yaml` (`main` → `giantswarm`, govulncheck also on pull requests) | the line's CI, publishing and sync | the `giantswarm` branch history | not for upstream |
+| Fork infrastructure: this file, the README pointer, `CODEOWNERS`, `.github/workflows/publish.yaml`, `.github/workflows/sync-upstream.yaml`, `.trivyignore`, and the branch triggers of `pr-workflow.yaml`, `helm-e2e.yaml`, `govulncheck.yaml` (`main` → `giantswarm`, govulncheck also on pull requests) | the line's CI, publishing and sync | the `giantswarm` branch history | not for upstream |
 
 Nothing in the line changes Substrate's behaviour beyond what upstream has already merged. Giant Swarm
 specific wiring lives elsewhere: the CA/JWT pool bootstrap (`kubectl-ate admin make-ca-pool`/`make-jwt-pool`
