@@ -16,8 +16,8 @@ kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/
 
 | Branch | What it is | Who moves it |
 |---|---|---|
-| `main` | A pure mirror of upstream `main`. Upstream rebases its `main` onto agent-substrate (no release tag is an ancestor of it), so the mirror is a **forced** update. Never edited, never the target of a pull request. | the sync workflow (as the HeraldBot App) — the `protect-main` ruleset admits the App and the `bumblebee-automation` team (manual repair) and nobody else |
-| `giantswarm` (default) | **The line**: the upstream release tag the platform's kagent pins ("the pin") + cherry-picked upstream fixes + this fork's own files. Every change of the fork's own files is a pull request against it. | pull requests (`run-tests` and `govulncheck` required); the sync workflow and repository admins may force-push it for a re-pin |
+| `main` | A pure mirror of upstream `main`. Upstream rebases its `main` onto agent-substrate (no release tag is an ancestor of it), so the mirror is a **forced** update. Never edited, never the target of a pull request. The mirrored commits carry upstream's workflow files, whose `main` triggers would run upstream's suites here for nothing — the sync cancels those runs right after the push. | the sync workflow (as the HeraldBot App) — the `protect-main` ruleset admits the App and nobody else; a repair is a `workflow_dispatch` of the sync |
+| `giantswarm` (default) | **The line**: the upstream release tag the platform's kagent pins ("the pin") + cherry-picked upstream fixes + this fork's own files. Every change of the fork's own files is a pull request against it. Merge method: a cherry-pick of an upstream commit is **rebase-merged**, one commit per patch, so its patch identity survives and `git rebase` drops it by itself once the pin contains it; fork-infrastructure pull requests are squashed. | pull requests (`run-tests` and `govulncheck` required); the sync workflow (the HeraldBot App) and repository admins may force-push it for a re-pin |
 | `fork/<topic>` | pull-request branches against `giantswarm` | anyone in the team |
 | `sync/<date>-<pin>` | hand-over branches the sync workflow opens when a re-pin conflicts | the sync workflow; a human finishes them |
 
@@ -84,9 +84,11 @@ rulesets. Why an App and not the org's machine-account token: GitHub refuses a p
 that creates or changes a file under `.github/workflows/` unless the token carries the `workflow` scope, and upstream
 `main` — hence every mirror and every re-pin — carries upstream's workflow files; the first run (2026-09-10, with
 `TAYLORBOT_GITHUB_ACTION`) failed exactly there. A push with the workflow's own `GITHUB_TOKEN` would not do either: it
-triggers no other workflow, and the push to `giantswarm` is what publishes the dev build. Manual fallback for a
-member of `bumblebee-automation`: the same commands the workflow runs (the `main` mirror was bootstrapped that way on
-2026-09-10: `git push --force-with-lease=refs/heads/main:<old> origin upstream/main:refs/heads/main`).
+triggers no other workflow, and the push to `giantswarm` is what publishes the dev build. Bypass actors of the
+rulesets: the App (`Integration` 414149) on both branches, repository admins on `giantswarm` only. Manual fallback
+for `main` is a `workflow_dispatch` of the sync; for the line, an admin runs the same commands the workflow runs (the
+`main` mirror was bootstrapped by hand on 2026-09-10: `git push --force-with-lease=refs/heads/main:<old> origin
+upstream/main:refs/heads/main` — which also started upstream's suites on `main`, hence the cancel step).
 
 Manual equivalent (a workstation, upstream as a remote):
 
@@ -169,7 +171,8 @@ request and weekly.
   workflows from forks wait for a maintainer's approval. The line carries the same change as a
   `git cherry-pick -x` of the upstream commit (or, before merge, of your pull-request branch) until an upstream
   release contains it, with a row in #37742.
-- **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`.
+- **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
+  A cherry-pick of an upstream commit is rebase-merged (see "Branches").
 - **Experiments**: your own personal fork. Branches here exist to become pull requests.
 - **What CI runs on a pull request**: upstream's `pr-workflow` (unit, root-gated and e2e suites on kind, gVisor and
   micro-VM lanes), `helm-e2e` (the charts on kind) and `govulncheck`; `run-tests` and `govulncheck` are required.
