@@ -326,6 +326,10 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 			}
 		}
 	}()
+	// As in coldBootActor: egress from the first packet, ingress after readyz.
+	if err := s.activateActorEgress(p.actorUID, egress); err != nil {
+		return err
+	}
 	netDevs, err := ch.SnapshotNetDevices(restoreDir)
 	if err != nil {
 		return fmt.Errorf("while reading snapshot net devices: %w", err)
@@ -479,7 +483,7 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 		s.startActorLogForwarding(guestAC, attribution, c.GetName(), c.GetName())
 	}
 
-	if err := s.activateActorNetworking(p.attribution(), egress); err != nil {
+	if err := s.activateActorIngress(p.attribution()); err != nil {
 		return err
 	}
 	s.setRunningVM(actorUID, ra)
