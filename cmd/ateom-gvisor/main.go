@@ -702,6 +702,11 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 			}
 		}
 	}()
+	// Egress is armed before the first container starts (see
+	// activateActorEgress); ingress waits for readyz below.
+	if err := s.activateActorEgress(egress); err != nil {
+		return nil, err
+	}
 	// Create and start pause container. The bundle rootfs is composed here —
 	// an overlay of the node's cached image layers plus the bundle's private
 	// upper — because mounting is ateom's job (atelet runs with no
@@ -742,7 +747,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP); err != nil {
 		return nil, fmt.Errorf("while waiting for container readyz: %w", err)
 	}
-	if err := s.activateActorNetworking(req.GetAtespace(), req.GetActorName(), egress); err != nil {
+	if err := s.activateActorIngress(req.GetAtespace(), req.GetActorName()); err != nil {
 		return nil, err
 	}
 
@@ -977,6 +982,10 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 			}
 		}
 	}()
+	// As in RunWorkload: egress from the first packet, ingress after readyz.
+	if err := s.activateActorEgress(egress); err != nil {
+		return nil, err
+	}
 	checkpointDir := ateompath.RestoreStateDir(req.GetActorUid())
 
 	if hasDurableVolumes(req.GetSpec().GetContainers()) {
@@ -1051,7 +1060,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP); err != nil {
 		return nil, fmt.Errorf("while waiting for container readyz: %w", err)
 	}
-	if err := s.activateActorNetworking(req.GetAtespace(), req.GetActorName(), egress); err != nil {
+	if err := s.activateActorIngress(req.GetAtespace(), req.GetActorName()); err != nil {
 		return nil, err
 	}
 
@@ -1160,15 +1169,30 @@ func (s *AteomService) terminateWorkload(ctx context.Context, actorRef resources
 	return errors.Join(errs...)
 }
 
-func (s *AteomService) activateActorNetworking(atespace, actorName string, egress *actorEgress) error {
-	if err := s.atunnelIngress.Activate(atespace, actorName); err != nil {
-		return fmt.Errorf("while activating actor ingress: %w", err)
-	}
+// activateActorEgress arms tunneled egress before the workload's first
+// container starts. The certificate was minted for this placement in
+// prepareActorEgress, so the tunnel carries the actor's identity from its
+// first packet, and what a workload fetches to become ready — models, skills,
+// packages — goes out before it serves readyz. Armed after the workload-failure
+// cleanup is registered, so a boot that dies disarms it again. Ingress is the
+// other way round (activateActorIngress): nothing is routed to a workload
+// before it is ready. A nil egress is an activation without a gateway, whose
+// actor egress stays on the masquerade path.
+func (s *AteomService) activateActorEgress(egress *actorEgress) error {
 	if egress == nil {
 		return nil
 	}
 	if err := s.atunnelEgress.Activate(egress.client, egress.certificateSource, egress.expiresAt); err != nil {
 		return fmt.Errorf("while activating actor egress: %w", err)
+	}
+	return nil
+}
+
+// activateActorIngress admits inbound traffic once every readyz-enabled
+// container of the workload reports ready.
+func (s *AteomService) activateActorIngress(atespace, actorName string) error {
+	if err := s.atunnelIngress.Activate(atespace, actorName); err != nil {
+		return fmt.Errorf("while activating actor ingress: %w", err)
 	}
 	return nil
 }
