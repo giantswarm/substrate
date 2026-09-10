@@ -37,10 +37,13 @@ Everything on `giantswarm` that is not in the pin (`git log v0.0.26..giantswarm`
 | Patch | Purpose | Fork commit | Upstream |
 |---|---|---|---|
 | Grant atelet cluster-wide read access to sandbox configs | atelet's sandbox-asset prewarm degraded on the second test cluster without the RBAC ([#37742](https://github.com/giantswarm/giantswarm/issues/37742) row 10) | `74b45f9e` (`git cherry-pick -x a7505e9c`) | [kagent-dev/substrate#33](https://github.com/kagent-dev/substrate/pull/33), merged 2026-09-08, not in v0.0.26 — falls away at the re-pin onto the first tag that contains it |
+| Let an actor's egress through while it resumes (ateom arms tunneled egress before the first container starts, atenet admits `RESUMING` actors, both hops log a refusal) | an actor whose workload fetches what it needs to become ready — kagent's Go ADK and Claude harnesses materialise git skills before readyz — never got its golden snapshot: atunnel dropped the fetch (`Broken pipe`), atenet would have refused a non-`RUNNING` actor, nothing was logged ([#37742](https://github.com/giantswarm/giantswarm/issues/37742) rows 8 and 13; acceptance test `agentlab skills-test`, [agentlab#137](https://github.com/giantswarm/agentlab/issues/137)) | [#4](https://github.com/giantswarm/substrate/pull/4) (squash; `git log --grep '(#4)'`) | to file: the upstream-shaped patch is branch [`upstream/atenet-egress-during-resume`](https://github.com/giantswarm/substrate/tree/upstream/atenet-egress-during-resume) here, rebased on the mirror `main`; a team member opens the kagent-dev/substrate pull request with DCO sign-off once #37742 has reviewed it |
 | Fork infrastructure: this file, the README pointer, `CODEOWNERS`, `.github/workflows/publish.yaml`, `.github/workflows/sync-upstream.yaml`, `.trivyignore`, and the branch triggers of `pr-workflow.yaml`, `helm-e2e.yaml`, `govulncheck.yaml` (`main` → `giantswarm`, govulncheck also on pull requests) | the line's CI, publishing and sync | the `giantswarm` branch history | not for upstream |
 
-Nothing in the line changes Substrate's behaviour beyond what upstream has already merged. Giant Swarm
-specific wiring lives elsewhere: the CA/JWT pool bootstrap (`kubectl-ate admin make-ca-pool`/`make-jwt-pool`
+One patch changes Substrate's behaviour ahead of upstream — egress for an actor while it resumes, without
+which no skill-carrying agent of the platform boots; it is written for upstream and leaves at the first
+release that carries it. Everything else is what upstream has already merged. Giant Swarm specific wiring
+lives elsewhere: the CA/JWT pool bootstrap (`kubectl-ate admin make-ca-pool`/`make-jwt-pool`
 and the `ate-api-authentication` ConfigMap) is created by [agentlab](https://github.com/giantswarm/agentlab)
 and by meta chart 4.0; the `WorkerPool` the platform's Harnesses run on comes with the kagent chart
 (`kagent.substrateWorkerPool`); feature gates, Kyverno exceptions and network policies are cluster

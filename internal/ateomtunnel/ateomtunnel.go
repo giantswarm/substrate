@@ -218,17 +218,26 @@ func (t *Tunnel) PrepareEgress(ctx context.Context, actor resources.ActorAttribu
 	return &ActorEgress{client: gatewayClient, certificateSource: certificateSource, expiresAt: expiresAt}, nil
 }
 
-// Activate starts admitting the actor's traffic. Ingress reaches the actor
-// through dial; egress is activated only when it was prepared.
-func (t *Tunnel) Activate(actor resources.ActorAttribution, dial atunnel.DialFunc, egress *ActorEgress) error {
-	if err := t.Ingress.Activate(actor.Ref.Atespace, actor.Ref.Name, actor.UID, dial); err != nil {
-		return fmt.Errorf("while activating actor ingress: %w", err)
-	}
+// ActivateEgress arms the actor's tunneled egress before its workload starts.
+// The certificate was minted for this placement in PrepareEgress, so the tunnel
+// carries the actor's identity from its first packet, and what a workload
+// fetches to become ready (models, skills, packages) goes out before it serves
+// readyz. A nil egress keeps the actor's egress on the masquerade path.
+func (t *Tunnel) ActivateEgress(actor resources.ActorAttribution, egress *ActorEgress) error {
 	if egress == nil {
 		return nil
 	}
 	if err := t.Egress.Activate(actor.UID, egress.client, egress.certificateSource, egress.expiresAt); err != nil {
 		return fmt.Errorf("while activating actor egress: %w", err)
+	}
+	return nil
+}
+
+// ActivateIngress admits inbound traffic, reaching the actor through dial, once
+// every readyz-enabled container of the workload reports ready.
+func (t *Tunnel) ActivateIngress(actor resources.ActorAttribution, dial atunnel.DialFunc) error {
+	if err := t.Ingress.Activate(actor.Ref.Atespace, actor.Ref.Name, actor.UID, dial); err != nil {
+		return fmt.Errorf("while activating actor ingress: %w", err)
 	}
 	return nil
 }
