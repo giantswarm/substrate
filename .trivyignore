@@ -1,0 +1,7 @@
+# Fork (giantswarm/substrate): time-boxed acceptances of image-scan findings
+# the line cannot fix itself (publish.yaml scans every own image; a FIXABLE
+# HIGH/CRITICAL finding is never listed here — bump the module, upstream first).
+# One finding per line, with an expiry and a reason; an expired entry fails the
+# scan again and is re-triaged, never just extended:
+#
+#   CVE-2026-NNNNN exp:2026-12-31 # <module@version>: why no fix exists upstream, what to track, tracked in <owner>/<repo>#NN

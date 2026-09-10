@@ -1,0 +1,179 @@
+# Fork (giantswarm/substrate): keeps the Giant Swarm line of Agent Substrate
+# in step with upstream (FORK.md, "Re-pin"). Weekly and on demand it
+#   1. mirrors upstream `main` into this fork's `main` — kagent-dev/substrate
+#      rewrites its main when it rebases onto agent-substrate/substrate, so the
+#      mirror is a forced update of the one branch nobody edits here;
+#   2. probes whether the carried patches of the `giantswarm` branch still
+#      rebase onto upstream `main` and names the first one that would conflict;
+#   3. on `workflow_dispatch` with a `pin`, re-pins the branch: rebases the
+#      carried patches onto the new upstream tag (a patch upstream has merged
+#      falls away), builds and tests, and pushes the rebased branch — or, when
+#      a patch conflicts, pushes what applied before it and opens a pull
+#      request that names the conflicting patch and the ones behind it.
+# Pushes use the taylorbot token: a push with GITHUB_TOKEN triggers no other
+# workflow, and the push to `giantswarm` is what publishes the dev build.
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      pin:
+        description: "Upstream release tag (or commit) to re-pin the giantswarm branch onto, e.g. v0.0.27. Empty: mirror main and probe the rebase only."
+        required: false
+      dry_run:
+        description: "Do everything except push"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+env:
+  LINE_BRANCH: giantswarm
+  UPSTREAM_REPO: kagent-dev/substrate
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: giantswarm
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Fetch upstream
+        run: |
+          set -o errexit -o nounset -o pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch --quiet upstream main 'refs/tags/v*:refs/tags/v*'
+          git config user.name taylorbot
+          git config user.email dev@giantswarm.io
+
+      - name: Mirror upstream main
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          fork=$(git rev-parse origin/main)
+          up=$(git rev-parse upstream/main)
+          if [ "${fork}" = "${up}" ]; then
+            echo "- main: at upstream \`${up:0:12}\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          kind=fast-forward
+          git merge-base --is-ancestor "${fork}" "${up}" || kind="rewrite — upstream rebased its main"
+          echo "- main: \`${fork:0:12}\` → \`${up:0:12}\` (${kind})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${DRY_RUN}" != true ]; then
+            git push --force-with-lease="refs/heads/main:${fork}" origin "${up}:refs/heads/main"
+          fi
+
+      - name: Resolve the pin and the carried patches
+        id: line
+        env:
+          INPUT_PIN: ${{ inputs.pin }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          # The pin is the nearest upstream release tag reachable from the
+          # branch; the line's own tags carry a pre-release suffix and are excluded.
+          current=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
+          new="${INPUT_PIN:-${current}}"
+          if ! git rev-parse --verify --quiet "${new}^{commit}" >/dev/null; then
+            echo "::error::pin '${new}' is not a known upstream tag or commit"
+            exit 1
+          fi
+          {
+            echo "current=${current}"
+            echo "new=${new}"
+            echo "head=$(git rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "- pin: \`${current}\` → \`${new}\`"
+            echo "- carried patches on \`${LINE_BRANCH}\`:"
+            git log --reverse --format='  - `%h` %s' "${current}..HEAD"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Probe the rebase onto upstream main
+        if: steps.line.outputs.new == steps.line.outputs.current
+        env:
+          CURRENT: ${{ steps.line.outputs.current }}
+          HEAD_SHA: ${{ steps.line.outputs.head }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          up=$(git rev-parse --short upstream/main)
+          if git rebase --quiet --onto upstream/main "${CURRENT}" >/dev/null 2>&1; then
+            echo "- probe: the carried patches rebase cleanly onto upstream main \`${up}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            conflict=$(git rev-parse --short REBASE_HEAD 2>/dev/null || echo unknown)
+            git rebase --abort
+            subject=$(git log -1 --format=%s "${conflict}" 2>/dev/null || true)
+            echo "- probe: rebasing onto upstream main \`${up}\` conflicts at \`${conflict}\` ${subject}" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::carried patch ${conflict} (${subject}) conflicts with upstream main; the next re-pin needs a hand"
+          fi
+          git checkout --quiet "${HEAD_SHA}"
+
+      - name: Re-pin
+        if: steps.line.outputs.new != steps.line.outputs.current
+        env:
+          CURRENT: ${{ steps.line.outputs.current }}
+          NEW: ${{ steps.line.outputs.new }}
+          HEAD_SHA: ${{ steps.line.outputs.head }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          if git rebase --onto "${NEW}" "${CURRENT}"; then
+            echo "- re-pin: the carried patches rebased onto \`${NEW}\`" >> "$GITHUB_STEP_SUMMARY"
+            git log --reverse --format='  - `%h` %s' "${NEW}..HEAD" >> "$GITHUB_STEP_SUMMARY"
+            go build ./...
+            go test ./...
+            if [ "${DRY_RUN}" != true ]; then
+              git push --force-with-lease="refs/heads/${LINE_BRANCH}:${HEAD_SHA}" origin "HEAD:refs/heads/${LINE_BRANCH}"
+              echo "- pushed \`${LINE_BRANCH}\` (\`${HEAD_SHA:0:12}\` → \`$(git rev-parse --short HEAD)\`); the publish workflow builds the dev build" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            exit 0
+          fi
+
+          # A carried patch conflicts: replay the patches before it onto the new
+          # pin, push that as a hand-over branch and open a pull request that
+          # names the rest. The pull request is a hand-over, not a merge — the
+          # line is a rebased branch (FORK.md, "Re-pin").
+          conflict=$(git rev-parse REBASE_HEAD)
+          git rebase --abort
+          branch="sync/$(date -u +%Y%m%d)-${NEW}"
+          git branch --force "${branch}" "${conflict}^"
+          git checkout --quiet "${branch}"
+          git rebase --quiet --onto "${NEW}" "${CURRENT}"
+          {
+            echo "Re-pin of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\` stopped at a conflicting carried patch."
+            echo
+            echo "Replayed on this branch:"
+            git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+            echo
+            echo "Conflicting: \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
+            echo
+            echo "Not replayed yet (in order):"
+            git log --reverse --format='- `%h` %s' "${conflict}^..${HEAD_SHA}"
+            echo
+            echo "To finish (FORK.md, \"Re-pin\"): check this branch out, \`git cherry-pick -x\` the conflicting patch and the ones behind it, resolve, run \`go build ./... && go test ./...\`, then update the line with \`git push --force-with-lease origin HEAD:${LINE_BRANCH}\` and close this pull request. Do not merge it: the line is a rebased branch, a merge would fold the old pin back in."
+          } > "${RUNNER_TEMP}/body.md"
+          {
+            echo "- re-pin: conflict at \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${DRY_RUN}" != true ]; then
+            git push --force origin "HEAD:refs/heads/${branch}"
+            gh pr create --base "${LINE_BRANCH}" --head "${branch}" \
+              --title "sync: re-pin ${LINE_BRANCH} onto ${NEW} (hand-over: a carried patch conflicts)" \
+              --body-file "${RUNNER_TEMP}/body.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "::error::carried patch $(git rev-parse --short "${conflict}") conflicts with ${NEW}; hand-over branch ${branch}"
+          exit 1
