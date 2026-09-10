@@ -279,6 +279,21 @@ func TestHandleRequestHeadersAllowsVerifiedActor(t *testing.T) {
 	}
 }
 
+// A resuming actor is booting or restoring on the worker that minted its
+// certificate; what it fetches to become ready goes out before it serves
+// readyz, so the gateway lets it through.
+func TestHandleRequestHeadersAllowsResumingActor(t *testing.T) {
+	ca := newTestCA(t, "actor-identity-ca")
+	leaf := ca.issueActorCert(t, actorCertOptions{})
+	resuming := runningActor()
+	resuming.Status.State = ateapipb.ActorState_ACTOR_STATE_RESUMING
+	h := egressHandler(ca.roots(), resuming, nil)
+
+	if _, err := h.HandleRequestHeaders(context.Background(), egressMetadata(xfccHeader(leaf))); err != nil {
+		t.Fatalf("HandleRequestHeaders() error = %v, want nil", err)
+	}
+}
+
 func TestHandleRequestHeadersAllowsAgentgatewayCertificateAttribute(t *testing.T) {
 	ca := newTestCA(t, "actor-identity-ca")
 	leaf := ca.issueActorCert(t, actorCertOptions{})
@@ -519,7 +534,10 @@ func TestHandleRequestHeadersAuthorization(t *testing.T) {
 			want: envoy_type.StatusCode_Forbidden,
 		},
 		{
-			name: "actor is not running",
+			// Suspended, paused and crashed actors have left their worker;
+			// a deleting one is leaving it. Their certificates are still
+			// within their lifetime and must not open a tunnel.
+			name: "actor is suspended",
 			actor: &ateapipb.Actor{
 				Metadata: &ateapipb.ResourceMetadata{
 					Atespace: testEgressAtespace,
@@ -527,6 +545,18 @@ func TestHandleRequestHeadersAuthorization(t *testing.T) {
 					Uid:      testEgressActorUID,
 				},
 				Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+			},
+			want: envoy_type.StatusCode_Forbidden,
+		},
+		{
+			name: "actor is being deleted",
+			actor: &ateapipb.Actor{
+				Metadata: &ateapipb.ResourceMetadata{
+					Atespace: testEgressAtespace,
+					Name:     testEgressActor,
+					Uid:      testEgressActorUID,
+				},
+				Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_DELETING},
 			},
 			want: envoy_type.StatusCode_Forbidden,
 		},
