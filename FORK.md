@@ -77,6 +77,15 @@ The weekly run (Mondays 05:23 UTC) does not re-pin: it mirrors `main` and **prob
 still rebase onto upstream `main`, naming the first patch that would conflict in the run summary, so the next
 re-pin is never a surprise.
 
+**Token requirement.** The workflow pushes with the org secret `TAYLORBOT_GITHUB_ACTION`. GitHub refuses a push
+from a personal access token that creates or changes a file under `.github/workflows/` unless the token carries the
+`workflow` scope — and upstream `main` (and therefore every re-pin) carries upstream's workflow files. The first run
+(2026-09-10) failed exactly there: "refusing to allow a Personal Access Token to create or update workflow
+`.github/workflows/helm-e2e.yaml` without `workflow` scope". Until the token has the scope (or a second org secret
+with it replaces the reference in `sync-upstream.yaml`), the mirror and the re-pin are done by hand by a member of
+`bumblebee-automation`, with the same commands the workflow runs (the `main` mirror was bootstrapped that way on
+2026-09-10: `git push --force-with-lease=refs/heads/main:<old> origin upstream/main:refs/heads/main`).
+
 Manual equivalent (a workstation, upstream as a remote):
 
 ```sh
