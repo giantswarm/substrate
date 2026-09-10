@@ -213,7 +213,10 @@ jobs:
           grep -q "^  registry: ${REGISTRY}$" "${values}"
           grep -q "^  tag: \"${VERSION}\"$" "${values}"
           grep -q "^  agentgateway: ${REGISTRY}/agentgateway:" "${values}"
-          ! grep -q "kagent-dev/substrate" "${values}"
+          if grep -n "kagent-dev/substrate" "${values}"; then
+            echo "::error::${values} still references upstream's registry after stamping"
+            exit 1
+          fi
 
           mkdir -p dist
           for chart in substrate-crds substrate; do
