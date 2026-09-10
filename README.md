@@ -1,3 +1,10 @@
+> **Giant Swarm line.** This repository is Team Bumblebee's fork of
+> [kagent-dev/substrate](https://github.com/kagent-dev/substrate) for the Giant
+> Swarm Agent Platform: `main` mirrors upstream, the `giantswarm` branch is what
+> the platform runs and publishes (`ghcr.io/giantswarm/substrate`). Pin,
+> carried patches, published artifacts, the re-pin procedure and how to
+> contribute: [FORK.md](FORK.md).
+
 # Agent Substrate
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
