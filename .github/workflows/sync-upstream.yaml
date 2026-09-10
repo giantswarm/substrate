@@ -48,6 +48,8 @@ on:
 
 permissions:
   contents: read
+  # To cancel the runs upstream's workflow files start on the mirrored main.
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -85,6 +87,7 @@ jobs:
           git config user.email "149080493+heraldbot[bot]@users.noreply.github.com"
 
       - name: Mirror upstream main
+        id: mirror
         env:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
@@ -99,8 +102,30 @@ jobs:
           git merge-base --is-ancestor "${fork}" "${up}" || kind="rewrite — upstream rebased its main"
           echo "- main: \`${fork:0:12}\` → \`${up:0:12}\` (${kind})" >> "$GITHUB_STEP_SUMMARY"
           if [ "${DRY_RUN}" != true ]; then
+            echo "pushed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
             git push --force-with-lease="refs/heads/main:${fork}" origin "${up}:refs/heads/main"
           fi
+
+      - name: Cancel the runs upstream's workflow files start on the mirror
+        # The mirrored commits carry upstream's workflow files, whose push
+        # triggers name `main`; on this fork they would test upstream's tree on
+        # hosted runners for nothing (and fail on upstream's environment
+        # assumptions). Cancel what the push started; runs appear a few seconds
+        # after the push.
+        if: steps.mirror.outputs.pushed_at != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUSHED_AT: ${{ steps.mirror.outputs.pushed_at }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          cancelled=0
+          for _ in 1 2 3 4 5 6; do
+            sleep 10
+            for id in $(gh run list --repo "$GITHUB_REPOSITORY" --branch main --event push --created ">=${PUSHED_AT}" --json databaseId,status -q '.[] | select(.status != "completed") | .databaseId'); do
+              gh run cancel --repo "$GITHUB_REPOSITORY" "$id" && cancelled=$((cancelled + 1))
+            done
+          done
+          echo "- mirror: cancelled ${cancelled} run(s) upstream's workflow files started on main" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve the pin and the carried patches
         id: line
@@ -196,7 +221,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "${DRY_RUN}" != true ]; then
             git push --force origin "HEAD:refs/heads/${branch}"
-            gh pr create --base "${LINE_BRANCH}" --head "${branch}" \
+            gh pr create --repo "${GITHUB_REPOSITORY}" --base "${LINE_BRANCH}" --head "${branch}" \
               --title "sync: re-pin ${LINE_BRANCH} onto ${NEW} (hand-over: a carried patch conflicts)" \
               --body-file "${RUNNER_TEMP}/body.md" >> "$GITHUB_STEP_SUMMARY"
           fi
