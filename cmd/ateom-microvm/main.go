@@ -562,15 +562,30 @@ func (s *AteomService) prepareActorEgress(ctx context.Context, actorAtespace, ac
 	return &actorEgress{client: gatewayClient, certificateSource: certificateSource, expiresAt: expiresAt}, nil
 }
 
-func (s *AteomService) activateActorNetworking(atespace, actorName string, egress *actorEgress) error {
-	if err := s.atunnelIngress.Activate(atespace, actorName); err != nil {
-		return fmt.Errorf("while activating actor ingress: %w", err)
-	}
+// activateActorEgress arms tunneled egress before the workload's first
+// container starts. The certificate was minted for this placement in
+// prepareActorEgress, so the tunnel carries the actor's identity from its
+// first packet, and what a workload fetches to become ready — models, skills,
+// packages — goes out before it serves readyz. Armed after the workload-failure
+// cleanup is registered, so a boot that dies disarms it again. Ingress is the
+// other way round (activateActorIngress): nothing is routed to a workload
+// before it is ready. A nil egress is an activation without a gateway, whose
+// actor egress stays on the masquerade path.
+func (s *AteomService) activateActorEgress(egress *actorEgress) error {
 	if egress == nil {
 		return nil
 	}
 	if err := s.atunnelEgress.Activate(egress.client, egress.certificateSource, egress.expiresAt); err != nil {
 		return fmt.Errorf("while activating actor egress: %w", err)
+	}
+	return nil
+}
+
+// activateActorIngress admits inbound traffic once every readyz-enabled
+// container of the workload reports ready.
+func (s *AteomService) activateActorIngress(atespace, actorName string) error {
+	if err := s.atunnelIngress.Activate(atespace, actorName); err != nil {
+		return fmt.Errorf("while activating actor ingress: %w", err)
 	}
 	return nil
 }

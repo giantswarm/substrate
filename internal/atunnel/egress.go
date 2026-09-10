@@ -243,13 +243,23 @@ func (e *Egress) handle(downstream net.Conn) {
 	active := e.active
 	if active == nil {
 		e.mu.Unlock()
+		// Dropped, and said so: from inside the sandbox a dropped connection
+		// looks like a network failure, and this is the only place that knows
+		// why. The original destination is deliberately not resolved for a
+		// connection nobody vouches for; the peer address ties the line to
+		// the actor's own log.
+		slog.Warn("atunnel dropped an egress connection: no actor egress is active",
+			slog.String("from", downstream.RemoteAddr().String()))
 		_ = downstream.Close()
 		return
 	}
-	if time.Now().Compare(active.expiresAt) >= 0 {
+	if expiresAt := active.expiresAt; time.Now().Compare(expiresAt) >= 0 {
 		// Expiry blocks only new tunnels. Connections admitted with a valid
 		// certificate have completed mTLS and are allowed to drain normally.
 		e.mu.Unlock()
+		slog.WarnContext(active.ctx, "atunnel dropped an egress connection: the actor certificate has expired",
+			slog.String("from", downstream.RemoteAddr().String()),
+			slog.Time("expiredAt", expiresAt))
 		_ = downstream.Close()
 		return
 	}

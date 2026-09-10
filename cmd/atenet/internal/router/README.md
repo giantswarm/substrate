@@ -26,7 +26,11 @@ Router has several responsibilities:
 * Authenticates actor identity on egress: on every CONNECT, the egress
   gateway's ext_proc handler re-verifies the actor's client certificate against
   the actor-identity CA, reads the `ActorIdentity` X.509 extension out of it,
-  and checks the certified UID against the ATE API.
+  and checks against the ATE API that the certified UID is the actor's and that
+  the actor is placed on a worker (running, or resuming onto the worker that
+  minted the certificate — what a workload fetches to become ready goes out
+  before it serves readyz). Every denial is logged with the actor and the
+  destination.
 * Authorizes egress against the actor's `EgressPolicy`: every request the
   gateway can read is decided on its `Host` and the address the actor dialed,
   rules in order, first match wins; what it cannot read is decided by address
