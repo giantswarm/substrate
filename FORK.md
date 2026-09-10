@@ -119,6 +119,9 @@ Not published from here: `ateom-microvm` and the demo images (the platform runs 
 
 **Versions.**
 
+- Image tags of this line carry **no `v`** (ko's convention; upstream's do). The sibling agentgateway line keeps upstream's
+  `v` on its image tags (`v1.5.1-gs.1`) because its consumers and the retagger rules carry it — two deliberate choices, do not
+  "fix" one to match the other.
 - Dev build, on every push to `giantswarm`: `<next upstream patch>-dev.giantswarm.<YYYY-MM-DD>.<HH-MM-SS>.h<sha7>`
   (for the pin v0.0.26: `0.0.27-dev.giantswarm.…`), the schema the kagent line uses — base = the pin's patch + 1,
   branch lowercased to `[a-z0-9-]`, committer date in UTC, so a rebuild of the same commit yields the same version

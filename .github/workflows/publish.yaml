@@ -135,7 +135,7 @@ jobs:
         # digest with the own images so the scan and the ledger see it.
         run: |
           set -o errexit -o nounset -o pipefail
-          echo "${AGENTGATEWAY_IMAGE%%:*}@$(crane digest "${AGENTGATEWAY_IMAGE}")" >> image-refs.txt
+          echo "${AGENTGATEWAY_IMAGE%:*}@$(crane digest "${AGENTGATEWAY_IMAGE}")" >> image-refs.txt
       - name: Record the digests
         run: |
           {
@@ -187,7 +187,7 @@ jobs:
         run: |
           set -o errexit -o nounset -o pipefail
           if [ "${{ matrix.image }}" = agentgateway ]; then
-            ref=$(grep -E "^${AGENTGATEWAY_IMAGE%%:*}@" image-refs.txt | tail -1)
+            ref=$(grep -E "^${AGENTGATEWAY_IMAGE%:*}@" image-refs.txt | tail -1)
           else
             ref=$(grep -E "^${REGISTRY}/${{ matrix.image }}[:@]" image-refs.txt | tail -1)
           fi
@@ -228,10 +228,14 @@ jobs:
         run: |
           set -o errexit -o nounset -o pipefail
           values=charts/substrate/values.yaml
+          # The agentgateway stamp anchors on the key, not on upstream's value:
+          # upstream moves that value between pins (kagent-dev's build at
+          # v0.0.26, ghcr.io/agentgateway/agentgateway:v0.0.0-alpha.… on main).
+          test "$(grep -c '^  agentgateway: ' "${values}")" = 1
           sed -i \
             -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
             -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
-            -e "s|^  agentgateway: ghcr.io/kagent-dev/substrate/agentgateway:.*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
+            -e "s|^  agentgateway: .*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
             "${values}"
           grep -q "^  registry: ${REGISTRY}$" "${values}"
           grep -q "^  tag: \"${VERSION}\"$" "${values}"
