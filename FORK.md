@@ -16,7 +16,7 @@ kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/
 
 | Branch | What it is | Who moves it |
 |---|---|---|
-| `main` | A pure mirror of upstream `main`. Upstream rebases its `main` onto agent-substrate (no release tag is an ancestor of it), so the mirror is a **forced** update. Never edited, never the target of a pull request. | the sync workflow (taylorbot) only — the `protect-main` ruleset admits the `bots` team and nobody else |
+| `main` | A pure mirror of upstream `main`. Upstream rebases its `main` onto agent-substrate (no release tag is an ancestor of it), so the mirror is a **forced** update. Never edited, never the target of a pull request. | the sync workflow (as the HeraldBot App) — the `protect-main` ruleset admits the App and the `bumblebee-automation` team (manual repair) and nobody else |
 | `giantswarm` (default) | **The line**: the upstream release tag the platform's kagent pins ("the pin") + cherry-picked upstream fixes + this fork's own files. Every change of the fork's own files is a pull request against it. | pull requests (`run-tests` and `govulncheck` required); the sync workflow and repository admins may force-push it for a re-pin |
 | `fork/<topic>` | pull-request branches against `giantswarm` | anyone in the team |
 | `sync/<date>-<pin>` | hand-over branches the sync workflow opens when a re-pin conflicts | the sync workflow; a human finishes them |
@@ -76,6 +76,17 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
 The weekly run (Mondays 05:23 UTC) does not re-pin: it mirrors `main` and **probes** whether the carried patches
 still rebase onto upstream `main`, naming the first patch that would conflict in the run summary, so the next
 re-pin is never a surprise.
+
+**Identity of the automation.** The workflow pushes as the org's **HeraldBot GitHub App** — a token minted per run
+from the org secrets `HERALD_CLIENT_ID` / `HERALD_APP_KEY` (`actions/create-github-app-token`); the App is installed
+on every org repository with contents and workflows write access and is a bypass actor (`Integration`) of both
+rulesets. Why an App and not the org's machine-account token: GitHub refuses a push from a personal access token
+that creates or changes a file under `.github/workflows/` unless the token carries the `workflow` scope, and upstream
+`main` — hence every mirror and every re-pin — carries upstream's workflow files; the first run (2026-09-10, with
+`TAYLORBOT_GITHUB_ACTION`) failed exactly there. A push with the workflow's own `GITHUB_TOKEN` would not do either: it
+triggers no other workflow, and the push to `giantswarm` is what publishes the dev build. Manual fallback for a
+member of `bumblebee-automation`: the same commands the workflow runs (the `main` mirror was bootstrapped that way on
+2026-09-10: `git push --force-with-lease=refs/heads/main:<old> origin upstream/main:refs/heads/main`).
 
 Manual equivalent (a workstation, upstream as a remote):
 
