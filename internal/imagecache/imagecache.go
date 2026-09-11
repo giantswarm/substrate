@@ -53,6 +53,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -65,11 +66,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/agent-substrate/substrate/internal/ateattr"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 )
 
 const (
@@ -437,7 +440,7 @@ func (s *Store) EnsureImage(ctx context.Context, ref string) (_ *Image, err erro
 		// digest, which is the only safe cache key for mutable tags.
 		desc, headErr := remote.Head(parsedRef, s.remoteOpts(ctx, parsedRef)...)
 		if headErr != nil {
-			err = fmt.Errorf("while resolving tag %q to a digest: %w", ref, headErr)
+			err = classifyRegistryErr(fmt.Errorf("while resolving tag %q to a digest: %w", ref, headErr))
 			return nil, err
 		}
 		digest = desc.Digest
@@ -471,12 +474,45 @@ func (s *Store) EnsureImage(ctx context.Context, ref string) (_ *Image, err erro
 	select {
 	case res := <-ch:
 		if res.Err != nil {
-			return nil, res.Err
+			return nil, classifyRegistryErr(res.Err)
 		}
 		return res.Val.(*Image), nil
 	case <-ctx.Done():
 		return nil, fmt.Errorf("while waiting for pull of %s: %w", digest, context.Cause(ctx))
 	}
+}
+
+// classifyRegistryErr tags a registry answer no retry can change — the
+// repository or manifest does not exist (404), the credentials do not allow
+// the pull (401, 403) — with ateerrors.ReasonFailedGetExternalObject, the
+// Reason the object storage clients put on a missing snapshot object. The RPC
+// boundaries in atelet claim that Reason as terminal (CrashIfReason), so an
+// actor whose image the registry refuses is crashed, carrying the registry's
+// answer, instead of being resumed against the same reference forever.
+// Everything else passes through untagged and stays retriable: a 5xx or a 429
+// the transport's retry did not outlast, connection trouble, local cache I/O,
+// a canceled context, and an error another layer has already tagged.
+func classifyRegistryErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, tagged := errors.AsType[ateerrors.Reason](err); tagged {
+		return err
+	}
+	if regErr, ok := errors.AsType[*transport.Error](err); ok && definitiveRegistryStatus(regErr.StatusCode) {
+		return fmt.Errorf("%w: %w", ateerrors.ReasonFailedGetExternalObject, err)
+	}
+	return err
+}
+
+// definitiveRegistryStatus reports whether an HTTP status is the registry's
+// final word on the request: a client error other than a timeout (408) or a
+// throttle (429), both of which heal by themselves. The status decides, not
+// the body's error code: a registry may answer a missing manifest with the
+// code UNKNOWN, or a definitive 403 with a code the transport deems temporary.
+func definitiveRegistryStatus(code int) bool {
+	return code >= http.StatusBadRequest && code < http.StatusInternalServerError &&
+		code != http.StatusRequestTimeout && code != http.StatusTooManyRequests
 }
 
 // cachedImageHit is the hit side of the hitMu contract: it verifies the

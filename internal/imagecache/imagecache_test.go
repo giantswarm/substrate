@@ -18,24 +18,30 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
@@ -159,6 +165,107 @@ func TestEnsureImage_RetriesRateLimit(t *testing.T) {
 	if got := rejections.Load(); got != 2 {
 		t.Errorf("registry rejected %d requests, want 2 (the throttling was not exercised)", got)
 	}
+}
+
+// TestClassifyRegistryErr pins the split the RPC boundaries classify on: a
+// registry's final word (a 4xx other than a timeout or a throttle) carries
+// ReasonFailedGetExternalObject; everything else — a registry that keeps
+// failing transiently, connection trouble, a canceled pull, an error another
+// layer already tagged — passes through as it came.
+func TestClassifyRegistryErr(t *testing.T) {
+	regErr := func(code int) error { return &transport.Error{StatusCode: code} }
+	tests := []struct {
+		name string
+		err  error
+		// wantReason is the Reason the returned error must carry; empty means
+		// it must carry none.
+		wantReason ateerrors.Reason
+	}{
+		{name: "nil", err: nil},
+		{name: "manifest unknown", err: regErr(http.StatusNotFound), wantReason: ateerrors.ReasonFailedGetExternalObject},
+		{name: "unauthorized", err: regErr(http.StatusUnauthorized), wantReason: ateerrors.ReasonFailedGetExternalObject},
+		{name: "denied", err: regErr(http.StatusForbidden), wantReason: ateerrors.ReasonFailedGetExternalObject},
+		{name: "wrapped rejection", err: fmt.Errorf("in remote.Image: %w", regErr(http.StatusNotFound)), wantReason: ateerrors.ReasonFailedGetExternalObject},
+		{name: "request timeout", err: regErr(http.StatusRequestTimeout)},
+		{name: "throttled", err: regErr(http.StatusTooManyRequests)},
+		{name: "server error", err: regErr(http.StatusInternalServerError)},
+		{name: "unavailable", err: regErr(http.StatusServiceUnavailable)},
+		{name: "connection trouble", err: &net.OpError{Op: "dial", Err: errors.New("connection refused")}},
+		{name: "canceled", err: fmt.Errorf("while waiting for pull: %w", context.Canceled)},
+		{name: "local cache", err: fmt.Errorf("while reading image record: %w", os.ErrPermission)},
+		{name: "already tagged", err: fmt.Errorf("%w: %w", ateerrors.ReasonInvalidObjectURL, regErr(http.StatusNotFound)), wantReason: ateerrors.ReasonInvalidObjectURL},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := classifyRegistryErr(tt.err)
+			if tt.err == nil {
+				if got != nil {
+					t.Fatalf("classifyRegistryErr(nil) = %v, want nil", got)
+				}
+				return
+			}
+			if !errors.Is(got, tt.err) {
+				t.Errorf("classifyRegistryErr(%v) = %v, want the cause kept in the chain", tt.err, got)
+			}
+			r, tagged := errors.AsType[ateerrors.Reason](got)
+			switch {
+			case tt.wantReason == "" && tagged:
+				t.Errorf("classifyRegistryErr(%v) carries reason %v, want none (the failure must stay retriable)", tt.err, r)
+			case tt.wantReason != "" && (!tagged || r != tt.wantReason):
+				t.Errorf("classifyRegistryErr(%v) reason = %v (tagged=%v), want %v", tt.err, r, tagged, tt.wantReason)
+			}
+		})
+	}
+}
+
+// TestEnsureImage_RegistryRejectionIsTagged drives the classification through
+// a real registry: an image the registry has never seen — by tag or by digest,
+// a 404 the transport does not retry — comes back tagged
+// ReasonFailedGetExternalObject with the registry's answer still in the chain,
+// while a registry that keeps failing with a 5xx comes back untagged once the
+// retries are spent.
+func TestEnsureImage_RegistryRejectionIsTagged(t *testing.T) {
+	origBackoff := dedicatedRegistryBackoff
+	dedicatedRegistryBackoff = remote.Backoff{Duration: time.Millisecond, Factor: 2.0, Jitter: 0.1, Steps: 2}
+	t.Cleanup(func() { dedicatedRegistryBackoff = origBackoff })
+
+	_, host := newTestRegistry(t)
+	for name, ref := range map[string]string{
+		"missing tag":    host + "/test/missing:1",
+		"missing digest": host + "/test/missing@sha256:" + strings.Repeat("0", 64),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := newTestStore(t).EnsureImage(context.Background(), ref)
+			if !errors.Is(err, ateerrors.ReasonFailedGetExternalObject) {
+				t.Fatalf("EnsureImage(%q) = %v, want it tagged ReasonFailedGetExternalObject", ref, err)
+			}
+			regErr, ok := errors.AsType[*transport.Error](err)
+			if !ok {
+				t.Fatalf("EnsureImage(%q) = %v, want the registry's answer kept in the chain", ref, err)
+			}
+			if regErr.StatusCode != http.StatusNotFound {
+				t.Errorf("registry answered %d, want 404", regErr.StatusCode)
+			}
+		})
+	}
+
+	t.Run("registry that keeps failing", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		t.Cleanup(srv.Close)
+		u, err := url.Parse(srv.URL)
+		if err != nil {
+			t.Fatalf("parsing registry URL: %v", err)
+		}
+		_, err = newTestStore(t).EnsureImage(context.Background(), u.Host+"/test/flaky:1")
+		if err == nil {
+			t.Fatal("EnsureImage through a registry that only answers 503 succeeded")
+		}
+		if r, tagged := errors.AsType[ateerrors.Reason](err); tagged {
+			t.Errorf("EnsureImage = %v: carries reason %v, want none (a 5xx must stay retriable)", err, r)
+		}
+	})
 }
 
 func TestEnsureImage_TagPullAndDigestHit(t *testing.T) {
