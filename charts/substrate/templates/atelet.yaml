@@ -111,6 +111,18 @@ spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atelet" .) }}
       priorityClassName: {{ include "substrate.fullname" (list "ate-node-critical" .) }}
       {{- with include "substrate.imagePullSecrets" . }}{{- . | nindent 6 }}{{- end }}
+{{- with .Values.atelet.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.atelet.tolerations }}
+      tolerations:
+{{ toYaml . | indent 6 }}
+{{- end }}
+{{- with .Values.atelet.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+{{- end }}
       containers:
       - name: atelet
         image: {{ include "substrate.componentImage" (list "atelet" .) }}
