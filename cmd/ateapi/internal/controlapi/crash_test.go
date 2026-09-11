@@ -319,6 +319,16 @@ func TestMaybeCrashActor(t *testing.T) {
 				if got := status.Code(err); got != codes.DataLoss {
 					t.Errorf("status code = %v, want %v", got, codes.DataLoss)
 				}
+				// The caller learns that the actor crashed, why, and from what.
+				if !ateerrors.ActorCrashRequested(err) {
+					t.Errorf("maybeCrashActor() error = %v, want the crash directive kept", err)
+				}
+				if got := ateerrors.ExtractReason(err); got != string(ateerrors.ReasonTerminalFileSystemError) {
+					t.Errorf("reason = %q, want %q", got, ateerrors.ReasonTerminalFileSystemError)
+				}
+				if msg := status.Convert(err).Message(); !strings.Contains(msg, "crashed") || !strings.Contains(msg, "boom") {
+					t.Errorf("message = %q, want the crash and its cause", msg)
+				}
 				assertCrashed(t, ctx, st, actorRef)
 			},
 		},

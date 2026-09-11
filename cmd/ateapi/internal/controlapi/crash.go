@@ -56,7 +56,11 @@ func maybeCrashActor(ctx context.Context, st crashActorStore, actorRef resources
 			slog.ErrorContext(ctx, "Failed to crash actor", slog.Any("err", cerr))
 			return cerr
 		}
-		return status.Errorf(codes.DataLoss, "actor %s crashed", actorRef)
+		// The caller learns that the actor crashed and why, with the directive
+		// still attached: the ActorTemplate reconciler records the cause on a
+		// golden actor's template without another round trip.
+		return ateerrors.NewGRPCError(ctx, codes.DataLoss, ateerrors.Reason(reason), ateerrors.ActorCrashedMetadata(),
+			fmt.Errorf("actor %s crashed: %s", actorRef, status.Convert(err).Message()))
 	}
 	return fmt.Errorf("%s: %w", wrapMsg, err)
 }
