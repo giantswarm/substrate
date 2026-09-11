@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
@@ -449,6 +450,19 @@ func TestReconcileOne(t *testing.T) {
 			control:     &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, resumeErr: status.Error(codes.Unavailable, "no workers")},
 			wantErr:     true,
 			wantResumes: 1,
+		},
+		{
+			// The resume crashed the golden actor and said why (an image the
+			// registry refuses): the template fails now, with that cause, not
+			// on the retry that would observe CRASHED without it.
+			name:     "resume that crashes the golden actor fails the template with the cause",
+			template: testTemplate(),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				resumeErr: ateerrors.NewGRPCError(context.Background(), codes.DataLoss, ateerrors.ReasonFailedGetExternalObject, ateerrors.ActorCrashedMetadata(),
+					errors.New("actor ate-golden/"+someActorUID+" crashed: while creating workload from spec: MANIFEST_UNKNOWN: manifest unknown"))},
+			wantFailedReason: reasonGoldenActorCrashed,
+			wantMessage:      "MANIFEST_UNKNOWN: manifest unknown",
+			wantResumes:      1,
 		},
 		{
 			name:     "get failure requeues",
