@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
@@ -263,7 +264,15 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, r.saveGoldenSnapshot(ctx, tmpl, actor.GetStatus().GetExternalSnapshot())
 			}
 			if _, err := r.control.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: goldenActorRef}); err != nil {
-				// A crash during resume is observed as CRASHED on the retry.
+				if ateerrors.ActorCrashRequested(err) {
+					// The resume crashed the golden actor and says why — an
+					// image the registry refuses, a container with no runnable
+					// process. Record the cause now; the retry would observe
+					// CRASHED without it.
+					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, status.Convert(err).Message())
+				}
+				// Anything else is retried; a crash the resume did not report
+				// is observed as CRASHED on the retry.
 				return 0, fmt.Errorf("while resuming golden actor: %w", err)
 			}
 			deadline := time.Now().Add(goldenSnapshotWarmupFor(tmpl.GetContainers()))
