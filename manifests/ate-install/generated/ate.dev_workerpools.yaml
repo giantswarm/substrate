@@ -18,6 +18,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.1
+    helm.sh/resource-policy: keep
   name: workerpools.ate.dev
 spec:
   group: ate.dev
