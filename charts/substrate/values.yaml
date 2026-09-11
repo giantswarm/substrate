@@ -53,6 +53,11 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # Where atelet runs: the DaemonSet's nodeSelector, tolerations and affinity.
+  # Empty = every schedulable node.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 # Name of a ConfigMap in the release namespace that supplies per-environment
 # overrides for ate-api-server (ATE_API_POSTGRES_CONNECTION_STRING, ...).
