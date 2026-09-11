@@ -77,3 +77,15 @@ tests:
         key: kubernetes.io/arch
         operator: In
         values: [amd64]
+
+- it: mounts the kubelet plugins directory with HostToContainer propagation
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[?(@.name == "atelet")].volumeMounts
+      content:
+        name: kubelet-plugins
+        mountPath: /var/lib/kubelet/plugins
+        mountPropagation: HostToContainer
