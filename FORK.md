@@ -148,7 +148,7 @@ digests are recorded here:
 
 | Release | Pin | Images and charts |
 |---|---|---|
-| none yet | | |
+| **v0.0.27-gs.1** (2026-09-11, tag on `213d76b6` = v0.0.26 + #33 + the egress-while-resuming patch (#4) + the frontend-policy egress config and the agentgateway line's `v1.5.1-gs.2` dataplane (#7, #9)) | v0.0.26 | images `ateapi` `sha256:70545853…`, `atecontroller` `sha256:5f1ba422…`, `atelet` `sha256:54a7285c…`, `atenet` `sha256:db1adb6d…`, `podcertcontroller` `sha256:eca30364…`, `ateom-gvisor` `sha256:b6a59a48…` (linux/amd64 + arm64); charts `substrate` `sha256:0742fdca…`, `substrate-crds` `sha256:9d3fc4be…`; dataplane `ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.2` |
 
 **Scans.** Every own image is scanned with Trivy (HIGH and CRITICAL, fixable only) after the push and before the
 charts that reference it are published. A fixable finding fails the publish: bump the module (upstream first) or,
