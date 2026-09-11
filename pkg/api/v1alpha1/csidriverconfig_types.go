@@ -72,6 +72,7 @@ type CSIDriverTLSConfig struct {
 // +genclient:nonNamespaced
 // +kubebuilder:object:generate=true
 // +kubebuilder:object:root=true
+// +kubebuilder:metadata:annotations="helm.sh/resource-policy=keep"
 // +kubebuilder:resource:scope=Cluster,shortName=csidriverconfig
 // +kubebuilder:printcolumn:name="Driver",type=string,JSONPath=`.spec.driverName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
