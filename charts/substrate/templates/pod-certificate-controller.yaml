@@ -14,10 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */}}
 
+# The namespace outlives the release (helm.sh/resource-policy: keep). It holds
+# the CA pools the operator provisions into it out of band (kubectl-ate admin
+# make-ca-pool, hack/install-ate.sh --create-podcertificate-controller-cas) —
+# key material the chart never renders — while the signers publish their
+# ClusterTrustBundles cluster-scoped, outside the release. Deleting the
+# namespace on uninstall destroys the pools and leaves the bundles: the next
+# install mints new roots, and every component that read the surviving bundle
+# when it started (the ate-api CA file is loaded once, at dial time) fails its
+# handshake against ate-api-server until it is restarted. Kept, the pools and
+# the bundles stay consistent across an uninstall and a reinstall, as
+# ate-system's do (createNamespace: false). A clean slate is the namespace and
+# the two podcert.ate.dev ClusterTrustBundles deleted by hand.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: podcertificate-controller-system
+  annotations:
+    helm.sh/resource-policy: keep
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
