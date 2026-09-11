@@ -232,6 +232,12 @@ jobs:
           # upstream moves that value between pins (kagent-dev's build at
           # v0.0.26, ghcr.io/agentgateway/agentgateway:v0.0.0-alpha.… on main).
           test "$(grep -c '^  agentgateway: ' "${values}")" = 1
+          # The chart default must already be the pinned build: the egress config
+          # is written for its schema, and helm-e2e installs the unstamped chart.
+          if [ "$(sed -n 's/^  agentgateway: //p' "${values}")" != "${AGENTGATEWAY_IMAGE}" ]; then
+            echo "::error::${values} images.agentgateway differs from AGENTGATEWAY_IMAGE (${AGENTGATEWAY_IMAGE}); move both together"
+            exit 1
+          fi
           sed -i \
             -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
             -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
