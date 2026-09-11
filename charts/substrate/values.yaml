@@ -59,6 +59,11 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # Where atelet runs: the DaemonSet's nodeSelector, tolerations and affinity.
+  # Empty = every schedulable node.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 # Additional arguments appended to the ateapi defaults.
 ateApi:

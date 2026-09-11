@@ -50,6 +50,9 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.gcpAuthForImagePulls` | `false` | Enable only when using GCP registry auth |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
+| `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
+| `atelet.tolerations` | `[]` | Tolerations of the atelet pods |
+| `atelet.affinity` | `{}` | Affinity of the atelet pods |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics, the actor lifecycle events and the router access log |
 | `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
 | `otel.traces.endpoint` | `""` | OTLP endpoint for traces, overriding `otel.endpoint` |
