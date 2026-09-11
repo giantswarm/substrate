@@ -99,6 +99,7 @@ type SandboxConfigSpec struct {
 // +genclient:nonNamespaced
 // +kubebuilder:object:generate=true
 // +kubebuilder:object:root=true
+// +kubebuilder:metadata:annotations="helm.sh/resource-policy=keep"
 // +kubebuilder:resource:scope=Cluster,shortName=sandboxconfig
 // +kubebuilder:printcolumn:name="Class",type=string,JSONPath=`.spec.sandboxClass`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
