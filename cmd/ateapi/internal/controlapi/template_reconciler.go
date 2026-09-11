@@ -244,7 +244,7 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 
 		switch state := actor.GetStatus().GetState(); state {
 		case ateapipb.ActorState_ACTOR_STATE_CRASHED:
-			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, "golden actor crashed before its snapshot was taken")
+			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, goldenActorCrashMessage(actor))
 
 		case ateapipb.ActorState_ACTOR_STATE_RUNNING:
 			takeAt := goldenSnapshotStatus.GetTakeGoldenSnapshotAt()
@@ -291,7 +291,17 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, r.tagGoldenActor(ctx, tmpl, goldenActorRef)
 			}
 			if _, err := r.control.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: goldenActorRef}); err != nil {
-				// A crash during resume is observed as CRASHED on the retry.
+				// A resume that crashed the golden actor (an image the registry
+				// refuses, a container with no runnable process) has recorded
+				// the cause on the actor: fail the template with it now rather
+				// than on a later pass, which would find CRASHED and its cause
+				// only after the requeue backoff.
+				if crashed, gerr := r.control.GetActor(ctx, &ateapipb.GetActorRequest{Actor: goldenActorRef}); gerr == nil &&
+					crashed.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED {
+					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, goldenActorCrashMessage(crashed))
+				}
+				// Anything else is retried; a crash the resume did not report
+				// is observed as CRASHED on the retry.
 				return 0, fmt.Errorf("while resuming golden actor: %w", err)
 			}
 			deadline := time.Now().Add(goldenSnapshotWarmupFor(tmpl.GetContainers()))
@@ -324,6 +334,17 @@ func (r *ActorTemplateReconciler) suspendActor(ctx context.Context, goldenRef *a
 		return fmt.Errorf("suspending golden actor produced no external snapshot")
 	}
 	return nil
+}
+
+// goldenActorCrashMessage is the error message a template fails with when its
+// golden actor crashed: the crash the control plane recorded on the actor,
+// which names the atelet call and the registry's or ateom's own answer, or a
+// fixed text for an actor crashed without one.
+func goldenActorCrashMessage(actor *ateapipb.Actor) string {
+	if msg := actor.GetStatus().GetCrash().GetMessage(); msg != "" {
+		return fmt.Sprintf("actor %s/%s crashed: %s", actor.GetMetadata().GetAtespace(), actor.GetMetadata().GetName(), msg)
+	}
+	return "golden actor crashed before its snapshot was taken"
 }
 
 // tagGoldenActor copies the snapshot into a tag before releasing the actor's copy.

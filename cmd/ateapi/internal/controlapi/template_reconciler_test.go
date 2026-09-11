@@ -17,6 +17,7 @@ package controlapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -153,10 +154,14 @@ type fakeGoldenControl struct {
 	tagReqs      []*ateapipb.CreateTagRequest
 	deleteReqs   []*ateapipb.DeleteActorRequest
 
-	createErr  error
-	resumeErr  error
-	suspendErr error
-	getErr     error
+	createErr error
+	resumeErr error
+	// resumeCrashes makes ResumeActor fail and leave the golden actor CRASHED
+	// with goldenCrash as its recorded cause, as a Run the registry refuses does.
+	resumeCrashes bool
+	goldenCrash   string
+	suspendErr    error
+	getErr        error
 
 	// exists seeds whether the golden actor pre-exists; goldenState and
 	// goldenSnapshot are its observed state and external snapshot while it
@@ -210,16 +215,24 @@ func (c *fakeGoldenControl) GetActor(_ context.Context, req *ateapipb.GetActorRe
 	if !c.exists {
 		return nil, status.Error(codes.NotFound, "no such actor")
 	}
-	return &ateapipb.Actor{
+	actor := &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Atespace: req.GetActor().GetAtespace(), Name: req.GetActor().GetName()},
 		Status:   &ateapipb.ActorStatus{State: c.goldenState, ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: c.goldenSnapshot}},
-	}, nil
+	}
+	if c.goldenState == ateapipb.ActorState_ACTOR_STATE_CRASHED && c.goldenCrash != "" {
+		actor.Status.Crash = &ateapipb.ActorCrash{Message: c.goldenCrash}
+	}
+	return actor, nil
 }
 
 func (c *fakeGoldenControl) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.resumeReqs = append(c.resumeReqs, req)
+	if c.resumeCrashes {
+		c.goldenState = ateapipb.ActorState_ACTOR_STATE_CRASHED
+		return nil, fmt.Errorf("actor %s crashed: %s", resources.ActorRefFromObjectRef(req.GetActor()), c.goldenCrash)
+	}
 	if c.resumeErr != nil {
 		return nil, c.resumeErr
 	}
@@ -502,6 +515,28 @@ func TestReconcileOne(t *testing.T) {
 			control:     &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, resumeErr: status.Error(codes.Unavailable, "no workers")},
 			wantErr:     true,
 			wantResumes: 1,
+		},
+		{
+			// The golden actor crashed with a recorded cause: the template's
+			// error message carries it.
+			name:     "crashed golden actor fails the template with its recorded cause",
+			template: testTemplate(),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED,
+				goldenCrash: "resume failed: atelet Run: while creating workload from spec: MANIFEST_UNKNOWN: manifest unknown"},
+			wantFailedReason: reasonGoldenActorCrashed,
+			wantMessage:      "MANIFEST_UNKNOWN: manifest unknown",
+		},
+		{
+			// The resume crashed the golden actor (an image the registry
+			// refuses): the template fails now, with the recorded cause, not
+			// on the retry after the requeue backoff.
+			name:     "resume that crashes the golden actor fails the template with the cause",
+			template: testTemplate(),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, resumeCrashes: true,
+				goldenCrash: "resume failed: atelet Run: while creating workload from spec: MANIFEST_UNKNOWN: manifest unknown"},
+			wantFailedReason: reasonGoldenActorCrashed,
+			wantMessage:      "MANIFEST_UNKNOWN: manifest unknown",
+			wantResumes:      1,
 		},
 		{
 			name:     "get failure requeues",
