@@ -90,13 +90,11 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
-  resources:
-    requests:
-      cpu: 50m
-      memory: 256Mi
-    limits:
-      cpu: "2"
-      memory: 1Gi
+  # Where atelet runs: the DaemonSet's nodeSelector, tolerations and affinity.
+  # Empty = every schedulable node.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 # Additional arguments appended to the ateapi defaults.
 ateApi:
