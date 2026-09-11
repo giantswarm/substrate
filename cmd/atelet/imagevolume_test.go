@@ -17,6 +17,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -26,6 +27,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agent-substrate/substrate/internal/ateerrors"
+	"github.com/agent-substrate/substrate/internal/ateompath"
 	"github.com/agent-substrate/substrate/internal/imagecache"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -171,5 +174,34 @@ func TestResolveImageVolumes_UnmountedVolumeNotPulled(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("resolveImageVolumes = %+v, want empty", got)
+	}
+}
+
+// TestPrepareOCIDirectory_RegistryRejectionIsTerminal follows an image the
+// registry refuses for good from the pull to the Run/Restore boundary: the
+// image cache's tag survives prepareOCIDirectory's wraps, and the claim the
+// boundaries make (CrashIfReason with ReasonFailedGetExternalObject) turns it
+// into a crash directive carrying that reason — so the actor is crashed with
+// the registry's answer instead of being resumed against the same reference
+// forever.
+func TestPrepareOCIDirectory_RegistryRejectionIsTerminal(t *testing.T) {
+	ateompath.ActorsDir = t.TempDir()
+	host := imageVolumeTestRegistry(t)
+	ref := host + "/agent:does-not-exist"
+
+	err := prepareOCIDirectory(t.Context(), newImageVolumeStore(t), "actor-uid", "app", ref, nil, nil, nil, "", nil, nil, nil, nil)
+	if !errors.Is(err, ateerrors.ReasonFailedGetExternalObject) {
+		t.Fatalf("prepareOCIDirectory(%q) = %v, want it tagged ReasonFailedGetExternalObject", ref, err)
+	}
+
+	claimed := ateerrors.CrashIfReason(t.Context(), err, ateerrors.ReasonInvalidContainerConfig, ateerrors.ReasonFailedGetExternalObject)
+	if !ateerrors.ActorCrashRequested(claimed) {
+		t.Errorf("the boundary's claim did not request a crash: %v", claimed)
+	}
+	if got := ateerrors.ExtractReason(claimed); got != string(ateerrors.ReasonFailedGetExternalObject) {
+		t.Errorf("crash reason = %q, want %q", got, ateerrors.ReasonFailedGetExternalObject)
+	}
+	if !strings.Contains(claimed.Error(), ref) {
+		t.Errorf("crash directive lost the image reference: %v", claimed)
 	}
 }

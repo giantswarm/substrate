@@ -509,7 +509,11 @@ func (s *AteomHerder) Run(ctx context.Context, req *ateletpb.RunRequest) (resp *
 	if err := s.prepareOCIBundles(ctx, actorUID, actorRef,
 		req.GetSpec(), sandboxRec.PauseImage, req.GetTargetAteomUid(),
 	); err != nil {
-		return nil, ateerrors.CrashIfReason(ctx, err, ateerrors.ReasonInvalidContainerConfig)
+		// An image the registry refuses for good (ReasonFailedGetExternalObject,
+		// tagged by the image cache) is as terminal as a container with no
+		// runnable process: the same reference fails the same way on every
+		// retry, and each retry pins a worker.
+		return nil, ateerrors.CrashIfReason(ctx, err, ateerrors.ReasonInvalidContainerConfig, ateerrors.ReasonFailedGetExternalObject)
 	}
 
 	client, err := s.dialAteom(ctx, req.GetTargetAteomUid())
@@ -1178,7 +1182,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		dBundles = time.Since(t)
 		if err != nil {
 			prepFailedPhase = ateattr.SnapshotPhaseOCIUnpack
-			return ateerrors.CrashIfReason(ctx, err, ateerrors.ReasonTerminalFileSystemError, ateerrors.ReasonInvalidContainerConfig)
+			return ateerrors.CrashIfReason(ctx, err, ateerrors.ReasonTerminalFileSystemError, ateerrors.ReasonInvalidContainerConfig, ateerrors.ReasonFailedGetExternalObject)
 		}
 		return nil
 	})
