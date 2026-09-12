@@ -770,6 +770,67 @@ func TestSyncer_PodRecreatedWithNewUID(t *testing.T) {
 	}
 }
 
+// TestSyncer_PodIPChangedInPlace covers a pod whose sandbox was recreated under
+// the same UID — a node reboot, a kubelet or container runtime restart — so it
+// comes back Ready with a new IP and no ateom state. The registered Worker is
+// a record of the dead ateom at an address nothing answers on; it is replaced
+// by a fresh registration under the current IP rather than kept, edited or
+// merely logged.
+func TestSyncer_PodIPChangedInPlace(t *testing.T) {
+	ctx := context.Background()
+
+	ns, podName, poolName := "ns-syncer-reip", "worker-reip-1", "pool1"
+
+	api := newFakeControl()
+	s, pods, _ := setupReconcileTest(t, api, workerPool(ns, poolName, "gvisor", map[string]string{"foo": "bar"}))
+	key := seedPod(t, pods, workerPod(ns, podName, poolName, testPodUID, "10.0.0.7"))
+
+	mustReconcile(t, ctx, s, key)
+	before := api.get(testPodUID)
+	if before == nil {
+		t.Fatal("the pod's worker was not registered")
+	}
+
+	// The sandbox is recreated: same pod, same UID, same key, new IP.
+	if err := pods.Update(workerPod(ns, podName, poolName, testPodUID, "10.0.0.8")); err != nil {
+		t.Fatalf("re-addressing pod: %v", err)
+	}
+	mustReconcile(t, ctx, s, key)
+
+	got := api.get(testPodUID)
+	if got == nil {
+		t.Fatal("the re-addressed pod has no worker")
+	}
+	if got.GetIp() != "10.0.0.8" {
+		t.Errorf("worker ip = %q, want 10.0.0.8", got.GetIp())
+	}
+	// A new record, not an edit of the stale one: the old Worker was
+	// deregistered (releasing its actors) and the pod registered anew, which
+	// is what a server-assigned uid that differs from the first shows.
+	if got.GetMetadata().GetUid() == before.GetMetadata().GetUid() {
+		t.Errorf("worker uid = %q, unchanged from the stale registration; want a new record", got.GetMetadata().GetUid())
+	}
+	if got.GetWorkerPodUid() != testPodUID {
+		t.Errorf("worker pod uid = %q, want %q", got.GetWorkerPodUid(), testPodUID)
+	}
+	if got.GetSandboxClass() != "gvisor" || !maps.Equal(got.GetLabels(), map[string]string{"foo": "bar"}) {
+		t.Errorf("worker sandbox class = %q, labels = %v; want gvisor and map[foo:bar] carried onto the new record", got.GetSandboxClass(), got.GetLabels())
+	}
+	if got.GetStatus().GetState() != ateapipb.WorkerState_WORKER_STATE_ACTIVE {
+		t.Errorf("worker state = %v, want ACTIVE", got.GetStatus().GetState())
+	}
+	if names := api.names(); len(names) != 1 {
+		t.Errorf("registry holds %v, want only the re-addressed pod's worker", names)
+	}
+
+	// Converged: a further reconcile of the same pod neither re-registers nor
+	// writes, so the record is not churned on every resync.
+	mustReconcile(t, ctx, s, key)
+	if again := api.get(testPodUID); again.GetMetadata().GetUid() != got.GetMetadata().GetUid() || again.GetMetadata().GetVersion() != got.GetMetadata().GetVersion() {
+		t.Errorf("worker after a no-op reconcile = %v, want it unchanged from %v", again.GetMetadata(), got.GetMetadata())
+	}
+}
+
 // TestSyncer_DeleteNeverEligiblePod verifies that deleting a pod that never got
 // an IP (and so was never registered) is a no-op rather than an error, which is
 // what keeps it from error-looping.

@@ -285,33 +285,31 @@ func (s *WorkerPoolSyncer) createOrUpdateWorker(ctx context.Context, key workerK
 	w, err := s.client.GetWorker(ctx, &ateapipb.GetWorkerRequest{Worker: key.workerRef()})
 	if status.Code(err) == codes.NotFound {
 		slog.InfoContext(ctx, "Syncer: registering worker", key.logAttrs()...)
-		worker := &ateapipb.Worker{
-			// Workers are global-scoped, so the name carries no atespace. See
-			// workerKey.workerName for where the name comes from.
-			Metadata:        &ateapipb.ResourceMetadata{Name: key.workerName()},
-			WorkerNamespace: pod.Namespace,
-			WorkerPool:      poolName,
-			WorkerPod:       pod.Name,
-			Ip:              pod.Status.PodIP,
-			WorkerPodUid:    string(pod.UID),
-			NodeName:        pod.Spec.NodeName,
-			SandboxClass:    string(pool.Spec.SandboxClass),
-			Labels:          pool.GetLabels(),
-			// Capacity is the Worker's to report, not the syncer's to infer
-			// from the pod: it is what the ateom can actually supply. Until
-			// that report lands, CreateWorker's reified ceiling holds the
-			// Worker to a single Actor.
-		}
-		// status is output-only: CreateWorker sets STATE_ACTIVE itself.
-		//
-		// ALREADY_EXISTS means we lost a create race; requeue and converge via
-		// the update path. INVALID_ARGUMENT is terminal — see
-		// processNextWorkItem.
-		_, err := s.client.CreateWorker(ctx, &ateapipb.CreateWorkerRequest{Worker: worker})
-		return err
+		return s.registerWorker(ctx, key, pod, pool)
 	}
 	if err != nil {
 		return fmt.Errorf("getting worker: %w", err)
+	}
+
+	// A pod's IP is assigned when its sandbox is created and changes only when
+	// the sandbox is recreated — a node reboot, a kubelet or container runtime
+	// restart, a host resume — which takes the ateom and every actor it hosted
+	// down with it while the pod keeps its UID, and so its key. The registered
+	// Worker then describes an ateom that no longer exists, at an address
+	// nothing answers on: the router keeps sending the assigned actors'
+	// requests there, each times out, and the actors can be neither suspended
+	// nor deleted because nothing reaches them. ip is immutable after create,
+	// and rightly so — the record is not the process now serving in the pod.
+	// So the stale Worker is deregistered, which releases its actors exactly
+	// as a deleted pod's are, and the pod is registered anew under its current
+	// IP, as the new ateom it is.
+	if w.GetIp() != pod.Status.PodIP {
+		slog.InfoContext(ctx, "Syncer: re-registering worker (pod IP changed)",
+			append(key.logAttrs(), slog.String("registered", w.GetIp()), slog.String("pod_ip", pod.Status.PodIP))...)
+		if err := s.reconcileDeadWorker(ctx, key); err != nil {
+			return err
+		}
+		return s.registerWorker(ctx, key, pod, pool)
 	}
 
 	// UpdateWorker replaces the whole resource, so the one mutable field is
@@ -319,7 +317,8 @@ func (s *WorkerPoolSyncer) createOrUpdateWorker(ctx context.Context, key workerK
 	// — anything else altered here, including a field cleared by omission, is
 	// rejected as INVALID_ARGUMENT. Everything else on a Worker is immutable
 	// after create, so drift there cannot be repaired by an update; it takes a
-	// new pod, which arrives under a new key.
+	// new pod, which arrives under a new key, or a new sandbox, which arrives
+	// as the IP change handled above.
 	var changed bool
 	if !maps.Equal(w.GetLabels(), pool.GetLabels()) {
 		slog.InfoContext(ctx, "Syncer: updating worker (labels changed)", key.logAttrs()...)
@@ -336,14 +335,6 @@ func (s *WorkerPoolSyncer) createOrUpdateWorker(ctx context.Context, key workerK
 		slog.DebugContext(ctx, "Syncer: registered worker sandbox class predates its pool",
 			append(key.logAttrs(), slog.String("registered", w.GetSandboxClass()), slog.String("pool", string(pool.Spec.SandboxClass)))...)
 	}
-	if w.GetIp() != pod.Status.PodIP {
-		// TODO: I don't think this is possible, but handling this case so we can
-		// log it just in case we can reproduce it. It is logged rather than
-		// repaired because ip is immutable on a registered Worker: writing the
-		// pod's value back would be rejected rather than applied.
-		slog.WarnContext(ctx, "Syncer: registered worker IP disagrees with its pod",
-			append(key.logAttrs(), slog.String("registered", w.GetIp()), slog.String("pod_ip", pod.Status.PodIP))...)
-	}
 	if !changed {
 		return nil
 	}
@@ -352,6 +343,34 @@ func (s *WorkerPoolSyncer) createOrUpdateWorker(ctx context.Context, key workerK
 	// update's precondition. ABORTED requeues the key; the retry re-fetches the
 	// worker at its new version.
 	_, err = s.client.UpdateWorker(ctx, &ateapipb.UpdateWorkerRequest{Worker: w})
+	return err
+}
+
+// registerWorker creates the Worker record for an eligible pod in pool. The
+// record is built from the pod and pool alone, so a rejected request would be
+// resent verbatim: INVALID_ARGUMENT is terminal (see processNextWorkItem).
+// ALREADY_EXISTS means a create race was lost; the requeue converges through
+// the update path.
+func (s *WorkerPoolSyncer) registerWorker(ctx context.Context, key workerKey, pod *corev1.Pod, pool *atev1alpha1.WorkerPool) error {
+	worker := &ateapipb.Worker{
+		// Workers are global-scoped, so the name carries no atespace. See
+		// workerKey.workerName for where the name comes from.
+		Metadata:        &ateapipb.ResourceMetadata{Name: key.workerName()},
+		WorkerNamespace: pod.Namespace,
+		WorkerPool:      pool.Name,
+		WorkerPod:       pod.Name,
+		Ip:              pod.Status.PodIP,
+		WorkerPodUid:    string(pod.UID),
+		NodeName:        pod.Spec.NodeName,
+		SandboxClass:    string(pool.Spec.SandboxClass),
+		Labels:          pool.GetLabels(),
+		// Capacity is the Worker's to report, not the syncer's to infer
+		// from the pod: it is what the ateom can actually supply. Until
+		// that report lands, CreateWorker's reified ceiling holds the
+		// Worker to a single Actor.
+	}
+	// status is output-only: CreateWorker sets STATE_ACTIVE itself.
+	_, err := s.client.CreateWorker(ctx, &ateapipb.CreateWorkerRequest{Worker: worker})
 	return err
 }
 
