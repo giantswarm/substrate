@@ -123,3 +123,56 @@ func TestReportFailsFastOnBadCredentials(t *testing.T) {
 		t.Errorf("Report() retried a permanent failure until the deadline: %v", err)
 	}
 }
+
+// An accepted report is not the end of it: the Worker record it landed on can
+// be replaced under a running ateom, and only the ateom can put capacity on the
+// replacement. So the report is re-sent, and keeps being re-sent, until the
+// ateom stops.
+func TestReportIsReassertedAfterAcceptance(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sends := 0
+	send := func() error {
+		sends++
+		if sends == 3 {
+			cancel()
+		}
+		return nil
+	}
+	err := reassertReport(ctx, send, time.Millisecond, time.Millisecond)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("reassertReport() = %v, want context.Canceled", err)
+	}
+	if sends != 3 {
+		t.Errorf("report re-sent %d times before the ateom stopped, want 3", sends)
+	}
+}
+
+// A re-assertion can fail the way a first report can: the record is missing
+// between a re-registration's delete and its create. That is retried in place
+// rather than reported as a failure, since the next attempt is what closes the
+// window.
+func TestReassertedReportRetriesAFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sends := 0
+	send := func() error {
+		sends++
+		switch sends {
+		case 1:
+			return errors.New("worker record does not exist yet")
+		case 2:
+			return nil
+		default:
+			cancel()
+			return nil
+		}
+	}
+	err := reassertReport(ctx, send, time.Millisecond, time.Millisecond)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("reassertReport() = %v, want context.Canceled after a retried re-assertion", err)
+	}
+	if sends != 3 {
+		t.Errorf("sends = %d, want 3 (the failed re-assertion, its retry, the next round)", sends)
+	}
+}
