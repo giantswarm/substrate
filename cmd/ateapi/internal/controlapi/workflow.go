@@ -212,8 +212,18 @@ func acquireLease(ctx context.Context, holder leaseHolder, key, subject string) 
 	return lease.Context(), lease, nil
 }
 
+// acquireActorLease takes the actor's lease and returns the context the
+// workflow runs under: bounded by the workflow deadline and the lease, but not
+// by the caller's cancellation. A lifecycle workflow runs to completion once
+// it holds the lease. A caller that gives up part-way — a router whose
+// parking budget elapsed, a client whose RPC deadline passed — used to cancel
+// the restore or the checkpoint in flight, after the workflow had durably
+// claimed the worker and moved the actor to RESUMING or SUSPENDING; nothing
+// reclaims either, and every retry restarted the same work from scratch to
+// die the same way at the same budget. The caller's values (peer, trace)
+// travel on; only its cancellation is left behind.
 func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resources.ActorRef) (context.Context, *store.Lease, error) {
-	workflowCtx, cancel := context.WithTimeout(ctx, w.workflowDeadline)
+	workflowCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.workflowDeadline)
 	leaseCtx, lease, err := acquireLease(workflowCtx, w.store, "lease:actor:"+actorRef.Atespace+":"+actorRef.Name, "actor")
 	if err != nil {
 		cancel()
