@@ -48,3 +48,31 @@ func TestAcquireActorLeaseWorkflowDeadline(t *testing.T) {
 		t.Fatal("workflow context did not reach its deadline")
 	}
 }
+
+func TestAcquireActorLeaseOutlivesCallerCancellation(t *testing.T) {
+	w := &ActorWorkflow{store: leaseStore{}, workflowDeadline: 200 * time.Millisecond}
+
+	callerCtx, cancelCaller := context.WithCancel(context.Background())
+	ctx, lease, err := w.acquireActorLease(callerCtx, resources.ActorRef{Atespace: "space", Name: "actor"})
+	if err != nil {
+		t.Fatalf("acquireActorLease: %v", err)
+	}
+	t.Cleanup(lease.Close)
+
+	// The caller gives up: the workflow context stays alive until its own
+	// deadline, which is what ends it.
+	cancelCaller()
+	select {
+	case <-ctx.Done():
+		t.Fatalf("workflow context ended with the caller's cancellation: %v", ctx.Err())
+	case <-time.After(50 * time.Millisecond):
+	}
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("context error = %v, want DeadlineExceeded", ctx.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("workflow context did not reach its deadline")
+	}
+}

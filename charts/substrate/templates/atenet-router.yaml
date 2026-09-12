@@ -87,6 +87,32 @@ data:
           key: /run/servicedns.podcert.ate.dev/credential-bundle.pem
 
     routes:
+    - name: substrate-actors-grpc
+      gateways:
+      - http
+      - https
+      matches:
+      - headers:
+        - name: content-type
+          value:
+            regex: '(?i)^application/grpc(?:\+[^;]+)?(?:;.*)?$'
+        path:
+          pathPrefix: /
+      policies:
+        substrateIngress:
+          host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
+          connectTargetPort: 8443
+          {{- include "substrate.atenetRouter.requestParking" . | nindent 10 }}
+          policies:
+            backendTLS:
+              cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+              key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+              root: /run/servicedns-ca/trust-bundle.pem
+      backends:
+      - backend: /dynamic
+        policies:
+          http:
+            version: HTTP/2.0
     - name: substrate-actors
       gateways:
       - http
@@ -99,6 +125,7 @@ data:
           host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
           # AgentGateway only uses atunnel's CONNECT listener.
           connectTargetPort: 8443
+          {{- include "substrate.atenetRouter.requestParking" . | nindent 10 }}
           policies:
             backendTLS:
               cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
@@ -142,11 +169,43 @@ data:
       listeners:
       - protocol: HTTP
         routes:
+        - name: substrate-actors-tunneled-grpc
+          matches:
+          - headers:
+            - name: content-type
+              value:
+                regex: '(?i)^application/grpc(?:\+[^;]+)?(?:;.*)?$'
+            path:
+              pathPrefix: /
+          policies:
+            substrateIngress:
+              host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
+              connectTargetPort: 8443
+              {{- include "substrate.atenetRouter.requestParking" . | nindent 14 }}
+              policies:
+                backendTLS:
+                  cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  root: /run/servicedns-ca/trust-bundle.pem
+          backends:
+          - backend: /dynamic
+            policies:
+              http:
+                version: HTTP/2.0
         - name: substrate-actors-tunneled
           matches:
           - path:
               pathPrefix: /
-          policies: *substrate-ingress
+          policies:
+            substrateIngress:
+              host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
+              connectTargetPort: 8443
+              {{- include "substrate.atenetRouter.requestParking" . | nindent 14 }}
+              policies:
+                backendTLS:
+                  cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  root: /run/servicedns-ca/trust-bundle.pem
           backends:
           - backend: /dynamic
         - name: substrate-actors-tunneled-grpc

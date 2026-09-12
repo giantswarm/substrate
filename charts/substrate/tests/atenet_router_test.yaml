@@ -1,0 +1,44 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: atenet router request parking
+templates:
+- atenet-router.yaml
+tests:
+- it: parks a request for a cold restore by default, on every actor route
+  documentSelector:
+    path: kind
+    value: ConfigMap
+  asserts:
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: "requestParking:\\n\\s+budget: 30s\\n\\s+max: 1024\\n\\s+retryFactor: 1.1\\n\\s+retryInterval: 100ms"
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: "(?s)(requestParking:.*){4}"
+
+- it: renders the configured parking budget
+  set:
+    atenetRouter.requestParking.budget: 2m
+    atenetRouter.requestParking.max: 0
+  documentSelector:
+    path: kind
+    value: ConfigMap
+  asserts:
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: "budget: 2m\\n\\s+max: 0\\n"
+  - notMatchRegex:
+      path: data["config.yaml"]
+      pattern: "budget: 30s"
