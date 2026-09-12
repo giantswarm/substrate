@@ -28,16 +28,9 @@ kind: ServiceAccount
 metadata:
   name: {{ include "substrate.fullname" (list "atelet" .) }}
   namespace: {{ .Release.Namespace }}
-{{- if .Values.atelet.imageCredentialProviderConfigYAML }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "substrate.fullname" (list "atelet-image-credential-provider" .) }}
-  namespace: {{ .Release.Namespace }}
-data:
-  config.yaml: |
-    {{- .Values.atelet.imageCredentialProviderConfigYAML | nindent 4 }}
+{{- with .Values.atelet.serviceAccount.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
