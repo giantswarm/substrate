@@ -375,7 +375,9 @@ func (s *WorkerPoolSyncer) registerWorker(ctx context.Context, key workerKey, po
 		// Capacity is the Worker's to report, not the syncer's to infer
 		// from the pod: it is what the ateom can actually supply. Until
 		// that report lands, CreateWorker's reified ceiling holds the
-		// Worker to a single Actor.
+		// Worker to a single Actor. That holds for a re-registration too:
+		// the ateom keeps re-asserting its report, so a record replaced
+		// under it receives the capacity within one re-assertion.
 	}
 	// status is output-only: CreateWorker sets STATE_ACTIVE itself.
 	_, err := s.client.CreateWorker(ctx, &ateapipb.CreateWorkerRequest{Worker: worker})

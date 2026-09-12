@@ -16,12 +16,14 @@ package workerservice
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/ateletauth/ateletauthtest"
+	"github.com/agent-substrate/substrate/cmd/ateapi/internal/scheduling"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/internal/resources"
@@ -208,5 +210,70 @@ func TestSetWorkerCapacity_RejectsNonsense(t *testing.T) {
 	}
 	if diff := cmp.Diff(seeded.GetStatus().GetCapacity(), after.GetStatus().GetCapacity(), protocmp.Transform()); diff != "" {
 		t.Errorf("capacity changed despite every report being refused (-want +got):\n%s", diff)
+	}
+}
+
+// storedWorkers offers the store's Workers to the scheduler, so a test can ask
+// the placement question the resume workflow asks.
+type storedWorkers struct{ st store.Interface }
+
+func (s storedWorkers) Workers() ([]*ateapipb.Worker, error) {
+	page, err := s.st.ListWorkers(context.Background(), store.ListOptions{PageSize: 100})
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// A Worker record can be replaced under a running ateom -- the syncer
+// re-registers a worker whose pod IP changed -- and the replacement is created
+// without capacity, so nothing is placed on it. The ateom re-asserts the report
+// it already made; this is the seam that report lands on: the same report,
+// against the same name, puts the capacity on the new record, and the scheduler
+// then offers it.
+func TestSetWorkerCapacity_ReassertedReportLandsOnAReplacementRecord(t *testing.T) {
+	st, cleanup := storetest.SetupTestStore(t)
+	defer cleanup()
+	s := New(st)
+	authed := ateletauthtest.ContextWith(ateletauthtest.CertOn(t, capNode))
+	ctx := context.Background()
+	constraints := scheduling.Constraints{SandboxClass: "gvisor"}
+
+	// The first report, accepted on the record that existed then.
+	original := seedReportedWorker(t, st, capNode, nil)
+	if _, err := s.SetWorkerCapacity(authed, setRequest(1)); err != nil {
+		t.Fatalf("first SetWorkerCapacity() failed: %v", err)
+	}
+
+	// The re-registration: the record is deleted and a new one created under
+	// the same name, the way registerWorker builds it, with no capacity.
+	if _, err := st.DeleteWorker(ctx, capWorkerName, store.DeletePreconditions{}); err != nil {
+		t.Fatalf("deleting the original worker: %v", err)
+	}
+	replacement := seedReportedWorker(t, st, capNode, nil)
+	if replacement.GetMetadata().GetUid() == original.GetMetadata().GetUid() {
+		t.Fatalf("replacement has the original's uid %q, want a new record", original.GetMetadata().GetUid())
+	}
+	if _, err := scheduling.New(storedWorkers{st}).Schedule(ctx, constraints); !errors.Is(err, scheduling.ErrNoCapacity) {
+		t.Fatalf("Schedule() before the re-asserted report = %v, want ErrNoCapacity on a replacement without capacity", err)
+	}
+
+	// The ateom's next re-assertion: the same report, against the same name.
+	if _, err := s.SetWorkerCapacity(authed, setRequest(1)); err != nil {
+		t.Fatalf("re-asserted SetWorkerCapacity() failed: %v", err)
+	}
+	after, err := st.GetWorker(ctx, capWorkerName)
+	if err != nil {
+		t.Fatalf("GetWorker: %v", err)
+	}
+	if got, want := after.GetStatus().GetCapacity().GetActors(), int32(1); got != want {
+		t.Errorf("replacement capacity.actors = %d, want %d from the re-asserted report", got, want)
+	}
+	placed, err := scheduling.New(storedWorkers{st}).Schedule(ctx, constraints)
+	if err != nil {
+		t.Fatalf("Schedule() after the re-asserted report failed: %v", err)
+	}
+	if got := placed.GetMetadata().GetName(); got != capWorkerName {
+		t.Errorf("Schedule() placed on %q, want the re-registered worker %q", got, capWorkerName)
 	}
 }
