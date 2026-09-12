@@ -232,6 +232,7 @@ const (
 	ReasonCorruptedAssignment = string(ateerrors.ReasonCorruptedAssignment)
 	ReasonWorkerReassigned    = string(ateerrors.ReasonWorkerReassigned)
 	ReasonWorkerPodGone       = string(ateerrors.ReasonWorkerPodGone)
+	ReasonRestoreTimedOut     = string(ateerrors.ReasonRestoreTimedOut)
 	ReasonUnknown             = string(ateerrors.ReasonUnknown)
 )
 
