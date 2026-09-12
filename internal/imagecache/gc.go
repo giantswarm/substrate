@@ -121,6 +121,7 @@ func (s *Store) InUse() (RootSet, error) {
 	// when suppressed.
 	dbg := slog.Default().Enabled(context.Background(), slog.LevelDebug)
 	rs := RootSet{ImageDigests: map[string]bool{}, LayerHexes: map[string]bool{}, LayerSets: map[string]bool{}}
+	s.addPinnedRoots(&rs, dbg)
 	if s.actorsDir == "" {
 		return rs, nil
 	}
@@ -199,6 +200,36 @@ func addImageRoots(rs *RootSet, digest string, layers []string, bundle string, d
 	}
 	if len(hexes) > 0 {
 		rs.LayerSets[layerSetSignature(hexes)] = true
+	}
+}
+
+// Pin protects img from eviction: its record, layers and exact layer set
+// join every root set InUse computes, next to the bundle specs of placed
+// actors, so the watermark pass leaves it alone however far the volume is
+// over the high watermark. For the images a node must always be able to
+// start an actor from — a pool's actor images on a cache volume under
+// foreign disk pressure, where the pass would otherwise evict them every
+// period and every first actor after an idle spell would pay a cold pull
+// and unpack on the resume path.
+//
+// Pinning neither pulls nor persists: the caller pins what EnsureImage
+// returned and pins again after a restart. Pinning a digest again replaces
+// its layer set (a re-pull records the same one).
+func (s *Store) Pin(img *Image) {
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	if s.pinned == nil {
+		s.pinned = map[string][]string{}
+	}
+	s.pinned[img.Digest.String()] = append([]string(nil), img.LayerDirs...)
+}
+
+// addPinnedRoots roots every pinned image (see Pin).
+func (s *Store) addPinnedRoots(rs *RootSet, dbg bool) {
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	for digest, layers := range s.pinned {
+		addImageRoots(rs, digest, layers, "pinned", dbg)
 	}
 }
 
