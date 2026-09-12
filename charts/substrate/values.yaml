@@ -53,6 +53,21 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # atelet's node-local image cache: the eviction pass and what it keeps.
+  # null leaves atelet's built-in default: a pass every 5m that evicts,
+  # least recently used first, while the cache volume is above 85 % until
+  # it is below 80 %, never a layer younger than 2m, no absolute cap.
+  imageCache:
+    gcPeriod: null # --image-cache-gc-period, e.g. 5m; 0 disables the pass
+    highPercent: null # --image-cache-high-percent
+    lowPercent: null # --image-cache-low-percent
+    minAge: null # --image-cache-min-age, e.g. 2m
+    maxBytes: null # --image-cache-max-bytes
+    # Image references pulled at every pass and never evicted: the images
+    # of the pool's ActorTemplates, on nodes whose cache volume sits above
+    # the watermark, so the first actor after an idle spell does not pay a
+    # cold pull and unpack.
+    pinnedImages: []
 
 # Name of a ConfigMap in the release namespace that supplies per-environment
 # overrides for ate-api-server (ATE_API_POSTGRES_CONNECTION_STRING, ...).

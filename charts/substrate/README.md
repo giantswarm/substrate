@@ -41,5 +41,7 @@ See `values.yaml` for the full set; the important keys:
 | `postgres.storageSize` | `1Gi` | In-cluster PostgreSQL PVC size |
 | `rustfs.enabled` | `true` | Deploy an in-cluster S3-compatible RustFS bucket for snapshots |
 | `atelet.storageBackend` | `s3` | Default snapshot backend, wired to RustFS when `rustfs.enabled=true` |
+| `atelet.imageCache.{gcPeriod,highPercent,lowPercent,minAge,maxBytes}` | `null` (atelet's defaults: `5m`, `85`, `80`, `2m`, no cap) | atelet's image-cache eviction pass: `--image-cache-gc-period`, `--image-cache-high-percent`, `--image-cache-low-percent`, `--image-cache-min-age`, `--image-cache-max-bytes` |
+| `atelet.imageCache.pinnedImages` | `[]` | Image references every pass pulls and never evicts (`--image-cache-pinned-images`): the pool's ActorTemplate images on nodes whose cache volume stays above the watermark |
 | `atelet.gcpAuthForImagePulls` | `false` | Enable only when using GCP registry auth |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics and the router access log |
