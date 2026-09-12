@@ -105,10 +105,12 @@ func verifyClientOnSameNode(node *substratex509.PodIdentity) func(tls.Connection
 // worker says its capacity and hardware identity are, in one
 // WorkerService.RegisterWorker call so capacity and hardware land atomically.
 //
-// It returns the control plane's error unwrapped so the caller retries: a
-// worker reports once, so an accepted call is the only thing that puts
-// capacity and hardware on the Worker, and a Worker record the syncer has not
-// created yet is the ordinary reason for a first attempt to fail.
+// It returns the control plane's error unwrapped so the caller retries: an
+// accepted call is the only thing that puts capacity and hardware on the
+// Worker, and a Worker record the syncer has not created yet is the ordinary
+// reason for a first attempt to fail. A worker keeps re-asserting its report
+// after that, so an accepted call is logged at Debug; the control plane logs
+// the ones that changed what is recorded.
 func (s *ateomSupportServer) RegisterWorker(ctx context.Context, req *ateletpb.RegisterWorkerRequest) (*ateletpb.RegisterWorkerResponse, error) {
 	// Identity comes only from the mTLS certificate, never from the request:
 	// a worker can report its own capacity and hardware and no one else's.
@@ -130,7 +132,7 @@ func (s *ateomSupportServer) RegisterWorker(ctx context.Context, req *ateletpb.R
 	}); err != nil {
 		return nil, err
 	}
-	slog.InfoContext(ctx, "Registered worker capacity and hardware",
+	slog.DebugContext(ctx, "Registered worker capacity and hardware",
 		slog.String("pod_uid", workerIdentity.PodUID), slog.Any("capacity", req.GetCapacity()), slog.Any("hardware", req.GetHardware()))
 	return &ateletpb.RegisterWorkerResponse{}, nil
 }
