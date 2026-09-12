@@ -16,8 +16,10 @@
 // Envoy → ext_proc → ateapi → worker path: a deliberately 1-worker pool is
 // oversubscribed by two actors, so a request for the suspended actor parks
 // until the worker frees (ParkThenServed) or the park budget elapses
-// (BudgetExhaustion). It runs with the router's default parking configuration
-// (budget 5s); flag-dependent behavior (lot-full shed, parking disabled,
+// (BudgetExhaustion). It runs with a 5s park budget -- the atenet router's
+// flag default; the chart's e2e install pins its agentgateway router to the
+// same value, the chart's own default being sized for a cold image restore
+// -- and flag-dependent behavior (lot-full shed, parking disabled,
 // custom budgets) is covered by unit tests instead, because the shared router
 // cannot be reconfigured per test.
 package parking
@@ -39,7 +41,8 @@ import (
 // k8s namespace holding its pool.
 var parkingAtespace = e2e.FixtureName("ate-e2e") + "-parking"
 
-// The park budget the deployed router runs with (its flag default). The
+// The park budget the deployed router runs with (the atenet flag default;
+// the helm-e2e install sets atenetRouter.requestParking.budget to it). The
 // timing assertions below are windows around it, wide enough for scheduling
 // jitter but narrow enough to prove parking happened and that the router —
 // not an Envoy timeout — produced the verdict.
