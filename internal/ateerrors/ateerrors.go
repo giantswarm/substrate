@@ -70,6 +70,12 @@ const (
 	// separates the two.
 	ReasonWorkloadNotReady Reason = "WORKLOAD_NOT_READY"
 
+	// ReasonRestoreTimedOut marks an actor whose atelet restore kept exceeding
+	// its budget: every attempt the Resume workflow allows ran out, or the
+	// workflow deadline was reached while one ran. Failed rather than left
+	// RESUMING on a claimed worker, where nothing would reclaim it.
+	ReasonRestoreTimedOut Reason = "RESTORE_TIMED_OUT"
+
 	// Control-plane failure reasons for ate.actor.crashes metric.
 	ReasonCorruptedAssignment Reason = "CORRUPTED_ASSIGNMENT"
 	ReasonWorkerReassigned    Reason = "WORKER_REASSIGNED"
@@ -88,6 +94,7 @@ var AllReasons = []Reason{
 	ReasonInvalidContainerConfig,
 	ReasonLocalSnapshotGone,
 	ReasonWorkloadNotReady,
+	ReasonRestoreTimedOut,
 	ReasonCorruptedAssignment,
 	ReasonWorkerReassigned,
 	ReasonWorkerPodGone,
