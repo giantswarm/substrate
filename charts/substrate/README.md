@@ -55,6 +55,9 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |
+| `atelet.serviceAccount.annotations` | `{}` | Annotations on atelet's ServiceAccount: the pod identity an external snapshot store trusts (`eks.amazonaws.com/role-arn`, `iam.gke.io/gcp-service-account`) |
+| `ateApiServer.serviceAccount.annotations` | `{}` | Annotations on ate-api-server's ServiceAccount, the same use |
+| `ateApiServer.extraEnv` | `[]` | Environment appended verbatim to the ate-api-server container (an S3-compatible endpoint's `AWS_ENDPOINT_URL`, `AWS_REGION`, ...); the counterpart of `atelet.extraEnv` |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics, the actor lifecycle events and the router access log |
 | `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
 | `otel.traces.endpoint` | `""` | OTLP endpoint for traces, overriding `otel.endpoint` |
