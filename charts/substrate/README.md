@@ -65,6 +65,8 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderConfig` | `""` | Host path to the kubelet credential provider config; set together with the bin directory |
 | `atelet.imageCredentialProviderConfigYAML` | `""` | Credential provider config as text, rendered into a ConfigMap, for nodes where that file cannot be authored or must differ from the kubelet's; mutually exclusive with the host path |
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
+| `atelet.imageCache.{gcPeriod,highPercent,lowPercent,minAge,maxBytes}` | `null` (atelet's defaults: `5m`, `85`, `80`, `2m`, no cap) | atelet's image-cache eviction pass: `--image-cache-gc-period`, `--image-cache-high-percent`, `--image-cache-low-percent`, `--image-cache-min-age`, `--image-cache-max-bytes` |
+| `atelet.imageCache.pinnedImages` | `[]` | Image references every pass pulls and never evicts (`--image-cache-pinned-images`): the pool's ActorTemplate images on nodes whose cache volume stays above the watermark |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
