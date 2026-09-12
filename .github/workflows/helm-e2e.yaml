@@ -71,7 +71,8 @@ jobs:
           --set image.tag=helm-e2e \
           --set 'atelet.extraArgs[0]=--localhost-registry-replacement=kind-registry:5000' \
           --set otel.endpoint=http://opentelemetry-collector.otel-system.svc:4317 \
-          --set postgres.resources.requests.cpu=500m
+          --set postgres.resources.requests.cpu=500m \
+          --set atenetRouter.requestParking.budget=5s
     - name: Bootstrap mTLS authorities
       run: |
         hack/install-ate-kind.sh --create-podcertificate-controller-cas

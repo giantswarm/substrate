@@ -103,3 +103,12 @@ are emitted without a tag, letting `ko resolve` supply the digest at build time.
 {{- printf "%s/%s" $registry $name -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Request parking on the actor routes of the atenet-router agentgateway: the
+substrateIngress policy's requestParking block, from .Values.atenetRouter.
+*/}}
+{{- define "substrate.atenetRouter.requestParking" -}}
+requestParking:
+  {{- toYaml .Values.atenetRouter.requestParking | nindent 2 }}
+{{- end -}}
