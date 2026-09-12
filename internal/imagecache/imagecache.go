@@ -224,6 +224,13 @@ type Store struct {
 	// (removeStaleRecord), so a hit's last-use touch and eviction's final
 	// re-check can never interleave. Uncontended except during a pass.
 	hitMu sync.RWMutex
+
+	// pinMu guards pinned.
+	pinMu sync.Mutex
+	// pinned holds the images Pin protected: digest string -> the layer
+	// dirs the image had when it was pinned. Folded into every root set
+	// InUse computes. In-memory only: pins do not survive a restart.
+	pinned map[string][]string
 }
 
 // Option configures a Store.

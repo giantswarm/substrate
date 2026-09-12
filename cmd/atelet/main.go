@@ -229,8 +229,13 @@ func main() {
 	if err != nil {
 		serverboot.Fatal(ctx, "Failed to open image cache", err)
 	}
+	imageGC := newImageCacheGC(imageCache, *imageCacheDir)
 	if *imageCacheGCPeriod > 0 {
-		go newImageCacheGC(imageCache, *imageCacheDir).Run(ctx)
+		go imageGC.Run(ctx)
+	} else if len(*imageCachePinned) > 0 {
+		// No pass to root them against, but a pinned image is still pulled
+		// once so the node starts warm.
+		go imageGC.ensurePinned(ctx)
 	}
 
 	wrappedAnonGCS, err := objectstorage.NewGCSClient(ctx, option.WithoutAuthentication())
