@@ -661,10 +661,11 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		req.Scope = actorSnapshotContentScopeToAtelet(actorTemplate.GetSnapshotConfig().GetOnPause())
 		tele.WireSnapshotScope = ateattr.SnapshotScopeValue(req.Scope)
 
-		if _, err = client.Restore(ctx, req); err != nil {
-			return tele, handleAteletError(ctx, w.store, actorRef, ateattr.OperationResume, "Restore", false, err)
-		}
-		return tele, nil
+		err = w.restoreWithBudget(ctx, actorRef, func(ctx context.Context) error {
+			_, err := client.Restore(ctx, req)
+			return err
+		})
+		return tele, w.crashOnRestoreFailure(ctx, actorRef, err)
 	} else if !src.SnapshotURI.IsZero() {
 		slog.InfoContext(ctx, "Actor has durable snapshot; Restoring from snapshot")
 		tele.SnapshotKind = ateattr.SnapshotKindLatest
@@ -693,10 +694,11 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 			CpuMilli:      cpuMilli,
 			MemoryBytes:   memBytes,
 		}
-		if _, err = client.Restore(ctx, req); err != nil {
-			return tele, handleAteletError(ctx, w.store, actorRef, ateattr.OperationResume, "Restore", false, err)
-		}
-		return tele, nil
+		err = w.restoreWithBudget(ctx, actorRef, func(ctx context.Context) error {
+			_, err := client.Restore(ctx, req)
+			return err
+		})
+		return tele, w.crashOnRestoreFailure(ctx, actorRef, err)
 	} else {
 		slog.InfoContext(ctx, "Actor has no snapshot; Booting from ActorTemplate spec")
 		tele.SnapshotKind = ateattr.SnapshotKindBoot
