@@ -37,6 +37,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateompath"
 	"github.com/agent-substrate/substrate/internal/imagecache"
+	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
 )
@@ -48,6 +49,7 @@ var (
 	imageCacheMaxBytes = pflag.Int64("image-cache-max-bytes", 0, "Absolute cap on the summed size of cached layers, evicted down to independently of the volume watermarks. 0 means no cap.")
 	imageCacheMinAge   = pflag.Duration("image-cache-min-age", 2*time.Minute, "Layers and image records younger than this are never evicted (protects images pulled but not yet mounted). Governs startup orphan recovery too, so it is live even with the periodic pass disabled.")
 	imageCacheGCDryRun = pflag.Bool("image-cache-gc-dry-run", false, "Compute and log eviction decisions without deleting anything.")
+	imageCachePinned   = pflag.StringSlice("image-cache-pinned-images", nil, "Image references the cache always holds: each is pulled at every eviction pass (once at start when the pass is disabled) and rooted against eviction, so the first actor on the node that needs it finds it unpacked whatever the volume's usage. For the images of a pool's ActorTemplates on nodes whose cache volume sits above --image-cache-high-percent, where the pass would otherwise evict them every period.")
 )
 
 const (
@@ -75,6 +77,11 @@ func validateImageCacheGCFlags() error {
 		// A negative min-age inverts the veto (the cutoff lands in the
 		// future), making just-pulled layers evictable.
 		return fmt.Errorf("--image-cache-min-age %v must be >= 0", *imageCacheMinAge)
+	}
+	for _, ref := range *imageCachePinned {
+		if _, err := name.ParseReference(ref); err != nil {
+			return fmt.Errorf("--image-cache-pinned-images %q: %w", ref, err)
+		}
 	}
 	if imageCacheDirOutsideBasePath(*imageCacheDir) {
 		slog.Warn("Image cache dir is outside the ateom base path; its volume watermarks are measured separately from actor state",
@@ -139,6 +146,8 @@ func imageCacheGCTarget(capacity, available uint64, cacheSize, maxBytes int64, h
 type gcStore interface {
 	CacheSize() (int64, error)
 	EvictUnused(ctx context.Context, targetBytes int64, dryRun bool) (imagecache.EvictStats, error)
+	EnsureImage(ctx context.Context, ref string) (*imagecache.Image, error)
+	Pin(img *imagecache.Image)
 }
 
 // imageCacheGC is the loop's state: configuration snapshotted from the
@@ -152,6 +161,8 @@ type imageCacheGC struct {
 	lowPct   int
 	maxBytes int64
 	dryRun   bool
+	// pinned are the image references every pass pulls and pins first.
+	pinned []string
 
 	consecutiveShortfalls int
 }
@@ -165,6 +176,7 @@ func newImageCacheGC(store *imagecache.Store, cacheDir string) *imageCacheGC {
 		lowPct:   *imageCacheLowPct,
 		maxBytes: *imageCacheMaxBytes,
 		dryRun:   *imageCacheGCDryRun,
+		pinned:   *imageCachePinned,
 	}
 }
 
@@ -204,6 +216,10 @@ func (g *imageCacheGC) runPass(ctx context.Context) {
 				slog.Any("panic", r), slog.String("stack", string(debug.Stack())))
 		}
 	}()
+
+	// Pins first, so the pass roots them and measures the volume with them
+	// in it.
+	g.ensurePinned(ctx)
 
 	var st unix.Statfs_t
 	if err := unix.Statfs(g.cacheDir, &st); err != nil {
@@ -246,6 +262,26 @@ func (g *imageCacheGC) runPass(ctx context.Context) {
 		slog.Duration("took", time.Since(tStart)),
 	}
 	g.noteOutcome(ctx, classifyGCPass(err, target, stats.FreedBytes), err, attrs)
+}
+
+// ensurePinned pulls every pinned image that is not cached and pins it.
+// A pull that fails — the registry is down, the tag is gone — is logged and
+// tried again next pass; the pass still runs and roots what did pin. A pull
+// in progress holds the pass up (the store's pull timeout bounds it): the
+// point of a pin is that the image is there before it is needed, and
+// evicting around a pull in flight would be no faster.
+func (g *imageCacheGC) ensurePinned(ctx context.Context) {
+	for _, ref := range g.pinned {
+		img, err := g.store.EnsureImage(ctx, ref)
+		if err != nil {
+			slog.WarnContext(ctx, "Pinned image could not be pulled; it is unprotected until a pass pulls it",
+				slog.String("image", ref), slog.Any("err", err))
+			continue
+		}
+		g.store.Pin(img)
+		slog.DebugContext(ctx, "Pinned image ensured",
+			slog.String("image", ref), slog.String("digest", img.Digest.String()))
+	}
 }
 
 // noteOutcome logs one finished pass and advances the shortfall backoff.
