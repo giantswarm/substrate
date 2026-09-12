@@ -80,6 +80,21 @@ atelet:
     # cold pull and unpack.
     pinnedImages: []
 
+atenetRouter:
+  # Request parking on the actor routes (agentgateway's substrateIngress
+  # requestParking): a request to a suspended actor is held while the actor
+  # resumes, for at most `budget`. The budget has to cover a cold restore --
+  # the image pull and unpack when the node's cache does not hold the actor's
+  # image, seconds on a warm disk and longer on a slow one -- or the request
+  # fails at the budget, and the restore it started is repeated from scratch by
+  # the next one. `max` bounds how many requests may wait at once; 0 disables
+  # parking.
+  requestParking:
+    budget: 30s
+    max: 1024
+    retryInterval: 100ms
+    retryFactor: 1.1
+
 # Name of a ConfigMap in the release namespace that supplies per-environment
 # overrides for ate-api-server (ATE_API_POSTGRES_CONNECTION_STRING, ...).
 # Mounted via envFrom with optional=true. Created by the chart from these values.

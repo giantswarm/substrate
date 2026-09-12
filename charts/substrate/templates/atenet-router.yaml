@@ -86,6 +86,7 @@ data:
         substrateIngress:
           host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
           connectTargetPort: 8443
+          {{- include "substrate.atenetRouter.requestParking" . | nindent 10 }}
           policies:
             backendTLS:
               cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
@@ -107,6 +108,7 @@ data:
         substrateIngress:
           host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
           connectTargetPort: 8443
+          {{- include "substrate.atenetRouter.requestParking" . | nindent 10 }}
           policies:
             backendTLS:
               cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
@@ -148,6 +150,7 @@ data:
             substrateIngress:
               host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
               connectTargetPort: 8443
+              {{- include "substrate.atenetRouter.requestParking" . | nindent 14 }}
               policies:
                 backendTLS:
                   cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
@@ -166,6 +169,7 @@ data:
             substrateIngress:
               host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
               connectTargetPort: 8443
+              {{- include "substrate.atenetRouter.requestParking" . | nindent 14 }}
               policies:
                 backendTLS:
                   cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
