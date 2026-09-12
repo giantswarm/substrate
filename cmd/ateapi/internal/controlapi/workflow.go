@@ -113,11 +113,14 @@ type ActorWorkflow struct {
 	egressGatewayAddress string
 	pluginRegistry       VolumePluginRegistry
 	workflowDeadline     time.Duration
+	restoreBudget        time.Duration
 	objectStore          objectstore.Store
 }
 
 // NewActorWorkflow creates a new ActorWorkflow. workflowDeadline bounds how
-// long a single Resume/Suspend can run end-to-end; instruments and objectStore
+// long a single Resume/Suspend can run end-to-end; restoreBudget bounds one
+// atelet restore attempt within a Resume (see restoreWithBudget; 0 leaves an
+// attempt bounded by the workflow deadline alone); instruments and objectStore
 // may be nil.
 func NewActorWorkflow(
 	store actorWorkflowStore,
@@ -129,6 +132,7 @@ func NewActorWorkflow(
 	egressGatewayAddress string,
 	pluginRegistry VolumePluginRegistry,
 	workflowDeadline time.Duration,
+	restoreBudget time.Duration,
 	objectStore objectstore.Store,
 ) *ActorWorkflow {
 	return &ActorWorkflow{
@@ -142,6 +146,7 @@ func NewActorWorkflow(
 		egressGatewayAddress: egressGatewayAddress,
 		pluginRegistry:       pluginRegistry,
 		workflowDeadline:     workflowDeadline,
+		restoreBudget:        restoreBudget,
 		objectStore:          objectStore,
 	}
 }

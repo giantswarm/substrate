@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/actorevent"
@@ -29,6 +30,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// crashRecordTimeout bounds the store writes that record a crash.
+const crashRecordTimeout = 30 * time.Second
 
 // maybeCrashActor inspects err returned by an atelet RPC and crashes the actor
 // if err carries the actorCrashed=true metadata directive.
@@ -52,7 +56,12 @@ func maybeCrashActor(ctx context.Context, st crashActorStore, actorRef resources
 		)
 		slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed due to error", attrs...)
 
-		if cerr := crashActor(ctx, st, actorRef, opName, reason); cerr != nil {
+		// The record must land even when the failure was the workflow deadline
+		// itself (RESTORE_TIMED_OUT): the write runs detached from the workflow
+		// context, under its own bound.
+		crashCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), crashRecordTimeout)
+		defer cancel()
+		if cerr := crashActor(crashCtx, st, actorRef, opName, reason); cerr != nil {
 			slog.ErrorContext(ctx, "Failed to crash actor", slog.Any("err", cerr))
 			return cerr
 		}
