@@ -33,10 +33,12 @@ type workerCapacityService struct {
 
 // SetWorkerCapacity records what the calling worker says it has.
 //
-// It returns the control plane's error unwrapped so the caller retries: a
-// worker reports once, so an accepted call is the only thing that puts
-// capacity on the Worker, and a Worker record the syncer has not created yet
-// is the ordinary reason for a first attempt to fail.
+// It returns the control plane's error unwrapped so the caller retries: an
+// accepted call is the only thing that puts capacity on the Worker, and a
+// Worker record the syncer has not created yet is the ordinary reason for a
+// first attempt to fail. A worker keeps re-asserting its report after that, so
+// an accepted call is logged at Debug; the control plane logs the ones that
+// changed what is recorded.
 func (s *workerCapacityService) SetWorkerCapacity(ctx context.Context, req *ateletpb.SetWorkerCapacityRequest) (*ateletpb.SetWorkerCapacityResponse, error) {
 	// Identity comes only from the mTLS certificate, never from the request:
 	// a worker can report its own capacity and no one else's.
@@ -53,7 +55,7 @@ func (s *workerCapacityService) SetWorkerCapacity(ctx context.Context, req *atel
 	}); err != nil {
 		return nil, err
 	}
-	slog.InfoContext(ctx, "Recorded worker capacity",
+	slog.DebugContext(ctx, "Recorded worker capacity",
 		slog.String("pod_uid", workerIdentity.PodUID), slog.Any("capacity", req.GetCapacity()))
 	return &ateletpb.SetWorkerCapacityResponse{}, nil
 }
