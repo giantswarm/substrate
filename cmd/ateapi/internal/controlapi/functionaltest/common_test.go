@@ -220,6 +220,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 		instruments,
 		"",
 		30*time.Second,
+		0,
 		volPlugins,
 		objectStore,
 		testActorJWTIssuer,

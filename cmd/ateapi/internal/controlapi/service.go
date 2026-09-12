@@ -74,7 +74,8 @@ type VolumePluginRegistry interface {
 // ate-api always builds one.
 //
 // actorJWTIssuer is copied verbatim into the iss claim of every actor JWT.
-// actorWorkflowDeadline bounds each Resume/Suspend workflow end-to-end.
+// actorWorkflowDeadline bounds each Resume/Suspend workflow end-to-end;
+// actorRestoreBudget bounds one atelet restore attempt within a Resume.
 func NewRPCService(
 	persistence store.Interface,
 	workerCache *workercache.Cache,
@@ -85,6 +86,7 @@ func NewRPCService(
 	instruments *Instruments,
 	egressGatewayAddress string,
 	actorWorkflowDeadline time.Duration,
+	actorRestoreBudget time.Duration,
 	volumePlugins map[string]volume.VolumePluginControlPlane,
 	objectStore objectstore.Store,
 	actorJWTIssuer string,
@@ -106,7 +108,7 @@ func NewRPCService(
 		actorIDJWTPool:        actorIDJWTPool,
 		actorIDCAPool:         actorIDCAPool,
 	}
-	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, objectStore)
+	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
 }
