@@ -87,6 +87,7 @@ var (
 	drainTimeout = pflag.Duration("drain-timeout", 15*time.Second, "Deadline for the graceful gRPC drain on shutdown. In-flight RPCs still running past it are forcefully cancelled.")
 
 	actorWorkflowDeadline = pflag.Duration("actor-workflow-deadline", 5*time.Minute, "Maximum wall-clock duration of a single Resume/Suspend workflow; raise it for slow image registries.")
+	actorRestoreBudget    = pflag.Duration("actor-restore-budget", 90*time.Second, "Budget of one atelet restore attempt within a Resume workflow, a cold image pull and unpack included. An attempt that exceeds it is retried, up to 3 attempts within --actor-workflow-deadline; an actor whose restore keeps exceeding it is failed with reason RESTORE_TIMED_OUT instead of staying RESUMING. 0 leaves an attempt bounded by the workflow deadline alone.")
 
 	showVersion  = pflag.Bool("version", false, "Print version and exit.")
 	logLevelFlag = pflag.String("log-level", "info", "Minimum log level: debug, info, warn, or error.")
@@ -211,7 +212,7 @@ func main() {
 		dialerOpts = append(dialerOpts, controlapi.WithInsecureCredentials())
 	}
 	ateletDialer := controlapi.NewAteletDialer(workerPodInformer.GetIndexer(), ateletPodInformer.GetIndexer(), *ateletClientCredBundle, *podIdentityCACerts, dialerOpts...)
-	controlSrv := controlapi.NewRPCService(persistence, workerCache, sandboxConfigLister, csiDriverConfigLister, storageClassLister, ateletDialer, instruments, *egressGatewayAddress, *actorWorkflowDeadline, volPlugins, objectStore)
+	controlSrv := controlapi.NewRPCService(persistence, workerCache, sandboxConfigLister, csiDriverConfigLister, storageClassLister, ateletDialer, instruments, *egressGatewayAddress, *actorWorkflowDeadline, *actorRestoreBudget, volPlugins, objectStore)
 
 	// Drive stored ActorTemplates through the golden actor flow.
 	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv)
@@ -339,6 +340,7 @@ func logFlagValues(ctx context.Context) {
 		slog.Duration("drain-delay", *drainDelay),
 		slog.Duration("drain-timeout", *drainTimeout),
 		slog.Duration("actor-workflow-deadline", *actorWorkflowDeadline),
+		slog.Duration("actor-restore-budget", *actorRestoreBudget),
 	)
 }
 
