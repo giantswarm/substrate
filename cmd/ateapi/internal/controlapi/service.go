@@ -59,7 +59,8 @@ type VolumePluginRegistry interface {
 }
 
 // NewRPCService creates an RPC service. actorWorkflowDeadline bounds how long a single
-// Resume/Suspend workflow can run end-to-end. instruments and objectStore may be nil.
+// Resume/Suspend workflow can run end-to-end; actorRestoreBudget bounds one atelet
+// restore attempt within a Resume. instruments and objectStore may be nil.
 func NewRPCService(
 	persistence store.Interface,
 	workerCache *workercache.Cache,
@@ -70,6 +71,7 @@ func NewRPCService(
 	instruments *Instruments,
 	egressGatewayAddress string,
 	actorWorkflowDeadline time.Duration,
+	actorRestoreBudget time.Duration,
 	volumePlugins map[string]volume.VolumePluginControlPlane,
 	objectStore objectstore.Store,
 ) *RPCService {
@@ -85,7 +87,7 @@ func NewRPCService(
 		volumePlugins:         volumePlugins,
 		objectStore:           objectStore,
 	}
-	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, objectStore)
+	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
 }
