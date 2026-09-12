@@ -131,6 +131,26 @@ spec:
         - --grpc-server-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
         - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
         - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+{{- with .Values.atelet.imageCache }}
+{{- if not (kindIs "invalid" .gcPeriod) }}
+        - --image-cache-gc-period={{ .gcPeriod }}
+{{- end }}
+{{- if not (kindIs "invalid" .highPercent) }}
+        - --image-cache-high-percent={{ .highPercent | int }}
+{{- end }}
+{{- if not (kindIs "invalid" .lowPercent) }}
+        - --image-cache-low-percent={{ .lowPercent | int }}
+{{- end }}
+{{- if not (kindIs "invalid" .minAge) }}
+        - --image-cache-min-age={{ .minAge }}
+{{- end }}
+{{- if not (kindIs "invalid" .maxBytes) }}
+        - --image-cache-max-bytes={{ .maxBytes | int64 }}
+{{- end }}
+{{- with .pinnedImages }}
+        - --image-cache-pinned-images={{ join "," . }}
+{{- end }}
+{{- end }}
 {{- with .Values.atelet.extraArgs }}
 {{ toYaml . | indent 8 }}
 {{- end }}
