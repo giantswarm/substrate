@@ -27,6 +27,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateompath"
 	"github.com/agent-substrate/substrate/internal/imagecache"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 func TestImageCacheGCTarget(t *testing.T) {
@@ -188,6 +189,21 @@ type fakeGCStore struct {
 	evictErr     error
 	stats        imagecache.EvictStats
 	panicOnEvict bool
+	ensured      []string
+	ensureErr    error
+	pinned       []string
+}
+
+func (f *fakeGCStore) EnsureImage(_ context.Context, ref string) (*imagecache.Image, error) {
+	f.ensured = append(f.ensured, ref)
+	if f.ensureErr != nil {
+		return nil, f.ensureErr
+	}
+	return &imagecache.Image{Digest: v1.Hash{Algorithm: "sha256", Hex: strings.Repeat("a", 64)}}, nil
+}
+
+func (f *fakeGCStore) Pin(img *imagecache.Image) {
+	f.pinned = append(f.pinned, img.Digest.String())
 }
 
 func (f *fakeGCStore) CacheSize() (int64, error) {
@@ -260,6 +276,45 @@ func TestRunTicks(t *testing.T) {
 	g.Run(ctx)
 	if fake.evictCalls < 2 {
 		t.Errorf("evictCalls=%d, want >=2 (first pass plus at least one tick)", fake.evictCalls)
+	}
+}
+
+func TestRunPassEnsuresAndPinsBeforeEvicting(t *testing.T) {
+	fake := &fakeGCStore{size: 100, stats: imagecache.EvictStats{FreedBytes: 100}}
+	g := &imageCacheGC{store: fake, cacheDir: t.TempDir(), highPct: 100, lowPct: 0, maxBytes: 1,
+		pinned: []string{"registry.example/a:1", "registry.example/b:2"}}
+	g.runPass(context.Background())
+	if len(fake.ensured) != 2 || len(fake.pinned) != 2 {
+		t.Errorf("ensured=%v pinned=%v, want both pins pulled and pinned", fake.ensured, fake.pinned)
+	}
+	if fake.evictCalls != 1 {
+		t.Errorf("evictCalls=%d, want 1", fake.evictCalls)
+	}
+}
+
+func TestRunPassRunsWhenAPinnedPullFails(t *testing.T) {
+	fake := &fakeGCStore{size: 100, ensureErr: errors.New("registry down")}
+	g := &imageCacheGC{store: fake, cacheDir: t.TempDir(), highPct: 100, lowPct: 0, maxBytes: 1,
+		pinned: []string{"registry.example/a:1"}}
+	g.runPass(context.Background())
+	if len(fake.pinned) != 0 {
+		t.Errorf("pinned=%v after a failed pull, want none", fake.pinned)
+	}
+	if fake.evictCalls != 1 {
+		t.Errorf("evictCalls=%d, want 1: a failed pin must not gate the pass", fake.evictCalls)
+	}
+}
+
+func TestValidateImageCacheGCFlagsRejectsMalformedPin(t *testing.T) {
+	saved := *imageCachePinned
+	t.Cleanup(func() { *imageCachePinned = saved })
+	*imageCachePinned = []string{"registry.example/ok:1", "not a reference"}
+	if err := validateImageCacheGCFlags(); err == nil {
+		t.Error("malformed pinned image reference accepted")
+	}
+	*imageCachePinned = []string{"registry.example/ok:1", "registry.example/ok@sha256:" + strings.Repeat("0", 64)}
+	if err := validateImageCacheGCFlags(); err != nil {
+		t.Errorf("valid pinned image references rejected: %v", err)
 	}
 }
 
