@@ -59,6 +59,11 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # Annotations on atelet's ServiceAccount: the pod identity an external
+  # object store trusts for the snapshots (eks.amazonaws.com/role-arn for
+  # IRSA, iam.gke.io/gcp-service-account for Workload Identity).
+  serviceAccount:
+    annotations: {}
   # Where atelet runs: the DaemonSet's nodeSelector, tolerations and affinity.
   # Empty = every schedulable node.
   nodeSelector: {}
@@ -94,6 +99,17 @@ atenetRouter:
     max: 1024
     retryInterval: 100ms
     retryFactor: 1.1
+
+# ate-api-server deployment overrides. Its snapshot-store client reaches the
+# same object store as atelet's: the ServiceAccount annotations carry the pod
+# identity the store trusts (see atelet.serviceAccount.annotations), extraEnv
+# the store's endpoint and options (an S3-compatible endpoint's AWS_ENDPOINT_URL,
+# AWS_REGION, ...). extraEnv is appended verbatim to the container's env, the
+# counterpart of atelet.extraEnv.
+ateApiServer:
+  serviceAccount:
+    annotations: {}
+  extraEnv: []
 
 # Name of a ConfigMap in the release namespace that supplies per-environment
 # overrides for ate-api-server (ATE_API_POSTGRES_CONNECTION_STRING, ...).

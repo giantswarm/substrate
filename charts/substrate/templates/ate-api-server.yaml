@@ -39,6 +39,10 @@ kind: ServiceAccount
 metadata:
   name: {{ include "substrate.fullname" (list "ate-api-server" .) }}
   namespace: {{ .Release.Namespace }}
+{{- with .Values.ateApiServer.serviceAccount.annotations }}
+  annotations:
+{{ toYaml . | indent 4 }}
+{{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -132,6 +136,9 @@ spec:
           value: {{ .Values.rustfs.accessKey | quote }}
         - name: AWS_SECRET_ACCESS_KEY
           value: {{ .Values.rustfs.secretKey | quote }}
+{{- end }}
+{{- with .Values.ateApiServer.extraEnv }}
+{{ toYaml . | indent 8 }}
 {{- end }}
         envFrom:
         - configMapRef:
