@@ -84,6 +84,47 @@ func TestEvictUnusedMinAgeVeto(t *testing.T) {
 	}
 }
 
+func TestEvictUnusedSparesPinnedImage(t *testing.T) {
+	_, host := newTestRegistry(t)
+	refPinned := host + "/test/pinned:latest"
+	refOther := host + "/test/other:latest"
+	pushImage(t, refPinned, v1.Config{}, layerFromEntries(t, []tarEntry{
+		{name: "p", typeflag: tar.TypeReg, mode: 0o644, body: strings.Repeat("p", 2048)},
+	}))
+	pushImage(t, refOther, v1.Config{}, layerFromEntries(t, []tarEntry{
+		{name: "o", typeflag: tar.TypeReg, mode: 0o644, body: strings.Repeat("o", 2048)},
+	}))
+
+	store := newTestStore(t)
+	pinned := mustEnsure(t, store, refPinned)
+	mustEnsure(t, store, refOther)
+	backdateStore(t, store, time.Hour) // past min-age: both are candidates
+	store.Pin(pinned)
+
+	// A target no cache can meet: everything unprotected goes.
+	stats, err := store.EvictUnused(context.Background(), math.MaxInt64, false)
+	if err != nil {
+		t.Fatalf("EvictUnused: %v", err)
+	}
+	if stats.EvictedImages == 0 {
+		t.Fatalf("the unpinned image was not evicted: %+v", stats)
+	}
+	if stats.RootedImages == 0 {
+		t.Errorf("the pinned image was not counted as rooted: %+v", stats)
+	}
+	for _, dir := range pinned.LayerDirs {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("pinned layer %s was evicted: %v", dir, err)
+		}
+	}
+	if got := layerDirsOnDisk(t, store); len(got) != len(pinned.LayerDirs) {
+		t.Errorf("layers on disk after eviction: %v, want only the pinned image's %d", got, len(pinned.LayerDirs))
+	}
+	if again := mustEnsure(t, store, refPinned); again.Digest != pinned.Digest {
+		t.Errorf("pinned image re-resolved to %s after eviction, want the cached %s", again.Digest, pinned.Digest)
+	}
+}
+
 func TestEvictUnusedLRUSharedLayersAndRepull(t *testing.T) {
 	_, host := newTestRegistry(t)
 	shared := layerFromEntries(t, []tarEntry{
