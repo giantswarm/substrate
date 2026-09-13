@@ -78,6 +78,68 @@ ActorTemplate env refs (upstream kagent-dev/substrate#20, merged), `63ea2b0e` a 
 that never ran (upstream ships `release.yaml`) — and the eight stale June branches whose patches upstream has
 merged.
 
+## Upstream items prepared without a carried patch
+
+Items the platform needs from Substrate whose fix is not yet written. The text below is the upstream-facing
+proposal (upstream has issues disabled, so it becomes a kagent-dev/substrate pull request when the patch
+exists, or a kagent-dev/kagent issue); it is listed in [#37742](https://github.com/giantswarm/giantswarm/issues/37742)
+and opened only after the team has reviewed that list.
+
+### Place an actor's restore only on a worker whose CPU covers the snapshot's feature set ([#37742](https://github.com/giantswarm/giantswarm/issues/37742) row 12)
+
+**Problem.** A snapshot — the golden snapshot of an `ActorTemplate` version and an actor's own — is a gVisor
+checkpoint, and `runsc restore` loads it only on a host whose CPU offers every feature the checkpoint recorded
+(gVisor `pkg/cpuid`, `FeatureSet.CheckHostCompatible`: `incompatible FeatureSet: missing features: …`). The
+scheduler knows nothing about the CPU: `scheduling.Constraints` carries the sandbox class, the template and
+actor label selectors, `RequiredNodes` (a PAUSED actor's local snapshots) and the resource limits
+(`cmd/ateapi/internal/scheduling/scheduling.go`, `schedulingConstraints` in
+`cmd/ateapi/internal/controlapi/workflow_resume.go`), and a `Worker` reports its node name, its pool's labels
+and its capacity, never its CPU (`pkg/proto/ateapipb/ateapi.proto`, `Worker` / `WorkerStatus`). A
+`WorkerPool` whose nodes an autoscaler provisions can span vendors under one architecture — Karpenter
+consolidation put AMD `c5a` and Intel `r6i` nodes under one amd64 pool on a Kubernetes 1.35 cluster on
+2026-09-13 — and then a restore is placed on a worker that cannot load the checkpoint: `RestoreWorkload` fails
+with the line above, the actor stays `RESUMING` on its claimed worker (`validateAssignedWorker` finds it live,
+owned and `Applies`), the retry runs on the same worker every 30 s with the same result, and the actor never
+recovers; the consumer sees every turn time out (kagent: `actor "ai-…" request timed out`). The golden snapshot
+had been taken on an AMD worker; the missing features were `cmp_legacy`, `cr8_legacy`, `sse4a`, `misalignsse`,
+`topoext`, `mmxext`, `fxsr_opt` — AMD-only CPUID flags. The consumer's workaround is a `nodeSelector` on the
+pool naming one vendor (`karpenter.k8s.aws/instance-cpu-manufacturer`), which is a promise the pool owner has to
+keep by hand and which does not cover a generation change within one vendor.
+
+**Proposal.** Make the feature set a placement constraint, the way local snapshots already are:
+
+1. **Workers report their CPU feature set.** ateom reads the host's feature set at start — the same
+   `pkg/cpuid` gVisor checkpoints it with (`HostFeatureSet()`), so the comparison is exact — and reports it
+   with its capacity (`internal/ateomcapacity`), into a new output-only `WorkerStatus.cpu_features`
+   (the canonical sorted feature list, or gVisor's string form). The Syncer never sets it; the ateom does,
+   as it does capacity.
+2. **Snapshots record the feature set they were taken with.** `CheckpointWorkload` returns the checkpointing
+   worker's set; ate-api stores it on the `ExternalSnapshot` (and on `LocalSnapshotInfo`) it writes, and the
+   golden snapshot inherits it into `GoldenSnapshotStatus.golden_snapshot`.
+3. **The scheduler requires a covering worker.** `scheduling.Constraints.RequiredCPUFeatures`, derived in
+   `schedulingConstraints` from the snapshot the resume will load — the actor's external snapshot, else the
+   template's golden snapshot; empty for a cold boot — and enforced in `Applies`: the worker's reported set
+   must be a superset. A `RESUMING` actor whose assigned worker does not cover the set is released and
+   rescheduled (the not-eligible branch of `validateAssignedWorker` already releases the claim) instead of
+   retried in place. `ErrNoCapacity` then names the missing features when no worker covers them, so a pool
+   whose nodes have all moved to another vendor fails loudly rather than silently.
+4. **Fail fast meanwhile.** Independently of 1–3, classify the runsc `incompatible FeatureSet` restore error as
+   a placement failure: release the worker, exclude that worker's node for this actor
+   (a new `ateattr` reason next to `ReasonWorkerReassigned`), and reschedule — the same shape as the terminal
+   image-pull classification this fork carries. This alone unwedges the actor on the next resume when the
+   pool still has a covering worker, and it is the small first patch.
+
+A golden snapshot per feature set (one golden actor per distinct set present in the pool) would remove the
+constraint altogether but multiplies the golden boots; the placement constraint is enough while pools are
+homogeneous most of the time. gVisor offers no checkpoint-portability mode (features cannot be masked at
+checkpoint), so the fix is placement, not the checkpoint.
+
+**Alignment.** [kagent-dev/substrate#19](https://github.com/kagent-dev/substrate/pull/19) (enforce the required
+`WorkerPool` placement, open since July) extends the same `Constraints`; it pins the pool, this pins the CPU
+within a pool — the two compose and should share the eligibility plumbing. Nothing upstream tracks CPU
+features today (searched 2026-09-13: issues are disabled, no pull request names `FeatureSet`, `cpuid` or the
+restore error).
+
 ## Re-pin
 
 The re-pin moves the line onto a new upstream release tag and replays the carried patches; a patch upstream has
