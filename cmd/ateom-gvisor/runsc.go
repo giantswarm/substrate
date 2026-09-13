@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"syscall"
 
 	"github.com/agent-substrate/substrate/internal/ateompath"
@@ -321,6 +323,37 @@ func (r *runsc) cmdDelete(ctx context.Context, containerName string) error {
 	}
 
 	return nil
+}
+
+// listArgs builds the argv for `runsc list -quiet`: the ids of the containers
+// runsc knows under this actor's state root, one per line. Factored out so the
+// argument construction can be unit-tested without executing runsc.
+func (r *runsc) listArgs() []string {
+	return []string{
+		"-log-format", "json",
+		"--alsologtostderr",
+		"-root", ateompath.RunSCStateDir(r.actorUID),
+		"list",
+		"-quiet",
+	}
+}
+
+// cmdList returns the containers runsc knows under this actor's state root. A
+// root that holds no container state -- never created, or reset by atelet --
+// lists nothing.
+func (r *runsc) cmdList(ctx context.Context) (map[string]bool, error) {
+	cmd := exec.CommandContext(ctx, r.path, r.listArgs()...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = os.Stderr
+	if err := reaper.RunCommand(cmd); err != nil {
+		return nil, fmt.Errorf("while running `runsc list`: %w", err)
+	}
+	known := make(map[string]bool)
+	for _, id := range strings.Fields(out.String()) {
+		known[id] = true
+	}
+	return known, nil
 }
 
 func (r *runsc) cmdState(ctx context.Context, containerName string) error {

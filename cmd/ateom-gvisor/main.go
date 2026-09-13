@@ -45,6 +45,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/childreap"
 	"github.com/agent-substrate/substrate/internal/contextlogging"
 	"github.com/agent-substrate/substrate/internal/imagecache"
+	"github.com/agent-substrate/substrate/internal/ocispec"
 	"github.com/agent-substrate/substrate/internal/otlprelay"
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"github.com/agent-substrate/substrate/internal/readyz"
@@ -870,27 +871,53 @@ func (r *runsc) stopContainers(ctx context.Context, containers []*ateompb.Contai
 	_ = r.cmdWait(ctx, "pause")
 }
 
+// cleanupContainers deletes the sandbox's runsc containers, the application
+// containers first and the pause container (the sandbox) last.
+//
+// Idempotent: a container runsc no longer knows is already cleaned up and is
+// skipped. `runsc state` is fatal on a missing container, so checking it first
+// made every retry of a terminate fail for good once its first attempt had
+// removed the container but failed after that -- `runsc delete -force` of a
+// stopped sandbox whose rootfs overlay was already detached destroys the
+// container's state and then fails on the missing filestore file -- and the
+// actor kept its worker until the pod was replaced.
 func (r *runsc) cleanupContainers(ctx context.Context, containers []*ateompb.Container) error {
+	known, err := r.cmdList(ctx)
+	if err != nil {
+		return fmt.Errorf("while listing containers: %w", err)
+	}
+	var present []string
+	for _, name := range append(containerNames(containers), ocispec.PauseContainer) {
+		if !known[name] {
+			slog.InfoContext(ctx, "runsc container is already gone, nothing to clean up", slog.String("container", name))
+			continue
+		}
+		present = append(present, name)
+	}
+
 	// Check state of all containers to mimic containerd.
 	//
 	// Without this, `runsc delete` occasionally throws an error.
-	if err := r.cmdState(ctx, "pause"); err != nil {
-		return fmt.Errorf("while checking state of pause container: %w", err)
-	}
-	for _, ctr := range containers {
-		if err := r.cmdState(ctx, ctr.GetName()); err != nil {
-			return fmt.Errorf("while checking state of %q application container: %w", ctr.GetName(), err)
+	for _, name := range present {
+		if err := r.cmdState(ctx, name); err != nil {
+			return fmt.Errorf("while checking state of %q container: %w", name, err)
 		}
 	}
 
-	for _, ctr := range containers {
-		if err := r.cmdDelete(ctx, ctr.GetName()); err != nil {
-			return fmt.Errorf("while deleting %q application container: %w", ctr.GetName(), err)
+	for _, name := range present {
+		if err := r.cmdDelete(ctx, name); err != nil {
+			// `runsc delete -force` destroys the container's state before it
+			// cleans up the rest, and reports what fails after that -- the
+			// filestore file of a rootfs overlay a failed boot's cleanup already
+			// detached -- as fatal. Once the container is gone the delete has
+			// done its job; failing the terminate would only make the next
+			// attempt find nothing left to delete.
+			if known, lerr := r.cmdList(ctx); lerr == nil && !known[name] {
+				slog.InfoContext(ctx, "runsc delete failed after removing the container, nothing left to clean up", slog.String("container", name), slog.Any("err", err))
+				continue
+			}
+			return fmt.Errorf("while deleting %q container: %w", name, err)
 		}
-	}
-
-	if err := r.cmdDelete(ctx, "pause"); err != nil {
-		return fmt.Errorf("while deleting pause container: %w", err)
 	}
 
 	return nil
