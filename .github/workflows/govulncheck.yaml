@@ -17,6 +17,8 @@ on:
   push:
     branches:
       - giantswarm
+      # the re-pin candidates (FORK.md, "Re-pin"), which no pull request can run
+      - "sync/**"
   pull_request:
   schedule:
     - cron: "37 4 * * 1"
