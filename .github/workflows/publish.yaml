@@ -51,7 +51,7 @@ env:
   # stamped into the chart's images.agentgateway at package time and scanned
   # with the own images. Move it together with the pin (its FORK.md,
   # "Convergence with the Substrate line").
-  AGENTGATEWAY_IMAGE: ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.2
+  AGENTGATEWAY_IMAGE: ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.4
 
 jobs:
   version:
