@@ -240,20 +240,28 @@ class ControlServicer:
         """Suspend a given actor to a new snapshot. A running actor is checkpointed
         on its worker; a paused actor's node-local snapshot is uploaded, narrowed
         to the template's commit scope where required (Full capture, Data commit).
+        A paused actor whose pause snapshot already has a durable copy (see
+        ExternalSnapshot.source_local_snapshot_name) commits that copy as it was
+        captured, without involving the node.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def PauseActor(self, request, context):
-        """Pause a given actor and keep its snapshots on node VM.
+        """Pause a given actor and keep its snapshots on node VM. The control plane
+        then uploads the pause snapshot to durable storage in the background and
+        records the copy as the actor's external_snapshot; until that completes
+        the actor can resume only on its node.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ResumeActor(self, request, context):
-        """Resume an actor from its latest snapshot.
+        """Resume an actor from its latest snapshot. A paused actor resumes from its
+        node-local snapshot when a worker on that node is free, and from the
+        snapshot's durable copy on any other eligible worker once one exists.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
