@@ -30,6 +30,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	grpcCodes "google.golang.org/grpc/codes"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -491,8 +492,14 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 		pickedWorker, err := w.scheduler.Schedule(ctx, constraints)
 		if err != nil {
 			if errors.Is(err, scheduling.ErrNoCapacity) {
+				// A full pool is a capacity signal the caller waits out; a
+				// PAUSED actor whose snapshot's node is gone is a failure.
+				refusal := w.noFreeWorkerError(ctx, actorRef, actor, err)
 				outcome = ateattr.SchedulerOutcomeNoCapacity
-				return nil, nil, apierror.ResourceExhausted("no worker has room for the actor")
+				if apierror.Code(refusal) != grpcCodes.ResourceExhausted {
+					outcome = ateattr.SchedulerOutcomeError
+				}
+				return nil, nil, refusal
 			}
 			return nil, nil, err
 		}

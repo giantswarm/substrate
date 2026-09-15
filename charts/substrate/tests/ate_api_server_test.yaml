@@ -68,3 +68,15 @@ tests:
       content:
         name: AWS_ACCESS_KEY_ID
       any: true
+
+- it: lets ate-api-server read Nodes, to tell a node that left the cluster from one whose workers are momentarily absent
+  documentSelector:
+    path: kind
+    value: ClusterRole
+  asserts:
+  - contains:
+      path: rules
+      content:
+        apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "watch", "list"]
