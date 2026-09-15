@@ -60,6 +60,78 @@ func NewSyncedWriter(w io.Writer) *SyncedWriter {
 	return &SyncedWriter{w: w}
 }
 
+// The bounds of an OutputTail: what a boot that fails before readiness reports
+// of the workload's own output. Sized for the error message it ends up in — a
+// gRPC status, then a template's status — rather than for a log viewer, which
+// has the pod log.
+const (
+	outputTailLines     = 12
+	outputTailLineBytes = 512
+)
+
+// OutputTail keeps the most recent lines a container wrote to its stdout and
+// stderr. The pod log carries every line, but the caller of RunWorkload — and
+// the owner of the ActorTemplate several hops above it — sees only the error
+// the boot failed with; the tail is what lets that error say what the workload
+// said. Bounded in lines and in bytes per line; safe for concurrent use (the
+// forwarder adds while the failing RPC reads). A nil tail keeps nothing.
+type OutputTail struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+// NewOutputTail returns an empty tail.
+func NewOutputTail() *OutputTail {
+	return &OutputTail{lines: make([]string, 0, outputTailLines)}
+}
+
+// add keeps line, dropping the oldest one past the bound. Blank lines carry
+// nothing and are skipped; a long line is cut at outputTailLineBytes.
+func (t *OutputTail) add(line []byte) {
+	if t == nil || len(bytes.TrimSpace(line)) == 0 {
+		return
+	}
+	kept := string(line)
+	if len(kept) > outputTailLineBytes {
+		kept = strings.ToValidUTF8(kept[:outputTailLineBytes], "") + "…"
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.lines) == outputTailLines {
+		t.lines = append(t.lines[:0], t.lines[1:]...)
+	}
+	t.lines = append(t.lines, kept)
+}
+
+// Lines returns the kept lines, oldest first; nil when nothing was kept.
+func (t *OutputTail) Lines() []string {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.lines) == 0 {
+		return nil
+	}
+	return append([]string(nil), t.lines...)
+}
+
+// OutputTails is one OutputTail per container, keyed by container name.
+type OutputTails map[string]*OutputTail
+
+// Add creates the tail for containerName and returns it.
+func (t OutputTails) Add(containerName string) *OutputTail {
+	tail := NewOutputTail()
+	t[containerName] = tail
+	return tail
+}
+
+// Lines returns containerName's kept lines, oldest first; nil for a container
+// without a tail. It has the shape of readyz.LastOutput.
+func (t OutputTails) Lines(containerName string) []string {
+	return t[containerName].Lines()
+}
+
 // ActorLogger handles structured logging for actor sandboxes and lifecycle events.
 type ActorLogger struct {
 	writer    io.Writer
@@ -108,14 +180,14 @@ func (al *ActorLogger) EmitLifecycleLog(ctx context.Context, msg string, a resou
 // StartJSONLogPipe intercepts container raw stdout/stderr streams and pipes them
 // through the logger. containerName tags every line with the originating container;
 // callers that multiplex multiple containers should give each its own pipe so the
-// tag is meaningful.
-func (al *ActorLogger) StartJSONLogPipe(a resources.ActorAttribution, containerName string) (io.WriteCloser, error) {
+// tag is meaningful. A non-nil tail also keeps the most recent lines.
+func (al *ActorLogger) StartJSONLogPipe(a resources.ActorAttribution, containerName string, tail *OutputTail) (io.WriteCloser, error) {
 	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		al.WrapContainerLogs(pr, a, containerName)
+		al.WrapContainerLogs(pr, a, containerName, tail)
 		pr.Close()
 	}()
 	return pw, nil
@@ -123,8 +195,9 @@ func (al *ActorLogger) StartJSONLogPipe(a resources.ActorAttribution, containerN
 
 // WrapContainerLogs reads log lines from r, parses them, and logs them in a unified
 // structured format. containerName is added as the ate.actor.container.name label
-// so multi-container actors can be demultiplexed.
-func (al *ActorLogger) WrapContainerLogs(r io.Reader, a resources.ActorAttribution, containerName string) {
+// so multi-container actors can be demultiplexed. A non-nil tail is fed every
+// line as the container wrote it, before any parsing.
+func (al *ActorLogger) WrapContainerLogs(r io.Reader, a resources.ActorAttribution, containerName string, tail *OutputTail) {
 	rdr := bufio.NewReader(r)
 	for {
 		lineBytes, err := rdr.ReadBytes('\n')
@@ -135,6 +208,7 @@ func (al *ActorLogger) WrapContainerLogs(r io.Reader, a resources.ActorAttributi
 		}
 
 		if len(lineBytes) > 0 {
+			tail.add(lineBytes)
 			var m map[string]any
 			var envelope map[string]any
 

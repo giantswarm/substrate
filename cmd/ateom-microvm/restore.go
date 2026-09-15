@@ -358,7 +358,7 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 	tResume := time.Now()
 
 	// Block until every readyz-enabled container reports 200.
-	if err := readyz.WaitAll(ctx, containers, ateomnet.ActorVethIP); err != nil {
+	if err := readyz.WaitAll(ctx, containers, ateomnet.ActorVethIP, nil); err != nil {
 		return fmt.Errorf("while waiting for container readyz: %w", err)
 	}
 
@@ -416,7 +416,7 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 		ra.guestAgent = guestAC
 		attribution := p.actorAttribution()
 		for _, c := range containers {
-			s.startActorLogForwarding(guestAC, attribution, c.GetName(), c.GetName())
+			s.startActorLogForwarding(guestAC, attribution, c.GetName(), c.GetName(), nil)
 		}
 	}
 
