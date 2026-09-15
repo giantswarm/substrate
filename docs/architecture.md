@@ -410,8 +410,9 @@ stateDiagram-v2
     SUSPENDING --> SUSPENDED : checkpoint complete
     RUNNING --> PAUSING : PauseActor
     PAUSING --> PAUSED : node-local checkpoint complete
-    PAUSED --> RESUMING : ResumeActor (pinned to the snapshot's node)
-    PAUSED --> SUSPENDING : SuspendActor (uploads the node-local snapshot)
+    PAUSED --> PAUSED : background upload records the durable copy of the pause snapshot
+    PAUSED --> RESUMING : ResumeActor (on the snapshot's node, or anywhere once the pause has a durable copy)
+    PAUSED --> SUSPENDING : SuspendActor (uploads the node-local snapshot, or adopts its durable copy)
     SUSPENDED --> [*] : DeleteActor
 ```
 

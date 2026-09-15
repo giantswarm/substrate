@@ -217,6 +217,8 @@ func main() {
 	// Drive stored ActorTemplates through the golden actor flow.
 	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv)
 	templateReconciler.Start(shutdownCtx)
+	// Make every pause durable in the background.
+	controlSrv.Start(shutdownCtx)
 
 	actorIDCAPool, err := localca.NewRefreshingPool(*actorIDCAPoolFile)
 	if err != nil {

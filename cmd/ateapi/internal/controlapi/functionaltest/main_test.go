@@ -127,6 +127,9 @@ type FakeAteletServer struct {
 	UploadRequest *ateletpb.UploadPausedCheckpointRequest
 	FailUpload    error
 
+	PruneCalled  bool
+	PruneRequest *ateletpb.PruneLocalCheckpointsRequest
+
 	// objectStore, when set, receives the objects a checkpoint or an upload
 	// writes, so the control plane's copy and release steps have real external
 	// snapshots to act on. setupTest points it at the test's own store.
@@ -174,7 +177,43 @@ func (f *FakeAteletServer) Reset() {
 	f.UploadRequest = nil
 	f.FailUpload = nil
 
+	f.PruneCalled = false
+	f.PruneRequest = nil
+
 	f.objectStore = nil
+}
+
+// lastUploadRequest returns the last UploadPausedCheckpoint request, or nil.
+// Read under the lock: the control plane's pause uploads arrive in the
+// background.
+func (f *FakeAteletServer) lastUploadRequest() *ateletpb.UploadPausedCheckpointRequest {
+	f.Lock.Lock()
+	defer f.Lock.Unlock()
+
+	if f.UploadRequest == nil {
+		return nil
+	}
+	return proto.Clone(f.UploadRequest).(*ateletpb.UploadPausedCheckpointRequest)
+}
+
+// lastPruneRequest returns the last PruneLocalCheckpoints request, or nil.
+func (f *FakeAteletServer) lastPruneRequest() *ateletpb.PruneLocalCheckpointsRequest {
+	f.Lock.Lock()
+	defer f.Lock.Unlock()
+
+	if f.PruneRequest == nil {
+		return nil
+	}
+	return proto.Clone(f.PruneRequest).(*ateletpb.PruneLocalCheckpointsRequest)
+}
+
+func (f *FakeAteletServer) PruneLocalCheckpoints(ctx context.Context, req *ateletpb.PruneLocalCheckpointsRequest) (*ateletpb.PruneLocalCheckpointsResponse, error) {
+	f.Lock.Lock()
+	defer f.Lock.Unlock()
+
+	f.PruneCalled = true
+	f.PruneRequest = proto.Clone(req).(*ateletpb.PruneLocalCheckpointsRequest)
+	return &ateletpb.PruneLocalCheckpointsResponse{}, nil
 }
 
 func (f *FakeAteletServer) UploadPausedCheckpoint(ctx context.Context, req *ateletpb.UploadPausedCheckpointRequest) (*ateletpb.UploadPausedCheckpointResponse, error) {

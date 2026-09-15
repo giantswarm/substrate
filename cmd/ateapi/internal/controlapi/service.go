@@ -90,6 +90,12 @@ func NewRPCService(
 	return s
 }
 
+// Start launches the service's background work: the uploads that make every
+// pause durable (see ActorWorkflow.Start). ctx ends it.
+func (s *RPCService) Start(ctx context.Context) {
+	s.actorWorkflow.Start(ctx)
+}
+
 // serviceStore enumerates the exact storage methods needed by
 // the control API and nothing more.
 type serviceStore interface {

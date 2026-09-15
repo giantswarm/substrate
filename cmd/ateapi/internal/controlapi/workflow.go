@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	grpcCodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/wait"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -81,11 +82,14 @@ type ActorWorkflow struct {
 	pluginRegistry       VolumePluginRegistry
 	workflowDeadline     time.Duration
 	objectStore          objectstore.Store
+	// pauseUploads makes every pause durable in the background; nil in a
+	// workflow built without one, which then pauses node-locally only.
+	pauseUploads *pauseUploader
 }
 
 // NewActorWorkflow creates a new ActorWorkflow. workflowDeadline bounds how
 // long a single Resume/Suspend can run end-to-end; instruments and objectStore
-// may be nil.
+// may be nil. Start launches the background work the workflows queue.
 func NewActorWorkflow(
 	store actorWorkflowStore,
 	workerCache *workercache.Cache,
@@ -98,7 +102,7 @@ func NewActorWorkflow(
 	workflowDeadline time.Duration,
 	objectStore objectstore.Store,
 ) *ActorWorkflow {
-	return &ActorWorkflow{
+	w := &ActorWorkflow{
 		store:                store,
 		workerCache:          workerCache,
 		scheduler:            scheduling.New(workerCache, scheduling.WithMeter(otel.Meter("ateapi"))),
@@ -111,12 +115,22 @@ func NewActorWorkflow(
 		workflowDeadline:     workflowDeadline,
 		objectStore:          objectStore,
 	}
+	w.pauseUploads = newPauseUploader(w)
+	return w
+}
+
+// Start launches the background work the workflows queue — the uploads that
+// make every pause durable — and the resync that finds the pauses still
+// lacking one. ctx ends it.
+func (w *ActorWorkflow) Start(ctx context.Context) {
+	w.pauseUploads.Start(ctx)
 }
 
 // actorWorkflowStore enumerates the exact storage methods needed by
 // ActorWorkflow and nothing more.
 type actorWorkflowStore interface {
 	GetActor(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.Actor, error)
+	ListActors(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.Actor], error)
 	UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.Actor) error) (*ateapipb.Actor, error)
 	DeleteActor(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.Actor, error)
 	GetWorker(ctx context.Context, name string) (*ateapipb.Worker, error)
@@ -181,15 +195,46 @@ func acquireLease(ctx context.Context, holder leaseHolder, key, subject string) 
 	return lease.Context(), lease, nil
 }
 
+// actorLeaseBackoff bounds how long a workflow waits for the actor's lease
+// when another holder has it: six attempts over about a second. The
+// background commit of a pause snapshot's durable copy holds the lease for two
+// store round trips, and a client's next operation on the actor must not turn
+// into Aborted because of it; two operations of the same kind still get
+// Aborted, a moment later than before.
+var actorLeaseBackoff = wait.Backoff{Steps: 6, Duration: 20 * time.Millisecond, Factor: 2.0, Jitter: 0.2, Cap: 400 * time.Millisecond}
+
+// acquireActorLease takes the actor's lease and returns the context the
+// workflow runs under: bounded by the workflow deadline and the lease. A
+// lease another holder has is retried per actorLeaseBackoff before it counts
+// as a conflict.
 func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resources.ActorRef) (context.Context, *store.Lease, error) {
 	workflowCtx, cancel := context.WithTimeout(ctx, w.workflowDeadline)
-	leaseCtx, lease, err := acquireLease(workflowCtx, w.store, "lease:actor:"+actorRef.Atespace+":"+actorRef.Name, "actor")
+	var lease *store.Lease
+	err := wait.ExponentialBackoffWithContext(workflowCtx, actorLeaseBackoff, func(ctx context.Context) (bool, error) {
+		acquired, err := w.store.AcquireLease(ctx, actorLeaseKey(actorRef))
+		if errors.Is(err, store.ErrLeaseConflict) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		lease = acquired
+		return true, nil
+	})
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		if wait.Interrupted(err) {
+			return nil, nil, status.Errorf(grpcCodes.Aborted, "another operation is in progress for this actor")
+		}
+		return nil, nil, fmt.Errorf("while acquiring lease: %w", err)
 	}
 	context.AfterFunc(lease.Context(), cancel)
-	return leaseCtx, lease, nil
+	return lease.Context(), lease, nil
+}
+
+// actorLeaseKey names the lease that serializes the operations on one actor.
+func actorLeaseKey(actorRef resources.ActorRef) string {
+	return "lease:actor:" + actorRef.Atespace + ":" + actorRef.Name
 }
 
 func acquireTagLease(ctx context.Context, holder leaseHolder, tagRef resources.TagRef) (context.Context, *store.Lease, error) {

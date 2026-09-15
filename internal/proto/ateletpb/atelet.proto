@@ -76,6 +76,12 @@ service AteomHerder {
   // already sit under the actor's local-checkpoints directory.
   rpc UploadPausedCheckpoint(UploadPausedCheckpointRequest) returns (UploadPausedCheckpointResponse) {}
 
+  // PruneLocalCheckpoints deletes every local (pause) checkpoint this node
+  // holds for an actor. Sent once nothing can restore them any more: the
+  // actor committed the durable copy of its pause, or is being deleted while
+  // paused. Idempotent; a node without any is a success.
+  rpc PruneLocalCheckpoints(PruneLocalCheckpointsRequest) returns (PruneLocalCheckpointsResponse) {}
+
   // Terminate tells atelet to terminate/kill any running workload for an actor,
   // unmount its volumes, and clean up actor state on the node.
   rpc Terminate(TerminateRequest) returns (TerminateResponse) {}
@@ -401,9 +407,25 @@ message UploadPausedCheckpointRequest {
   // differ, atelet converts where possible (micro-VM FULL capture to a DATA
   // upload by selecting the durable-dir tar) and rejects otherwise.
   SnapshotScope desired_scope = 8;
+
+  // Keep the local checkpoint after the upload. Set when the upload makes a
+  // pause durable while the actor stays paused: the local copy remains the
+  // fast resume path on this node, the uploaded one serves a resume anywhere
+  // else. Unset (a suspend), the upload supersedes the local checkpoints and
+  // atelet prunes them.
+  bool keep_local = 9;
 }
 
 message UploadPausedCheckpointResponse {
+}
+
+message PruneLocalCheckpointsRequest {
+  string atespace = 1;
+  string actor_name = 2;
+  string actor_uid = 3;
+}
+
+message PruneLocalCheckpointsResponse {
 }
 
 message RestoreRequest {

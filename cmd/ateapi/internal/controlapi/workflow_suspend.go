@@ -143,11 +143,19 @@ func (w *ActorWorkflow) ensureMarkedSuspending(ctx context.Context, actorRef res
 		return nil, status.Errorf(codes.FailedPrecondition, "actor %s paused with a Data snapshot; the template commits Full, which a paused-origin suspend cannot produce", actorRef)
 	}
 
-	name := resources.NewSnapshotName()
-	// Fail here rather than at checkpoint time if the template's location
-	// cannot produce a usable URI: nothing has been written yet.
-	if _, err := inProgressSnapshotURI(actorTemplate, actor, name); err != nil {
-		return nil, err
+	// A paused actor whose pause snapshot already has a durable copy commits
+	// that copy as captured: nothing is uploaded, so no destination is minted
+	// and finalize keeps the external snapshot it finds. Narrowing the copy to
+	// the template's commit scope would need the node the actor may be
+	// leaving; as it is, the copy restores exactly as the pause would have.
+	name := ""
+	if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED || durablePauseCopy(actor) == nil {
+		name = resources.NewSnapshotName()
+		// Fail here rather than at checkpoint time if the template's location
+		// cannot produce a usable URI: nothing has been written yet.
+		if _, err := inProgressSnapshotURI(actorTemplate, actor, name); err != nil {
+			return nil, err
+		}
 	}
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDING
@@ -276,6 +284,15 @@ func (w *ActorWorkflow) ensurePausedSnapshotUploaded(ctx context.Context, actorR
 	ctx, done := stepSpan(ctx, "UploadPausedCheckpoint")
 	defer func() { err = done(err) }()
 
+	if durable := durablePauseCopy(actor); durable != nil && actor.GetStatus().GetInProgressSnapshotName() == "" {
+		markSkipped(ctx, "the pause snapshot already has a durable copy")
+		// The local copy serves no resume once the actor is suspended. Release
+		// it where an atelet answers, without making the commit wait on the
+		// node: its absence is the very case the durable copy exists for.
+		w.releaseLocalCheckpoints(ctx, actor)
+		return ateattr.SnapshotScopeValue(actorSnapshotContentScopeToAtelet(durable.GetContentScope())), nil
+	}
+
 	local := actor.GetStatus().GetLocalSnapshotInfo()
 	if len(local.GetNodeVmsWithLocalSnapshots()) == 0 {
 		// Without the node the snapshot can never be found (mirrors
@@ -343,8 +360,9 @@ func (w *ActorWorkflow) ensureVolumesDetached(ctx context.Context, actor *ateapi
 
 // ensureSuspendedFinalized releases the actor's worker (only when it is still
 // owned by this actor), records the in-progress snapshot as the actor's
-// external snapshot, and commits SUSPENDED with the assignment cleared in a
-// single update. It re-reads the actor first so an out-of-band transition
+// external snapshot (a suspend that uploaded nothing — the pause was already
+// durable — keeps the one it finds), and commits SUSPENDED with the
+// assignment cleared in a single update. It re-reads the actor first so an out-of-band transition
 // (e.g. the syncer crashing the actor after its worker died) is not
 // overwritten: with no assignment left there is nothing to finalize.
 func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate) (_ *ateapipb.Actor, err error) {
