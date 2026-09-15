@@ -73,6 +73,12 @@ func TestMapResumeError(t *testing.T) {
 			wantBody: `actor team-a/ctr6 unavailable`,
 		},
 		{
+			name:     "DataLoss maps to 410 and preserves desc",
+			err:      status.Error(codes.DataLoss, "actor team-a/ctr6 crashed: its local snapshot is lost with its node"),
+			wantCode: envoy_type.StatusCode_Gone,
+			wantBody: `actor team-a/ctr6 unrecoverable: actor team-a/ctr6 crashed: its local snapshot is lost with its node`,
+		},
+		{
 			name:     "DeadlineExceeded maps to 504",
 			err:      status.Error(codes.DeadlineExceeded, "context deadline exceeded"),
 			wantCode: envoy_type.StatusCode_GatewayTimeout,

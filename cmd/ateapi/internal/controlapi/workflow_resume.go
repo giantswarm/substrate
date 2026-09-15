@@ -493,8 +493,14 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 		pickedWorker, err := w.scheduler.Schedule(ctx, constraints)
 		if err != nil {
 			if errors.Is(err, scheduling.ErrNoCapacity) {
+				// A full pool is a capacity signal the caller waits out; a
+				// PAUSED actor whose snapshot's node is gone is a failure.
+				refusal := w.noFreeWorkerError(ctx, actorRef, actor, err)
 				outcome = ateattr.SchedulerOutcomeNoFreeWorker
-				return nil, nil, status.Errorf(codes.ResourceExhausted, "no free workers available")
+				if status.Code(refusal) != codes.ResourceExhausted {
+					outcome = ateattr.SchedulerOutcomeError
+				}
+				return nil, nil, refusal
 			}
 			return nil, nil, err
 		}
@@ -609,7 +615,7 @@ func schedulingConstraints(actor *ateapipb.Actor, tmpl *ateapipb.ActorTemplate) 
 	c := scheduling.Constraints{
 		SandboxClass:  sandboxClassString(tmpl.GetSandboxConfig().GetSandboxClass()),
 		ActorSelector: labels.SelectorFromSet(labels.Set(actor.GetWorkerSelector().GetMatchLabels())),
-		RequiredNodes: actor.GetStatus().GetLocalSnapshotInfo().GetNodeVmsWithLocalSnapshots(),
+		RequiredNodes: localSnapshotNodes(actor),
 		Limits:        limits.Proto(),
 	}
 	if sel := tmpl.GetWorkerSelector(); sel != nil {
