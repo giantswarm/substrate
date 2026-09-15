@@ -424,7 +424,7 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 	}
 
 	// Block until every wakeup-probe-enabled container reports 200.
-	if err := wakeupprobe.WaitAll(ctx, containers, ateomnet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(actorUID))); err != nil {
+	if err := wakeupprobe.WaitAll(ctx, containers, ateomnet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(actorUID)), nil); err != nil {
 		return fmt.Errorf("while waiting for container wakeup probe: %w", err)
 	}
 
@@ -479,7 +479,7 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 	// ReadStdout/ReadStderr pick up where they left off.
 	attribution := p.actorAttribution()
 	for _, c := range containers {
-		s.startActorLogForwarding(guestAC, attribution, c.GetName(), c.GetName())
+		s.startActorLogForwarding(guestAC, attribution, c.GetName(), c.GetName(), nil)
 	}
 
 	if err := s.tunnel.ActivateIngress(p.attribution(), s.sandboxDialer(p.actorUID)); err != nil {

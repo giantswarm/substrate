@@ -48,6 +48,14 @@ const (
 // not addressable from the caller's. Nil dials from the caller's namespace.
 type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
+// LastOutput returns the most recent lines a container wrote to its stdout
+// and stderr, oldest first, or nil when none are known. A missed wakeup
+// deadline quotes them: a workload that exits before its probe ever answers
+// says why on its way out, and that line is otherwise only in the pod log,
+// which the owner of the ActorTemplate cannot read. A nil LastOutput quotes
+// nothing.
+type LastOutput func(containerName string) []string
+
 // HTTPClient builds a keep-alive HTTP client tuned for fast, repeated
 // probing of a single endpoint. Exposed as a var so tests can substitute a
 // transport that targets a test server's loopback address.
@@ -69,8 +77,9 @@ func newClient(dial DialFunc) *http.Client {
 
 // WaitAll blocks until every container with a wakeup probe set reports 200 through dial,
 // or returns the first error. Containers without a probe are skipped (their
-// absence means "no wakeup gate").
-func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP string, dial DialFunc) error {
+// absence means "no wakeup gate"). The deadline error quotes the container's
+// last output when lastOutput knows it.
+func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP string, dial DialFunc, lastOutput LastOutput) error {
 	g, gctx := errgroup.WithContext(ctx)
 	for _, ac := range containers {
 		if ac.GetWakeupProbe() == nil {
@@ -78,15 +87,16 @@ func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP strin
 		}
 		ac := ac
 		g.Go(func() error {
-			return Wait(gctx, ac.GetName(), ac.GetWakeupProbe(), actorIP, dial)
+			return Wait(gctx, ac.GetName(), ac.GetWakeupProbe(), actorIP, dial, lastOutput)
 		})
 	}
 	return g.Wait()
 }
 
 // Wait polls the configured HTTP endpoint through dial until it returns 200,
-// the context is cancelled, or the overall deadline is exceeded.
-func Wait(ctx context.Context, containerName string, probe *ateompb.WakeupProbe, actorIP string, dial DialFunc) error {
+// the context is cancelled, or the overall deadline is exceeded. The deadline
+// error quotes the container's last output when lastOutput knows it.
+func Wait(ctx context.Context, containerName string, probe *ateompb.WakeupProbe, actorIP string, dial DialFunc, lastOutput LastOutput) error {
 	url, err := URL(probe, actorIP)
 	if err != nil {
 		return fmt.Errorf("invalid wakeup probe config for %q: %w", containerName, err)
@@ -112,8 +122,8 @@ func Wait(ctx context.Context, containerName string, probe *ateompb.WakeupProbe,
 				containerName, time.Since(start), attempts, lastErr, err)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("wakeup probe for %q never returned 200 within %s (%d attempts, last error: %v)",
-				containerName, timeout, attempts, lastErr)
+			return fmt.Errorf("wakeup probe for %q never returned 200 within %s (%d attempts, last error: %v)%s",
+				containerName, timeout, attempts, lastErr, quoteLastOutput(containerName, lastOutput))
 		}
 
 		attempts++
@@ -139,6 +149,19 @@ func Wait(ctx context.Context, containerName string, probe *ateompb.WakeupProbe,
 		case <-time.After(PollInterval):
 		}
 	}
+}
+
+// quoteLastOutput renders the container's last output for the deadline error,
+// one line per line after a heading; "" when nothing is known.
+func quoteLastOutput(containerName string, lastOutput LastOutput) string {
+	if lastOutput == nil {
+		return ""
+	}
+	lines := lastOutput(containerName)
+	if len(lines) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; last output of %q:\n%s", containerName, strings.Join(lines, "\n"))
 }
 
 func pollTimeout(probe *ateompb.WakeupProbe) (time.Duration, error) {
