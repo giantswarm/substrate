@@ -81,11 +81,17 @@ for etcd.
 - **Suspend**: hibernate a running or paused Actor into a durable snapshot in
   external storage. A running Actor is checkpointed on its Worker (which is
   then freed); a paused Actor's node-local snapshot is uploaded — narrowed to
-  the commit scope when the pause captured more — ending its node pinning.
+  the commit scope when the pause captured more — ending its node pinning. A
+  paused Actor whose pause snapshot already has a durable copy commits that
+  copy as captured, without involving the node.
 
 - **Pause**: a short-term checkpoint of a running Actor. Snapshot files remain
   on the node VM, and the following Resume is prioritized onto the node VM
-  where the snapshots are persisted.
+  where the snapshots are persisted. Shortly after the pause the control plane
+  also uploads the snapshot to external storage and records the copy as the
+  Actor's external snapshot, marked with the local snapshot it came from; a
+  Resume then restores the pause on any Worker when the node is full or gone,
+  and Suspend needs nothing from the node.
 
 - **Resume**: activate a suspended/paused Actor by restoring it onto a Worker. The
   common path restores from a snapshot rather than cold-booting.

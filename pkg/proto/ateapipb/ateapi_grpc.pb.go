@@ -82,10 +82,18 @@ type ControlClient interface {
 	// Suspend a given actor to a new snapshot. A running actor is checkpointed
 	// on its worker; a paused actor's node-local snapshot is uploaded, narrowed
 	// to the template's commit scope where required (Full capture, Data commit).
+	// A paused actor whose pause snapshot already has a durable copy (see
+	// ExternalSnapshot.source_local_snapshot_name) commits that copy as it was
+	// captured, without involving the node.
 	SuspendActor(ctx context.Context, in *SuspendActorRequest, opts ...grpc.CallOption) (*SuspendActorResponse, error)
-	// Pause a given actor and keep its snapshots on node VM.
+	// Pause a given actor and keep its snapshots on node VM. The control plane
+	// then uploads the pause snapshot to durable storage in the background and
+	// records the copy as the actor's external_snapshot; until that completes
+	// the actor can resume only on its node.
 	PauseActor(ctx context.Context, in *PauseActorRequest, opts ...grpc.CallOption) (*PauseActorResponse, error)
-	// Resume an actor from its latest snapshot.
+	// Resume an actor from its latest snapshot. A paused actor resumes from its
+	// node-local snapshot when a worker on that node is free, and from the
+	// snapshot's durable copy on any other eligible worker once one exists.
 	ResumeActor(ctx context.Context, in *ResumeActorRequest, opts ...grpc.CallOption) (*ResumeActorResponse, error)
 	// Delete an actor. Only suspended actors can be deleted.
 	DeleteActor(ctx context.Context, in *DeleteActorRequest, opts ...grpc.CallOption) (*Actor, error)
@@ -490,10 +498,18 @@ type ControlServer interface {
 	// Suspend a given actor to a new snapshot. A running actor is checkpointed
 	// on its worker; a paused actor's node-local snapshot is uploaded, narrowed
 	// to the template's commit scope where required (Full capture, Data commit).
+	// A paused actor whose pause snapshot already has a durable copy (see
+	// ExternalSnapshot.source_local_snapshot_name) commits that copy as it was
+	// captured, without involving the node.
 	SuspendActor(context.Context, *SuspendActorRequest) (*SuspendActorResponse, error)
-	// Pause a given actor and keep its snapshots on node VM.
+	// Pause a given actor and keep its snapshots on node VM. The control plane
+	// then uploads the pause snapshot to durable storage in the background and
+	// records the copy as the actor's external_snapshot; until that completes
+	// the actor can resume only on its node.
 	PauseActor(context.Context, *PauseActorRequest) (*PauseActorResponse, error)
-	// Resume an actor from its latest snapshot.
+	// Resume an actor from its latest snapshot. A paused actor resumes from its
+	// node-local snapshot when a worker on that node is free, and from the
+	// snapshot's durable copy on any other eligible worker once one exists.
 	ResumeActor(context.Context, *ResumeActorRequest) (*ResumeActorResponse, error)
 	// Delete an actor. Only suspended actors can be deleted.
 	DeleteActor(context.Context, *DeleteActorRequest) (*Actor, error)

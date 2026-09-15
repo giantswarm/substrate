@@ -162,8 +162,9 @@ func crashCounterReader(t *testing.T) *sdkmetric.ManualReader {
 // node1 takes it. Only a node that has left the cluster -- no ACTIVE worker of
 // any pool reports it and the Node object is gone -- loses the snapshot; then
 // the actor without a durable snapshot is crashed with LOCAL_SNAPSHOT_GONE
-// and the caller told through the crash directive, one with a durable
-// snapshot fails fast and stays PAUSED. Everything short of that stays
+// and the caller told through the crash directive, whatever earlier suspend's
+// snapshot it holds; one whose pause has a durable copy is not pinned at all
+// and lands elsewhere. Everything short of that stays
 // ResourceExhausted, which the router parks on, with the node named.
 func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 	tests := []struct {
@@ -176,8 +177,10 @@ func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 		// workflow without node knowledge.
 		nodes    []string
 		noLister bool
-		// external gives the actor a durable snapshot beside the local one.
+		// external gives the actor the external snapshot of an earlier suspend
+		// beside the local one; durableCopy the uploaded copy of the local one.
 		external    bool
+		durableCopy bool
 		wantCode    codes.Code
 		wantMessage string
 		wantState   ateapipb.ActorState
@@ -220,17 +223,29 @@ func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 			name:        "the node is gone and there is no durable snapshot: crashed",
 			fleet:       []*ateapipb.Worker{activeWorker("w2", "gvisor", "node2")},
 			wantCode:    codes.DataLoss,
-			wantMessage: `crashed: its local snapshot "snap" is on node(s) [node1], which no longer exist in the cluster, and it has no durable snapshot`,
+			wantMessage: `crashed: its local snapshot "snap" is on node(s) [node1], which no longer exist in the cluster, and it has no durable copy of it`,
 			wantState:   ateapipb.ActorState_ACTOR_STATE_CRASHED,
 			wantCrashed: true,
 		},
 		{
-			name:        "the node is gone but a durable snapshot remains: fails fast, stays paused",
+			// An earlier suspend's snapshot is older state: restoring it would
+			// silently revert the actor, so it does not save the pause.
+			name:        "the node is gone and only an earlier suspend's snapshot remains: crashed all the same",
 			fleet:       []*ateapipb.Worker{activeWorker("w2", "gvisor", "node2")},
 			external:    true,
 			wantCode:    codes.DataLoss,
-			wantMessage: `is on node(s) [node1], which no longer exist in the cluster; the paused state is lost`,
-			wantState:   ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			wantMessage: `crashed: its local snapshot "snap" is on node(s) [node1], which no longer exist in the cluster, and it has no durable copy of it`,
+			wantState:   ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			wantCrashed: true,
+		},
+		{
+			// With the pause uploaded the node is only preferred: the free
+			// worker elsewhere takes the actor.
+			name:        "the node is gone but the pause has a durable copy: placed elsewhere",
+			fleet:       []*ateapipb.Worker{activeWorker("w2", "gvisor", "node2")},
+			durableCopy: true,
+			wantCode:    codes.OK,
+			wantState:   ateapipb.ActorState_ACTOR_STATE_RESUMING,
 		},
 	}
 	for _, tc := range tests {
@@ -242,6 +257,9 @@ func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 			actor := seedPausedActor(t, ctx, persistence, func(st *ateapipb.ActorStatus) {
 				if tc.external {
 					st.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "durable")}
+				}
+				if tc.durableCopy {
+					st.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "snap"), SourceLocalSnapshotName: "snap"}
 				}
 			})
 			wc := startedWorkerCache(t, ctx, persistence, tc.fleet, tc.busy...)
@@ -325,8 +343,9 @@ func TestResumeActor_PausedOnGoneNodeCrashes(t *testing.T) {
 
 // TestEnsurePausedSnapshotUploaded_NodeGone covers the suspend of a PAUSED
 // actor whose node left the cluster: there is no atelet to ask for the upload
-// and never will be. Without a durable snapshot the actor is crashed, with one
-// the call fails fast; a node that is still there keeps the step retryable,
+// and never will be. Without a durable copy of the pause the actor is crashed
+// (an earlier suspend's snapshot does not count), with one the copy is
+// committed; a node that is still there keeps the step retryable,
 // and an empty node entry beside the real one is ignored.
 func TestEnsurePausedSnapshotUploaded_NodeGone(t *testing.T) {
 	tmpl := &ateapipb.ActorTemplate{SnapshotsConfig: &ateapipb.SnapshotsConfig{StorageLocation: "gs://snapshots"}}
@@ -366,22 +385,51 @@ func TestEnsurePausedSnapshotUploaded_NodeGone(t *testing.T) {
 		}
 	})
 
-	t.Run("a durable snapshot remains: fails fast, not crashed", func(t *testing.T) {
+	t.Run("only an earlier suspend's snapshot remains: crashed all the same", func(t *testing.T) {
 		ctx := context.Background()
 		persistence := newTestPersistence(t)
 		w := &ActorWorkflow{store: persistence, dialer: newDanglingDialer(), nodeLister: nodeListerOf(t)}
 		created := seed(t, ctx, persistence, []string{"node1"}, someActorSnapshotURI(t, testStorageLocation, "team-a", "durable"))
 
 		_, err := w.ensurePausedSnapshotUploaded(ctx, actorRef, created, tmpl)
-		if got := status.Code(err); got != codes.DataLoss || ateerrors.ActorCrashRequested(err) {
-			t.Fatalf("ensurePausedSnapshotUploaded = %v, want DataLoss without the crash directive", err)
+		if got := status.Code(err); got != codes.DataLoss || !ateerrors.ActorCrashRequested(err) {
+			t.Fatalf("ensurePausedSnapshotUploaded = %v, want DataLoss with the crash directive: an older snapshot does not save the pause", err)
 		}
 		stored, err := persistence.GetActor(ctx, actorRef)
 		if err != nil {
 			t.Fatalf("GetActor: %v", err)
 		}
-		if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDING {
-			t.Errorf("state = %v, want SUSPENDING (left for a fallback restore)", got)
+		if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED {
+			t.Errorf("state = %v, want CRASHED", got)
+		}
+	})
+
+	t.Run("the pause has a durable copy: committed without the node", func(t *testing.T) {
+		ctx := context.Background()
+		persistence := newTestPersistence(t)
+		w := &ActorWorkflow{store: persistence, dialer: newDanglingDialer(), nodeLister: nodeListerOf(t)}
+		copyURI := someActorSnapshotURI(t, testStorageLocation, "team-a", "snap")
+		created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
+			Status: &ateapipb.ActorStatus{
+				State:             ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+				LocalSnapshotInfo: &ateapipb.LocalSnapshotInfo{SnapshotName: "snap", NodeVmsWithLocalSnapshots: []string{"node1"}},
+				ExternalSnapshot:  &ateapipb.ExternalSnapshot{SnapshotUri: copyURI, ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL, SourceLocalSnapshotName: "snap"},
+			},
+		})
+
+		if _, err := w.ensurePausedSnapshotUploaded(ctx, actorRef, created, tmpl); err != nil {
+			t.Fatalf("ensurePausedSnapshotUploaded = %v, want nil: the copy is committed without the node", err)
+		}
+		stored, err := persistence.GetActor(ctx, actorRef)
+		if err != nil {
+			t.Fatalf("GetActor: %v", err)
+		}
+		if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED && got != ateapipb.ActorState_ACTOR_STATE_SUSPENDING {
+			t.Errorf("state = %v, want SUSPENDING", got)
+		}
+		if got := stored.GetStatus().GetState(); got == ateapipb.ActorState_ACTOR_STATE_CRASHED {
+			t.Errorf("state = CRASHED, want SUSPENDING: the durable copy commits")
 		}
 	})
 
