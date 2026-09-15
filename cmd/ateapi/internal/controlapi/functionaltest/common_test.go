@@ -132,6 +132,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 	ateletFactory, ateletInformer := controlapi.AteletInformer(k8sClient, installdefaults.SystemNamespace)
 	scFactory := informers.NewSharedInformerFactory(k8sClient, 0)
 	scLister := scFactory.Storage().V1().StorageClasses().Lister()
+	nodeLister := scFactory.Core().V1().Nodes().Lister()
 
 	substrateInformerFactory := externalversions.NewSharedInformerFactory(substrateClient, 0)
 	workerPoolLister := substrateInformerFactory.Api().V1alpha1().WorkerPools().Lister()
@@ -184,7 +185,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 		}
 	}
 	objectStore := objectstoretest.New()
-	service := controlapi.NewRPCService(persistence, wc, sandboxConfigLister, csiDriverConfigLister, scLister, dialer, instruments, "", 30*time.Second, 0, volPlugins, objectStore)
+	service := controlapi.NewRPCService(persistence, wc, sandboxConfigLister, csiDriverConfigLister, scLister, nodeLister, dialer, instruments, "", 30*time.Second, 0, volPlugins, objectStore)
 
 	// 5. Start REAL gRPC Server for ATE API
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(

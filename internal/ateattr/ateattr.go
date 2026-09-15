@@ -187,6 +187,7 @@ const (
 	ReasonWorkerReassigned    = string(ateerrors.ReasonWorkerReassigned)
 	ReasonWorkerPodGone       = string(ateerrors.ReasonWorkerPodGone)
 	ReasonRestoreTimedOut     = string(ateerrors.ReasonRestoreTimedOut)
+	ReasonLocalSnapshotGone   = string(ateerrors.ReasonLocalSnapshotGone)
 	ReasonUnknown             = string(ateerrors.ReasonUnknown)
 )
 

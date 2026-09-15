@@ -289,7 +289,10 @@ groups:
             - id: local_snapshot_gone
               stability: development
               value: LOCAL_SNAPSHOT_GONE
-              brief: The local snapshot on the node no longer exists.
+              brief: >
+                The local snapshot of a paused actor no longer exists: it is
+                missing from the node it was recorded on, or that node has left
+                the cluster, and no uploaded copy exists.
             - id: workload_not_ready
               stability: development
               value: WORKLOAD_NOT_READY
