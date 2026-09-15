@@ -66,6 +66,72 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 		Effect:            corev1.TaintEffectNoSchedule,
 		TolerationSeconds: &tolerationSeconds,
 	}
+	poolSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"ate.dev/worker-pool": "pool"}}
+	minDomains := int32(2)
+	honorNodeAffinity := corev1.NodeInclusionPolicyHonor
+	hostnameSpread := corev1.TopologySpreadConstraint{
+		MaxSkew:            1,
+		TopologyKey:        "kubernetes.io/hostname",
+		WhenUnsatisfiable:  corev1.DoNotSchedule,
+		LabelSelector:      poolSelector,
+		MinDomains:         &minDomains,
+		NodeAffinityPolicy: &honorNodeAffinity,
+	}
+	zoneSpread := corev1.TopologySpreadConstraint{
+		MaxSkew:           1,
+		TopologyKey:       "topology.kubernetes.io/zone",
+		WhenUnsatisfiable: corev1.ScheduleAnyway,
+		LabelSelector: &metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{
+			Key:      "ate.dev/worker-pool",
+			Operator: metav1.LabelSelectorOpIn,
+			Values:   []string{"pool"},
+		}}},
+		MatchLabelKeys: []string{"pod-template-hash"},
+	}
+	podAntiAffinity := &corev1.PodAntiAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+			LabelSelector: poolSelector,
+			TopologyKey:   "kubernetes.io/hostname",
+		}},
+		PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+			Weight: 100,
+			PodAffinityTerm: corev1.PodAffinityTerm{
+				LabelSelector:     poolSelector,
+				TopologyKey:       "topology.kubernetes.io/zone",
+				Namespaces:        []string{"default"},
+				MismatchLabelKeys: []string{"pod-template-hash"},
+			},
+		}},
+	}
+	poolSelectorAC := metav1ac.LabelSelector().WithMatchLabels(map[string]string{"ate.dev/worker-pool": "pool"})
+	hostnameSpreadAC := corev1ac.TopologySpreadConstraint().
+		WithMaxSkew(1).
+		WithTopologyKey("kubernetes.io/hostname").
+		WithWhenUnsatisfiable(corev1.DoNotSchedule).
+		WithLabelSelector(poolSelectorAC).
+		WithMinDomains(2).
+		WithNodeAffinityPolicy(corev1.NodeInclusionPolicyHonor)
+	zoneSpreadAC := corev1ac.TopologySpreadConstraint().
+		WithMaxSkew(1).
+		WithTopologyKey("topology.kubernetes.io/zone").
+		WithWhenUnsatisfiable(corev1.ScheduleAnyway).
+		WithLabelSelector(metav1ac.LabelSelector().WithMatchExpressions(
+			metav1ac.LabelSelectorRequirement().
+				WithKey("ate.dev/worker-pool").
+				WithOperator(metav1.LabelSelectorOpIn).
+				WithValues("pool"))).
+		WithMatchLabelKeys("pod-template-hash")
+	podAntiAffinityAC := corev1ac.PodAntiAffinity().
+		WithRequiredDuringSchedulingIgnoredDuringExecution(corev1ac.PodAffinityTerm().
+			WithTopologyKey("kubernetes.io/hostname").
+			WithLabelSelector(poolSelectorAC)).
+		WithPreferredDuringSchedulingIgnoredDuringExecution(corev1ac.WeightedPodAffinityTerm().
+			WithWeight(100).
+			WithPodAffinityTerm(corev1ac.PodAffinityTerm().
+				WithTopologyKey("topology.kubernetes.io/zone").
+				WithLabelSelector(poolSelectorAC).
+				WithNamespaces("default").
+				WithMismatchLabelKeys("pod-template-hash")))
 
 	tests := []struct {
 		name string
@@ -129,6 +195,50 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 			}),
 		},
 		{
+			name: "with topology spread constraints",
+			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{hostnameSpread, zoneSpread},
+			}),
+			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
+				podSpecAC.TopologySpreadConstraints = []corev1ac.TopologySpreadConstraintApplyConfiguration{
+					*hostnameSpreadAC,
+					*zoneSpreadAC,
+				}
+			}),
+		},
+		{
+			name: "with pod anti-affinity",
+			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
+				PodAntiAffinity: podAntiAffinity,
+			}),
+			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
+				podSpecAC.WithAffinity(corev1ac.Affinity().WithPodAntiAffinity(podAntiAffinityAC))
+			}),
+		},
+		{
+			// Both halves of the affinity are declared side by side: neither
+			// replaces the other.
+			name: "with node affinity and pod anti-affinity",
+			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
+				NodeAffinity:    requiredNodeAffinity,
+				PodAntiAffinity: podAntiAffinity,
+			}),
+			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
+				podSpecAC.WithAffinity(corev1ac.Affinity().
+					WithNodeAffinity(corev1ac.NodeAffinity().WithRequiredDuringSchedulingIgnoredDuringExecution(
+						corev1ac.NodeSelector().WithNodeSelectorTerms(
+							corev1ac.NodeSelectorTerm().WithMatchExpressions(
+								corev1ac.NodeSelectorRequirement().
+									WithKey("workload").
+									WithOperator(corev1.NodeSelectorOpIn).
+									WithValues("substrate"),
+							),
+						),
+					)).
+					WithPodAntiAffinity(podAntiAffinityAC))
+			}),
+		},
+		{
 			name: "with priority class name",
 			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
 				PriorityClassName: "interactive-workerpool",
@@ -170,9 +280,11 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 					"accelerator": "gpu",
 					"topology":    "high-mem",
 				},
-				Tolerations:       []corev1.Toleration{toleration},
-				PriorityClassName: "interactive-workerpool",
-				NodeAffinity:      preferredNodeAffinity,
+				Tolerations:               []corev1.Toleration{toleration},
+				PriorityClassName:         "interactive-workerpool",
+				NodeAffinity:              preferredNodeAffinity,
+				PodAntiAffinity:           podAntiAffinity,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{hostnameSpread},
 			}),
 			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
 				podSpecAC.WithNodeSelector(map[string]string{
@@ -188,8 +300,8 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 						WithTolerationSeconds(300),
 				}
 				podSpecAC.WithPriorityClassName("interactive-workerpool")
-				podSpecAC.WithAffinity(corev1ac.Affinity().WithNodeAffinity(
-					corev1ac.NodeAffinity().WithPreferredDuringSchedulingIgnoredDuringExecution(
+				podSpecAC.WithAffinity(corev1ac.Affinity().
+					WithNodeAffinity(corev1ac.NodeAffinity().WithPreferredDuringSchedulingIgnoredDuringExecution(
 						corev1ac.PreferredSchedulingTerm().
 							WithWeight(50).
 							WithPreference(corev1ac.NodeSelectorTerm().WithMatchExpressions(
@@ -198,8 +310,9 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 									WithOperator(corev1.NodeSelectorOpIn).
 									WithValues("ssd"),
 							)),
-					),
-				))
+					)).
+					WithPodAntiAffinity(podAntiAffinityAC))
+				podSpecAC.TopologySpreadConstraints = []corev1ac.TopologySpreadConstraintApplyConfiguration{*hostnameSpreadAC}
 			}),
 		},
 	}
@@ -787,6 +900,7 @@ func expectedDeploymentApplyConfig(mutatePodSpec func(*corev1ac.PodSpecApplyConf
 
 	podSpecAC.NodeSelector = map[string]string{}
 	podSpecAC.Tolerations = []corev1ac.TolerationApplyConfiguration{}
+	podSpecAC.TopologySpreadConstraints = []corev1ac.TopologySpreadConstraintApplyConfiguration{}
 	podSpecAC.WithPriorityClassName("")
 	podSpecAC.WithAffinity(corev1ac.Affinity())
 	podSpecAC.WithTerminationGracePeriodSeconds(workerTerminationGracePeriodSeconds)

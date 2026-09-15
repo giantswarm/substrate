@@ -19,6 +19,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	appsv1ac "k8s.io/client-go/applyconfigurations/apps/v1"
 	corev1ac "k8s.io/client-go/applyconfigurations/core/v1"
@@ -453,6 +454,7 @@ func applyWorkerPoolPodTemplate(
 ) {
 	podSpecAC.NodeSelector = map[string]string{}
 	podSpecAC.Tolerations = []corev1ac.TolerationApplyConfiguration{}
+	podSpecAC.TopologySpreadConstraints = []corev1ac.TopologySpreadConstraintApplyConfiguration{}
 	podSpecAC.WithPriorityClassName("")
 	podSpecAC.WithAffinity(corev1ac.Affinity())
 	resourcesAC := corev1ac.ResourceRequirements()
@@ -466,11 +468,20 @@ func applyWorkerPoolPodTemplate(
 		podSpecAC.WithNodeSelector(tmpl.NodeSelector)
 	}
 	podSpecAC.Tolerations = tolerationApplyValues(tolerationsToApply(tmpl.Tolerations))
+	podSpecAC.TopologySpreadConstraints = topologySpreadConstraintApplyValues(topologySpreadConstraintsToApply(tmpl.TopologySpreadConstraints))
 	podSpecAC.WithPriorityClassName(tmpl.PriorityClassName)
 
+	// The affinity is declared whole: node affinity and pod anti-affinity side
+	// by side, so the controller owns both fields under server-side apply and
+	// a template that drops one of them clears it on the pod.
+	affinityAC := corev1ac.Affinity()
 	if tmpl.NodeAffinity != nil {
-		podSpecAC.WithAffinity(corev1ac.Affinity().WithNodeAffinity(nodeAffinityToApply(tmpl.NodeAffinity)))
+		affinityAC.WithNodeAffinity(nodeAffinityToApply(tmpl.NodeAffinity))
 	}
+	if tmpl.PodAntiAffinity != nil {
+		affinityAC.WithPodAntiAffinity(podAntiAffinityToApply(tmpl.PodAntiAffinity))
+	}
+	podSpecAC.WithAffinity(affinityAC)
 
 	if tmpl.Resources != nil {
 		if tmpl.Resources.Requests != nil {
@@ -556,6 +567,92 @@ func nodeSelectorRequirementToApply(req *corev1.NodeSelectorRequirement) *corev1
 	ac := corev1ac.NodeSelectorRequirement().WithKey(req.Key).WithOperator(req.Operator)
 	if len(req.Values) > 0 {
 		ac.WithValues(req.Values...)
+	}
+	return ac
+}
+
+func podAntiAffinityToApply(paa *corev1.PodAntiAffinity) *corev1ac.PodAntiAffinityApplyConfiguration {
+	ac := corev1ac.PodAntiAffinity()
+	for i := range paa.RequiredDuringSchedulingIgnoredDuringExecution {
+		ac.WithRequiredDuringSchedulingIgnoredDuringExecution(podAffinityTermToApply(&paa.RequiredDuringSchedulingIgnoredDuringExecution[i]))
+	}
+	for i := range paa.PreferredDuringSchedulingIgnoredDuringExecution {
+		term := &paa.PreferredDuringSchedulingIgnoredDuringExecution[i]
+		ac.WithPreferredDuringSchedulingIgnoredDuringExecution(corev1ac.WeightedPodAffinityTerm().
+			WithWeight(term.Weight).
+			WithPodAffinityTerm(podAffinityTermToApply(&term.PodAffinityTerm)))
+	}
+	return ac
+}
+
+func podAffinityTermToApply(term *corev1.PodAffinityTerm) *corev1ac.PodAffinityTermApplyConfiguration {
+	ac := corev1ac.PodAffinityTerm().WithTopologyKey(term.TopologyKey)
+	if term.LabelSelector != nil {
+		ac.WithLabelSelector(labelSelectorToApply(term.LabelSelector))
+	}
+	if len(term.Namespaces) > 0 {
+		ac.WithNamespaces(term.Namespaces...)
+	}
+	if term.NamespaceSelector != nil {
+		ac.WithNamespaceSelector(labelSelectorToApply(term.NamespaceSelector))
+	}
+	if len(term.MatchLabelKeys) > 0 {
+		ac.WithMatchLabelKeys(term.MatchLabelKeys...)
+	}
+	if len(term.MismatchLabelKeys) > 0 {
+		ac.WithMismatchLabelKeys(term.MismatchLabelKeys...)
+	}
+	return ac
+}
+
+func topologySpreadConstraintApplyValues(constraints []*corev1ac.TopologySpreadConstraintApplyConfiguration) []corev1ac.TopologySpreadConstraintApplyConfiguration {
+	out := make([]corev1ac.TopologySpreadConstraintApplyConfiguration, 0, len(constraints))
+	for _, constraint := range constraints {
+		out = append(out, *constraint)
+	}
+	return out
+}
+
+func topologySpreadConstraintsToApply(constraints []corev1.TopologySpreadConstraint) []*corev1ac.TopologySpreadConstraintApplyConfiguration {
+	out := make([]*corev1ac.TopologySpreadConstraintApplyConfiguration, 0, len(constraints))
+	for i := range constraints {
+		c := &constraints[i]
+		ac := corev1ac.TopologySpreadConstraint().
+			WithMaxSkew(c.MaxSkew).
+			WithTopologyKey(c.TopologyKey).
+			WithWhenUnsatisfiable(c.WhenUnsatisfiable)
+		if c.LabelSelector != nil {
+			ac.WithLabelSelector(labelSelectorToApply(c.LabelSelector))
+		}
+		if c.MinDomains != nil {
+			ac.WithMinDomains(*c.MinDomains)
+		}
+		if c.NodeAffinityPolicy != nil {
+			ac.WithNodeAffinityPolicy(*c.NodeAffinityPolicy)
+		}
+		if c.NodeTaintsPolicy != nil {
+			ac.WithNodeTaintsPolicy(*c.NodeTaintsPolicy)
+		}
+		if len(c.MatchLabelKeys) > 0 {
+			ac.WithMatchLabelKeys(c.MatchLabelKeys...)
+		}
+		out = append(out, ac)
+	}
+	return out
+}
+
+func labelSelectorToApply(sel *metav1.LabelSelector) *metav1ac.LabelSelectorApplyConfiguration {
+	ac := metav1ac.LabelSelector()
+	if sel.MatchLabels != nil {
+		ac.WithMatchLabels(sel.MatchLabels)
+	}
+	for i := range sel.MatchExpressions {
+		req := &sel.MatchExpressions[i]
+		reqAC := metav1ac.LabelSelectorRequirement().WithKey(req.Key).WithOperator(req.Operator)
+		if len(req.Values) > 0 {
+			reqAC.WithValues(req.Values...)
+		}
+		ac.WithMatchExpressions(reqAC)
 	}
 	return ac
 }

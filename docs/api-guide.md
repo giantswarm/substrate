@@ -25,6 +25,8 @@ The `WorkerPool` defines the pool of physical "warm" compute capacity. It manage
 | `tolerations` | `[]Toleration` | `spec.tolerations` (max 16) |
 | `priorityClassName` | `string` | `spec.priorityClassName` |
 | `nodeAffinity` | `NodeAffinity` | `spec.affinity.nodeAffinity` |
+| `podAntiAffinity` | `PodAntiAffinity` | `spec.affinity.podAntiAffinity` |
+| `topologySpreadConstraints` | `[]TopologySpreadConstraint` | `spec.topologySpreadConstraints` (max 8) |
 | `resources` | `ResourceRequirements` | `spec.containers[].resources` |
 
 Keys in `ate.dev/` and its subdomains (for example, `policy.ate.dev/`) are
@@ -59,6 +61,46 @@ The pin is critical to make a rolling upgrade possible. An upgrade moves nodes t
 the new version one at a time, deleting each node's old worker pods once it
 moves. A pinned pool cannot put those pods back on a moved node, so the old
 version drains away node by node. An unpinned pool breaks this constraints.
+
+#### Spread a pool's workers over nodes and zones (`template.topologySpreadConstraints`, `template.podAntiAffinity`)
+
+A pool is one Deployment of identical worker pods, and the scheduler places
+an actor on any free worker of the pool: the pool's resilience is whatever the
+Kubernetes scheduler and the cluster autoscaler make of the pod template. With
+nothing said about placement, the scheduler is free to bin-pack every worker
+of a pool onto one node, and one node failure then takes the whole pool down.
+
+`topologySpreadConstraints` and `podAntiAffinity` are forwarded to the worker
+pods as written. Select this pool's own workers with the label the controller
+puts on every worker pod, `ate.dev/worker-pool: <pool name>`; a selector on a
+`template.labels` key works too, since those labels reach the pods as well.
+The constraints below keep the workers on at least two nodes (a second node is
+provisioned rather than the pool packed onto one) and prefer to spread them
+across zones:
+
+```yaml
+spec:
+  template:
+    topologySpreadConstraints:
+    - maxSkew: 1
+      minDomains: 2
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          ate.dev/worker-pool: agent-pool
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          ate.dev/worker-pool: agent-pool
+```
+
+No spread is applied by default; a pool without these fields is placed as
+before. As with every other `spec.template` change, adding or changing them
+rolls the pool's Deployment once.
+
 #### Worker Capacity (`spec.template.resources`)
 
 Setting `resources.limits` (CPU and Memory) on a `WorkerPool` establishes each worker pod's **capacity** — the envelope available to host an actor sandbox, taken from the `ateom` container's limits. The scheduler only places an actor on a worker whose capacity is `>=` the actor's declared resource limits (see [Sandbox Right-Sizing](#sandbox-right-sizing-resources) on the `ActorTemplate`).
