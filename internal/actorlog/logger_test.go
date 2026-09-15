@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -105,7 +106,7 @@ func identityLabels() map[string]string {
 func TestWrapContainerLogs(t *testing.T) {
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader("Test application log output\n"), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader("Test application log output\n"), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 
@@ -126,7 +127,7 @@ func TestWrapContainerLogs_JSONInput(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 
@@ -161,7 +162,7 @@ func TestWrapContainerLogs_ActorTraceContextPassthrough(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 	if m[ateattr.LogTraceIDField] != traceID {
@@ -210,7 +211,7 @@ func TestWrapContainerLogs_MergeLabels(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 	labels := labelGroup(t, al, decodeLine(t, &buf))
 
@@ -229,7 +230,7 @@ func TestWrapContainerLogs_ReservedNamespace(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 	for _, k := range []string{actorNameLabel, "ate.tenant"} {
@@ -270,7 +271,7 @@ func TestWrapContainerLogs_ForeignLabelGroup(t *testing.T) {
 
 			var buf bytes.Buffer
 			al := NewActorLogger(&buf, tt.onGCE)
-			al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+			al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 			m := decodeLine(t, &buf)
 			if _, ok := m[tt.foreign]; ok {
@@ -299,7 +300,7 @@ func TestWrapContainerLogs_NonStringLabelValue(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(input), testAttribution, testContainer, nil)
 
 	labels := labelGroup(t, al, decodeLine(t, &buf))
 	for k, v := range labels {
@@ -318,7 +319,7 @@ func TestWrapContainerLogs_NonStringLabelValue(t *testing.T) {
 func TestWrapContainerLogs_JSONNull(t *testing.T) {
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader("null\n"), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader("null\n"), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 	if m["message"] != "null" {
@@ -332,7 +333,7 @@ func TestWrapContainerLogs_TrailingGarbage(t *testing.T) {
 
 	var buf bytes.Buffer
 	al := NewActorLogger(&buf, false)
-	al.WrapContainerLogs(strings.NewReader(line+"\n"), testAttribution, testContainer)
+	al.WrapContainerLogs(strings.NewReader(line+"\n"), testAttribution, testContainer, nil)
 
 	m := decodeLine(t, &buf)
 	if m["message"] != line {
@@ -459,5 +460,61 @@ func TestLabelsKey(t *testing.T) {
 	}
 	if got := LabelsKey(true); got != "logging.googleapis.com/labels" {
 		t.Errorf("LabelsKey(true) = %q, want logging.googleapis.com/labels", got)
+	}
+}
+
+func TestOutputTail_KeepsTheLastLinesBounded(t *testing.T) {
+	tail := NewOutputTail()
+	if got := tail.Lines(); got != nil {
+		t.Fatalf("empty tail Lines() = %v, want nil", got)
+	}
+	var input strings.Builder
+	for i := range outputTailLines + 3 {
+		fmt.Fprintf(&input, "line %d\n", i)
+	}
+	input.WriteString("\n   \n") // blank lines carry nothing
+	input.WriteString(strings.Repeat("x", outputTailLineBytes+40) + "\n")
+
+	var buf bytes.Buffer
+	NewActorLogger(&buf, false).WrapContainerLogs(strings.NewReader(input.String()), testAttribution, testContainer, tail)
+
+	lines := tail.Lines()
+	if len(lines) != outputTailLines {
+		t.Fatalf("kept %d lines, want %d", len(lines), outputTailLines)
+	}
+	// The oldest lines fell off the front; the newest is the cut long line.
+	if want := fmt.Sprintf("line %d", outputTailLines+3-(outputTailLines-1)); lines[0] != want {
+		t.Errorf("oldest kept line = %q, want %q", lines[0], want)
+	}
+	last := lines[len(lines)-1]
+	if !strings.HasPrefix(last, strings.Repeat("x", outputTailLineBytes)) || !strings.HasSuffix(last, "…") || len(last) > outputTailLineBytes+len("…") {
+		t.Errorf("long line kept as %d bytes ending %q, want %d bytes plus an ellipsis", len(last), last[len(last)-3:], outputTailLineBytes)
+	}
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			t.Errorf("a blank line was kept: %q", l)
+		}
+	}
+	// The forwarder still wrote every non-empty line to the pod log, the
+	// whitespace-only one included: the tail's bound and filter are its own.
+	if got, want := strings.Count(buf.String(), "\n"), outputTailLines+3+2; got != want {
+		t.Errorf("forwarded %d records, want %d", got, want)
+	}
+}
+
+func TestOutputTail_NilKeepsNothing(t *testing.T) {
+	var tail *OutputTail
+	var buf bytes.Buffer
+	NewActorLogger(&buf, false).WrapContainerLogs(strings.NewReader("a line\n"), testAttribution, testContainer, tail)
+	if got := tail.Lines(); got != nil {
+		t.Errorf("nil tail Lines() = %v, want nil", got)
+	}
+	tails := OutputTails{}
+	if got := tails.Lines("absent"); got != nil {
+		t.Errorf("Lines of a container without a tail = %v, want nil", got)
+	}
+	tails.Add("main").add([]byte("said so"))
+	if got := tails.Lines("main"); len(got) != 1 || got[0] != "said so" {
+		t.Errorf("Lines(main) = %v, want [said so]", got)
 	}
 }

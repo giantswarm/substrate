@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/agent-substrate/substrate/internal/actorlog"
 	"github.com/agent-substrate/substrate/internal/ateomnet"
 
 	"github.com/agent-substrate/substrate/cmd/ateom-microvm/internal/ch"
@@ -598,8 +599,23 @@ func (s *AteomService) coldBootActor(ctx context.Context, p actorBootParams) (re
 	}
 	tContainers := time.Now()
 
+	// Forward each container's stdout/stderr into the pod logs, keyed by the
+	// container id (== the name; see StartRootfsContainer). The goroutines read
+	// over ac for the actor's lifetime and exit (io.EOF) when teardownActor
+	// closes ac — or the deferred close above, when the boot fails below.
+	// Started before the readiness wait so that a workload which exits before
+	// its probe answers has its last lines in the pod log and in the deadline
+	// error, which quotes each container's tail.
+	forwarded := make([]string, 0, len(ctrs))
+	tails := actorlog.OutputTails{}
+	attribution := p.actorAttribution()
+	for _, c := range ctrs {
+		s.startActorLogForwarding(ac, attribution, c.name, c.name, tails.Add(c.name))
+		forwarded = append(forwarded, c.name)
+	}
+
 	// Block until every readyz-enabled container reports 200.
-	if err := readyz.WaitAll(ctx, containers, ateomnet.ActorVethIP); err != nil {
+	if err := readyz.WaitAll(ctx, containers, ateomnet.ActorVethIP, tails.Lines); err != nil {
 		return fmt.Errorf("while waiting for container readyz: %w", err)
 	}
 
@@ -618,23 +634,12 @@ func (s *AteomService) coldBootActor(ctx context.Context, p actorBootParams) (re
 	}
 	s.running[actorUID] = ra
 
-	// Forward each container's stdout/stderr into the pod logs, keyed by the
-	// container id (== the name; see StartRootfsContainer). The goroutines read
-	// over ac for the actor's lifetime and exit (io.EOF) when teardownActor
-	// closes ac.
-	workloadIDs := make([]string, 0, len(ctrs))
-	attribution := p.actorAttribution()
-	for _, c := range ctrs {
-		s.startActorLogForwarding(ac, attribution, c.name, c.name)
-		workloadIDs = append(workloadIDs, c.name)
-	}
-
 	// Publish the guest to GetWorkloadStats, past every error return above: a
 	// failing attempt closes ac on its way out (and coldBootActorRetrying may
 	// then try the whole boot again), so a target published earlier would leave
 	// the handler polling a connection nobody owns. Same client the forwarding
 	// above reads over — ttrpc multiplexes, and teardownActor ends both.
-	s.guestStats.Store(&guestStatsTarget{actorUID: actorUID, agent: ac, workloadIDs: workloadIDs})
+	s.guestStats.Store(&guestStatsTarget{actorUID: actorUID, agent: ac, workloadIDs: forwarded})
 
 	return nil
 }
@@ -961,9 +966,11 @@ func startRootfsContainer(ctx context.Context, ac *kata.AgentClient, vsockPath s
 // ending WrapContainerLogs. This keeps the agent connection (which ttrpc allows
 // concurrent Calls on) alive for forwarding while guaranteeing no goroutine outlives
 // the connection.
-func (s *AteomService) startActorLogForwarding(ac *kata.AgentClient, a resources.ActorAttribution, streamID, containerName string) {
-	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, false), a, containerName)
-	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, true), a, containerName)
+//
+// A non-nil tail keeps the container's most recent lines from both streams.
+func (s *AteomService) startActorLogForwarding(ac *kata.AgentClient, a resources.ActorAttribution, streamID, containerName string, tail *actorlog.OutputTail) {
+	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, false), a, containerName, tail)
+	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, true), a, containerName, tail)
 }
 
 // errGuestStopped reports that the micro-VM stopped before the kata-agent
