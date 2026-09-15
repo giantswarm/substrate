@@ -1764,7 +1764,10 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 
 			actor, loadedTmpl, src, err := w.loadActorForResume(ctx, actorRef)
 			if err == nil {
-				_, err = w.ensureAteletRestored(ctx, actorRef, actor, loadedTmpl, src)
+				// The assigned worker sits on the local snapshot's node, so the
+				// placement guard admits every case of the table.
+				worker := &ateapipb.Worker{Metadata: &ateapipb.ResourceMetadata{Name: "worker-1"}, NodeName: "node-1"}
+				_, err = w.ensureAteletRestored(ctx, actorRef, actor, loadedTmpl, src, worker)
 			}
 			if got := status.Code(err); got != tt.want.code {
 				t.Fatalf("status.Code(err) = %v, want %v (err: %v)", got, tt.want.code, err)

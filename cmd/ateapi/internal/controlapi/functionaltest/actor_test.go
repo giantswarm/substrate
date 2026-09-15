@@ -3859,7 +3859,7 @@ func TestResumeActor_PausedOnGoneNodeCrashesAndDeletes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ResumeActor kept answering %v after the node was deleted", resumeErr)
 	}
-	assertGrpcError(t, resumeErr, codes.DataLoss, fmt.Sprintf("actor %s/%s crashed: its local snapshot %q is on node(s) [%s], which no longer exist in the cluster, and it has no durable snapshot", testAtespace, name, paused.GetStatus().GetLocalSnapshotInfo().GetSnapshotName(), node))
+	assertGrpcError(t, resumeErr, codes.DataLoss, fmt.Sprintf("actor %s/%s crashed: its local snapshot %q is on node(s) [%s], which no longer exist in the cluster, and it has no durable copy of it", testAtespace, name, paused.GetStatus().GetLocalSnapshotInfo().GetSnapshotName(), node))
 	if !ateerrors.ActorCrashRequested(resumeErr) {
 		t.Errorf("ResumeActor error carries no crash directive: %v", resumeErr)
 	}
@@ -3878,5 +3878,295 @@ func TestResumeActor_PausedOnGoneNodeCrashesAndDeletes(t *testing.T) {
 	// The actor is the owner's to delete now.
 	if _, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}}); err != nil {
 		t.Fatalf("DeleteActor of the crashed actor failed: %v", err)
+	}
+}
+
+// startPauseUploads runs the service's background pause snapshot uploads for
+// the test. Started only by the tests that assert on them, so every other
+// test observes the atelet traffic of its own calls alone. The returned stop
+// ends the uploads; call it before the test context is torn down.
+func startPauseUploads(t *testing.T, tc *testContext) (stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	tc.service.Start(ctx)
+	return cancel
+}
+
+// waitForDurablePause polls until the actor's pause snapshot has a durable
+// copy: an external snapshot uploaded from the local snapshot it is paused on.
+func waitForDurablePause(t *testing.T, tc *testContext, name string) *ateapipb.Actor {
+	t.Helper()
+	var actor *ateapipb.Actor
+	err := wait.PollUntilContextTimeout(context.Background(), 20*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+		got, err := tc.client.GetActor(ctx, &ateapipb.GetActorRequest{
+			Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
+		})
+		if err != nil {
+			return false, err
+		}
+		st := got.GetStatus()
+		if st.GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED || st.GetExternalSnapshot().GetSourceLocalSnapshotName() == "" ||
+			st.GetExternalSnapshot().GetSourceLocalSnapshotName() != st.GetLocalSnapshotInfo().GetSnapshotName() {
+			return false, nil
+		}
+		actor = got
+		return true, nil
+	})
+	if err != nil {
+		t.Fatalf("the pause snapshot of %s never got a durable copy: %v", name, err)
+	}
+	return actor
+}
+
+// pauseOnNode1 creates an actor, runs it on node1's only worker and pauses it
+// there, returning the paused record.
+func pauseOnNode1(t *testing.T, tc *testContext, name string) *ateapipb.Actor {
+	t.Helper()
+	if _, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: name},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+	}}); err != nil {
+		t.Fatalf("CreateActor(%s) failed: %v", name, err)
+	}
+	if _, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
+	}); err != nil {
+		t.Fatalf("ResumeActor(%s) failed: %v", name, err)
+	}
+	if _, err := tc.client.PauseActor(context.Background(), &ateapipb.PauseActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
+	}); err != nil {
+		t.Fatalf("PauseActor(%s) failed: %v", name, err)
+	}
+	paused, err := tc.client.GetActor(context.Background(), &ateapipb.GetActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name},
+	})
+	if err != nil {
+		t.Fatalf("GetActor(%s) failed: %v", name, err)
+	}
+	if got := paused.GetStatus().GetLocalSnapshotInfo().GetNodeVmsWithLocalSnapshots(); len(got) != 1 || got[0] != "node1" {
+		t.Fatalf("paused actor pinned to %v, want [node1]", got)
+	}
+	return paused
+}
+
+// TestPauseActor_MakesPauseDurable verifies a pause is followed by a
+// background upload of its node-local snapshot: the atelet on the node is
+// asked to upload the checkpoint and keep the local copy, and the actor —
+// still PAUSED on its node — records the copy as its external snapshot,
+// marked with the local snapshot it came from.
+func TestPauseActor_MakesPauseDurable(t *testing.T) {
+	ns := namespaceForTest("ns-pause-durable")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	defer startPauseUploads(t, tc)()
+
+	createTemplate(t, tc, ns)
+	createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	paused := pauseOnNode1(t, tc, "id1")
+	durable := waitForDurablePause(t, tc, "id1")
+
+	upload := tc.fakeAtelet.lastUploadRequest()
+	if upload == nil {
+		t.Fatal("expected atelet UploadPausedCheckpoint to be called")
+	}
+	if !upload.GetKeepLocal() {
+		t.Error("upload keep_local = false, want true: the actor stays paused on its node")
+	}
+	if got, want := upload.GetLocalSnapshotName(), paused.GetStatus().GetLocalSnapshotInfo().GetSnapshotName(); got != want {
+		t.Errorf("upload local_snapshot_name = %q, want the pause snapshot %q", got, want)
+	}
+	if got := upload.GetDesiredScope(); got != ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL {
+		t.Errorf("upload desired_scope = %v, want FULL (what the pause captured)", got)
+	}
+
+	external := durable.GetStatus().GetExternalSnapshot()
+	if got, want := external.GetSnapshotUri(), upload.GetDestinationSnapshotUri(); got != want {
+		t.Errorf("external snapshot URI = %q, want the upload destination %q", got, want)
+	}
+	if got := external.GetContentScope(); got != ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL {
+		t.Errorf("external snapshot ContentScope = %v, want FULL", got)
+	}
+	assertSnapshotOwnedByActor(t, durable, external.GetSnapshotUri())
+	assertSnapshotPresent(t, tc, external.GetSnapshotUri())
+	if diff := cmp.Diff(paused.GetStatus().GetLocalSnapshotInfo(), durable.GetStatus().GetLocalSnapshotInfo(), protocmp.Transform()); diff != "" {
+		t.Errorf("LocalSnapshotInfo changed by the upload (-paused +durable):\n%s", diff)
+	}
+}
+
+// TestResumeActor_PausedRestoresDurableCopyOffItsNode is the node-loss case:
+// the worker on the paused actor's node is gone, another node has a free
+// worker. With the pause snapshot's durable copy the actor resumes there,
+// restoring that copy, instead of waiting out a capacity error that cannot
+// clear.
+func TestResumeActor_PausedRestoresDurableCopyOffItsNode(t *testing.T) {
+	ns := namespaceForTest("ns-resume-durable-copy")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	defer startPauseUploads(t, tc)()
+
+	createTemplate(t, tc, ns)
+	createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	pauseOnNode1(t, tc, "id1")
+	durable := waitForDurablePause(t, tc, "id1")
+
+	// node1 goes away with its worker; node2 comes up with a free one.
+	deleteWorkerPod(t, tc, ns, "worker-1")
+	createWorkerPod(t, tc, ns, "worker-2", "node2", "pool1")
+	setupAteletOnNode(t, tc, "atelet-node2", "node2")
+	tc.fakeAtelet.Reset()
+
+	resumed, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "id1"},
+	})
+	if err != nil {
+		t.Fatalf("ResumeActor off the snapshot's node failed: %v", err)
+	}
+	if got := resumed.GetActor().GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+		t.Errorf("state = %v, want RUNNING", got)
+	}
+	if got := resumed.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPod(); got != "worker-2" {
+		t.Errorf("resumed onto worker %q, want worker-2 (the worker on node2)", got)
+	}
+	restore := tc.fakeAtelet.lastRestoreRequest()
+	if restore == nil {
+		t.Fatal("expected atelet Restore to be called")
+	}
+	if got := restore.GetType(); got != ateletpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL {
+		t.Errorf("restore type = %v, want EXTERNAL (the durable copy)", got)
+	}
+	if got, want := restore.GetExternalConfig().GetSnapshotUri(), durable.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != want {
+		t.Errorf("restore snapshot URI = %q, want the pause's durable copy %q", got, want)
+	}
+	if got := restore.GetScope(); got != ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL {
+		t.Errorf("restore scope = %v, want FULL: the copy restores as the pause would", got)
+	}
+}
+
+// TestResumeActor_PausedPrefersItsNodeOverOtherFreeWorkers verifies the
+// durable copy does not cost the fast path: with free workers on the
+// snapshot's node and elsewhere, the paused actor lands on its node and
+// restores the local snapshot.
+func TestResumeActor_PausedPrefersItsNodeOverOtherFreeWorkers(t *testing.T) {
+	ns := namespaceForTest("ns-resume-prefer-node")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	defer startPauseUploads(t, tc)()
+
+	createTemplate(t, tc, ns)
+	workerName := createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	paused := pauseOnNode1(t, tc, "id1")
+	waitForDurablePause(t, tc, "id1")
+	waitForWorkerAvailable(t, tc, workerName)
+	createWorkerPod(t, tc, ns, "worker-2", "node2", "pool1")
+	setupAteletOnNode(t, tc, "atelet-node2", "node2")
+	tc.fakeAtelet.Reset()
+
+	resumed, err := tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "id1"},
+	})
+	if err != nil {
+		t.Fatalf("ResumeActor failed: %v", err)
+	}
+	if got := resumed.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPod(); got != "worker-1" {
+		t.Errorf("resumed onto worker %q, want worker-1 (the worker on the snapshot's node)", got)
+	}
+	restore := tc.fakeAtelet.lastRestoreRequest()
+	if restore == nil {
+		t.Fatal("expected atelet Restore to be called")
+	}
+	if got := restore.GetType(); got != ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL {
+		t.Errorf("restore type = %v, want LOCAL (the node-local snapshot)", got)
+	}
+	if got, want := restore.GetLocalConfig().GetSnapshotName(), paused.GetStatus().GetLocalSnapshotInfo().GetSnapshotName(); got != want {
+		t.Errorf("restore local snapshot = %q, want %q", got, want)
+	}
+}
+
+// TestSuspendActor_PausedWithDurableCopy_CommitsItWithoutTheNode verifies a
+// suspend of a paused actor whose pause snapshot has a durable copy uploads
+// nothing: the copy becomes the suspended actor's snapshot, the node pinning
+// ends, and the node is only asked — best-effort — to drop the local copy.
+func TestSuspendActor_PausedWithDurableCopy_CommitsItWithoutTheNode(t *testing.T) {
+	ns := namespaceForTest("ns-suspend-durable-copy")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	defer startPauseUploads(t, tc)()
+
+	createTemplate(t, tc, ns)
+	createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	pauseOnNode1(t, tc, "id1")
+	durable := waitForDurablePause(t, tc, "id1")
+	copyURI := durable.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	tc.fakeAtelet.Reset()
+
+	suspended, err := tc.client.SuspendActor(context.Background(), &ateapipb.SuspendActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "id1"},
+	})
+	if err != nil {
+		t.Fatalf("SuspendActor failed: %v", err)
+	}
+	if tc.fakeAtelet.lastUploadRequest() != nil {
+		t.Error("atelet UploadPausedCheckpoint called; the pause snapshot already had a durable copy")
+	}
+	prune := tc.fakeAtelet.lastPruneRequest()
+	if prune == nil {
+		t.Error("expected atelet PruneLocalCheckpoints to be called for the local copy")
+	} else if got, want := prune.GetActorUid(), durable.GetMetadata().GetUid(); got != want {
+		t.Errorf("prune actor_uid = %q, want %q", got, want)
+	}
+
+	actor := suspended.GetActor()
+	if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("state = %v, want SUSPENDED", actor.GetStatus().GetState())
+	}
+	if got := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != copyURI {
+		t.Errorf("snapshot URI = %q, want the durable copy %q kept", got, copyURI)
+	}
+	if actor.GetStatus().GetLocalSnapshotInfo() != nil {
+		t.Errorf("LocalSnapshotInfo = %v, want cleared", actor.GetStatus().GetLocalSnapshotInfo())
+	}
+	assertSnapshotPresent(t, tc, copyURI)
+}
+
+// TestDeleteActor_PausedWithDurableCopy_ReleasesBothCopies verifies deleting
+// a paused actor collects the durable copy from object storage and asks the
+// node to drop the local one.
+func TestDeleteActor_PausedWithDurableCopy_ReleasesBothCopies(t *testing.T) {
+	ns := namespaceForTest("ns-delete-durable-copy")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	defer startPauseUploads(t, tc)()
+
+	createTemplate(t, tc, ns)
+	createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	pauseOnNode1(t, tc, "id1")
+	durable := waitForDurablePause(t, tc, "id1")
+	copyURI := durable.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	tc.fakeAtelet.Reset()
+
+	if _, err := tc.client.DeleteActor(context.Background(), &ateapipb.DeleteActorRequest{
+		Actor:    &ateapipb.ObjectRef{Atespace: testAtespace, Name: "id1"},
+		AnyState: true,
+	}); err != nil {
+		t.Fatalf("DeleteActor failed: %v", err)
+	}
+	assertSnapshotCollected(t, tc, copyURI)
+	prune := tc.fakeAtelet.lastPruneRequest()
+	if prune == nil {
+		t.Error("expected atelet PruneLocalCheckpoints to be called for the local copy")
+	} else if got, want := prune.GetActorUid(), durable.GetMetadata().GetUid(); got != want {
+		t.Errorf("prune actor_uid = %q, want %q", got, want)
+	}
+	_, err := tc.client.GetActor(context.Background(), &ateapipb.GetActorRequest{
+		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "id1"},
+	})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("GetActor after delete = %v, want NotFound", err)
 	}
 }

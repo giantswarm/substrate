@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/scheduling"
@@ -124,7 +125,7 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	if err = w.ensureVolumesAttached(leaseCtx, actor, worker, actorTemplate); err != nil {
 		return nil, false, err
 	}
-	if tele, err = w.ensureAteletRestored(leaseCtx, actorRef, actor, actorTemplate, src); err != nil {
+	if tele, err = w.ensureAteletRestored(leaseCtx, actorRef, actor, actorTemplate, src, worker); err != nil {
 		return nil, false, err
 	}
 	var running *ateapipb.Actor
@@ -616,8 +617,17 @@ func schedulingConstraints(actor *ateapipb.Actor, tmpl *ateapipb.ActorTemplate) 
 	c := scheduling.Constraints{
 		SandboxClass:  sandboxClassString(tmpl.GetSandboxConfig().GetSandboxClass()),
 		ActorSelector: labels.SelectorFromSet(labels.Set(actor.GetWorkerSelector().GetMatchLabels())),
-		RequiredNodes: localSnapshotNodes(actor),
 		Limits:        limits.Proto(),
+	}
+	// A paused actor is confined to the nodes holding its local snapshot for
+	// as long as that is the only copy. Once the snapshot has a durable copy
+	// those nodes are the fast path and any eligible worker will do — a node
+	// that is full, or gone, no longer strands the actor.
+	nodes := localSnapshotNodes(actor)
+	if durablePauseCopy(actor) != nil {
+		c.PreferredNodes = nodes
+	} else {
+		c.RequiredNodes = nodes
 	}
 	if sel := tmpl.GetWorkerSelector(); sel != nil {
 		c.TemplateSelector = labels.SelectorFromSet(labels.Set(sel.GetMatchLabels()))
@@ -653,15 +663,27 @@ func (w *ActorWorkflow) ensureVolumesAttached(ctx context.Context, actor *ateapi
 }
 
 // ensureAteletRestored brings the workload up on the assigned worker:
-// restoring the actor's local snapshot when one exists, else its durable (or
-// golden) snapshot, else cold-booting from the template spec. This is the
-// atelet reentrancy seam (#372): the request is keyed by the actor UID and
-// the worker pod UID, so a re-entered workflow re-sends the same semantic
-// request; once atelet's Restore/Run are idempotent on those keys this step
-// becomes fully reentrant with no changes here.
-func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, actorTemplate *ateapipb.ActorTemplate, src resumeSnapshotSource) (tele restoreTelemetry, err error) {
+// restoring the actor's local snapshot when the worker is on a node holding
+// one, else its durable (or golden) snapshot, else cold-booting from the
+// template spec. A paused actor placed off its snapshot's nodes restores the
+// durable copy of that very snapshot, never an older external snapshot: with
+// no such copy the placement is refused. This is the atelet reentrancy seam
+// (#372): the request is keyed by the actor UID and the worker pod UID, so a
+// re-entered workflow re-sends the same semantic request; once atelet's
+// Restore/Run are idempotent on those keys this step becomes fully reentrant
+// with no changes here.
+func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, actorTemplate *ateapipb.ActorTemplate, src resumeSnapshotSource, worker *ateapipb.Worker) (tele restoreTelemetry, err error) {
 	ctx, done := stepSpan(ctx, "CallAteletRestore")
 	defer func() { err = done(err) }()
+
+	local := actor.GetStatus().GetLocalSnapshotInfo()
+	onSnapshotNode := local != nil && slices.Contains(local.GetNodeVmsWithLocalSnapshots(), worker.GetNodeName())
+	if local != nil && !onSnapshotNode && durablePauseCopy(actor) == nil {
+		// The scheduler confines such an actor to its snapshot's nodes, so this
+		// placement lost that constraint. Restoring src here would silently
+		// revert the actor to its last suspend.
+		return tele, status.Errorf(codes.FailedPrecondition, "actor %s is paused on node(s) %v with no durable copy of its pause snapshot, but was placed on worker %s on node %q", actorRef, local.GetNodeVmsWithLocalSnapshots(), worker.GetMetadata().GetName(), worker.GetNodeName())
+	}
 
 	assignment := actor.GetStatus().GetWorkerAssignment()
 	ateletConn, err := w.dialer.DialForAteletOnNode(assignment.GetNodeName())
@@ -683,7 +705,7 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		return tele, err
 	}
 
-	if local := actor.GetStatus().GetLocalSnapshotInfo(); local != nil {
+	if onSnapshotNode {
 		slog.InfoContext(ctx, "Actor has snapshot; Restoring from snapshot")
 		tele.SnapshotKind = ateattr.SnapshotKindLocal
 
@@ -723,7 +745,11 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		})
 		return tele, maybeCrashActor(ctx, w.store, actorRef, err, "while restoring workload", ateattr.OperationResume)
 	} else if !src.SnapshotURI.IsZero() {
-		slog.InfoContext(ctx, "Actor has durable snapshot; Restoring from snapshot")
+		if local != nil {
+			slog.InfoContext(ctx, "Actor is paused on another node; Restoring the durable copy of its pause snapshot", slog.Any("snapshot_nodes", local.GetNodeVmsWithLocalSnapshots()), slog.String("node", worker.GetNodeName()))
+		} else {
+			slog.InfoContext(ctx, "Actor has durable snapshot; Restoring from snapshot")
+		}
 		// Mirrors loadActorForResume's source resolution: the durable URI is
 		// the actor's own snapshot when one exists, the golden otherwise.
 		tele.SnapshotKind = ateattr.SnapshotKindGolden

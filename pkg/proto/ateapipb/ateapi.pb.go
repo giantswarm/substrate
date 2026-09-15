@@ -540,9 +540,21 @@ type ExternalSnapshot struct {
 	// +k8s:optional
 	// +k8s:minimum=1
 	// +k8s:maximum=2 # keep this in sync with the SnapshotContentScope enum
-	ContentScope  SnapshotContentScope `protobuf:"varint,2,opt,name=content_scope,json=contentScope,proto3,enum=ateapi.SnapshotContentScope" json:"content_scope,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ContentScope SnapshotContentScope `protobuf:"varint,2,opt,name=content_scope,json=contentScope,proto3,enum=ateapi.SnapshotContentScope" json:"content_scope,omitempty"`
+	// source_local_snapshot_name names the node-local (pause) snapshot this
+	// snapshot was uploaded from, when it was produced by uploading one rather
+	// than by checkpointing a running workload. While the Actor is PAUSED on
+	// that same local snapshot (LocalSnapshotInfo.snapshot_name) the two hold
+	// identical state and the Actor may restore from either: from the local
+	// copy on its node, from this one anywhere else. An external snapshot that
+	// names another local snapshot, or none, predates the pause and never
+	// stands in for it.
+	//
+	// +k8s:optional
+	// +k8s:format=k8s-short-name
+	SourceLocalSnapshotName string `protobuf:"bytes,3,opt,name=source_local_snapshot_name,json=sourceLocalSnapshotName,proto3" json:"source_local_snapshot_name,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *ExternalSnapshot) Reset() {
@@ -589,6 +601,13 @@ func (x *ExternalSnapshot) GetContentScope() SnapshotContentScope {
 	return SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_UNSPECIFIED
 }
 
+func (x *ExternalSnapshot) GetSourceLocalSnapshotName() string {
+	if x != nil {
+		return x.SourceLocalSnapshotName
+	}
+	return ""
+}
+
 type LocalSnapshotInfo struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The name of the local checkpoint on each of the nodes below. Checkpoint
@@ -598,7 +617,9 @@ type LocalSnapshotInfo struct {
 	// +k8s:format=k8s-short-name
 	SnapshotName string `protobuf:"bytes,1,opt,name=snapshot_name,json=snapshotName,proto3" json:"snapshot_name,omitempty"`
 	// Node VMs that have local snapshots for this actor, while it's PAUSED.
-	// Each node appears at most once.
+	// Each node appears at most once. Resume is confined to these nodes only
+	// until the snapshot has a durable copy (ExternalSnapshot
+	// .source_local_snapshot_name); afterwards they are a placement preference.
 	//
 	// TODO: revisit this design; a snapshot propagated to every node would
 	// grow this list with the fleet, and the bound below is provisional.
@@ -1502,10 +1523,13 @@ type ActorStatus struct {
 	// external_snapshot is the Actor's current external snapshot.
 	// If the Actor was created from a Tag this is the tag's snapshot, borrowed
 	// until the Actor's first suspend writes one of its own. Otherwise it is
-	// unset until the Actor is first suspended.
+	// unset until the Actor is first suspended or its first pause snapshot has
+	// been uploaded (source_local_snapshot_name then names that snapshot).
 	// +k8s:optional
 	ExternalSnapshot *ExternalSnapshot `protobuf:"bytes,4,opt,name=external_snapshot,json=externalSnapshot,proto3" json:"external_snapshot,omitempty"`
-	// Node-local state used only while the Actor is paused.
+	// Node-local state used only while the Actor is paused. Kept beside
+	// external_snapshot once the pause snapshot has a durable copy: the local
+	// copy is the fast path on its node, the external one the path elsewhere.
 	//
 	// +k8s:optional
 	LocalSnapshotInfo *LocalSnapshotInfo `protobuf:"bytes,5,opt,name=local_snapshot_info,json=localSnapshotInfo,proto3" json:"local_snapshot_info,omitempty"`
@@ -6958,10 +6982,11 @@ var File_ateapi_proto protoreflect.FileDescriptor
 
 const file_ateapi_proto_rawDesc = "" +
 	"\n" +
-	"\fateapi.proto\x12\x06ateapi\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"x\n" +
+	"\fateapi.proto\x12\x06ateapi\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xb5\x01\n" +
 	"\x10ExternalSnapshot\x12!\n" +
 	"\fsnapshot_uri\x18\x01 \x01(\tR\vsnapshotUri\x12A\n" +
-	"\rcontent_scope\x18\x02 \x01(\x0e2\x1c.ateapi.SnapshotContentScopeR\fcontentScope\"\xbd\x01\n" +
+	"\rcontent_scope\x18\x02 \x01(\x0e2\x1c.ateapi.SnapshotContentScopeR\fcontentScope\x12;\n" +
+	"\x1asource_local_snapshot_name\x18\x03 \x01(\tR\x17sourceLocalSnapshotName\"\xbd\x01\n" +
 	"\x11LocalSnapshotInfo\x12#\n" +
 	"\rsnapshot_name\x18\x01 \x01(\tR\fsnapshotName\x12@\n" +
 	"\x1dnode_vms_with_local_snapshots\x18\x02 \x03(\tR\x19nodeVmsWithLocalSnapshots\x12A\n" +
