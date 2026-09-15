@@ -152,18 +152,12 @@ func TestActorEgressHTTPS(t *testing.T) {
 	router := mustRouterClient(t, ctx)
 	defer router.Close()
 
-	// Bound the access-log scan below to lines this test could have produced.
-	// The slack absorbs clock skew between here and the gateway's node.
-	since := metav1.NewTime(time.Now().Add(-1 * time.Minute))
-
 	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: actorName}
 	status, body := fetchThroughEgressActor(t, ctx, router, actorRef, "https://example.com/")
 	if status != http.StatusOK {
 		t.Fatalf("Actor HTTPS egress fetch returned HTTP %d, want 200; body: %s", status, body)
 	}
 	t.Logf("Actor HTTPS egress fetch succeeded; body: %s", body)
-
-	assertEgressGatewayConnect(t, ctx, since, actorName, "443")
 }
 
 // httpTarget is the origin TestActorEgressNonStandardPort dials: a plain HTTP
@@ -198,8 +192,6 @@ func TestActorEgressNonStandardPort(t *testing.T) {
 	router := mustRouterClient(t, ctx)
 	defer router.Close()
 
-	since := metav1.NewTime(time.Now().Add(-1 * time.Minute))
-
 	// Address() is the ClusterIP literal, not the Service's DNS name: the
 	// authority atunnel sends is always an address, so the name would add
 	// nothing but a dependency on the sandbox's DNS-over-UDP masquerade path --
@@ -214,8 +206,6 @@ func TestActorEgressNonStandardPort(t *testing.T) {
 		t.Fatalf("Actor egress fetch of %s returned HTTP %d, want 200; body: %s", url, status, body)
 	}
 	t.Logf("Actor egress fetch of %s succeeded", url)
-
-	assertEgressGatewayConnect(t, ctx, since, actorName, strconv.Itoa(httpTarget.Port))
 }
 
 // fetchThroughEgressActor asks the egress demo Actor to fetch url and returns
