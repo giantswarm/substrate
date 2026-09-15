@@ -186,6 +186,7 @@ const (
 	ReasonCorruptedAssignment = string(ateerrors.ReasonCorruptedAssignment)
 	ReasonWorkerReassigned    = string(ateerrors.ReasonWorkerReassigned)
 	ReasonWorkerPodGone       = string(ateerrors.ReasonWorkerPodGone)
+	ReasonLocalSnapshotGone   = string(ateerrors.ReasonLocalSnapshotGone)
 	ReasonUnknown             = string(ateerrors.ReasonUnknown)
 )
 
