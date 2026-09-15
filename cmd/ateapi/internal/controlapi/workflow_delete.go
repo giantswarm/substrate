@@ -91,11 +91,31 @@ func (w *ActorWorkflow) DeleteActor(ctx context.Context, actorRef resources.Acto
 	if err := w.ensureExternalSnapshotsReleased(ctx, actor); err != nil {
 		errs = append(errs, fmt.Errorf("while releasing external snapshots: %w", err))
 	}
+	w.ensureLocalCheckpointsReleased(ctx, actor)
 
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
 	return w.finalizeDeleted(ctx, actorRef)
+}
+
+// ensureLocalCheckpointsReleased frees the node-local pause snapshot of an
+// actor deleted while it holds one and no worker. Best-effort and never an
+// error: the node may be gone, and one that is there only leaks disk until
+// the files are pruned. An actor with a worker is terminated on that worker's
+// node, which prunes the same files.
+func (w *ActorWorkflow) ensureLocalCheckpointsReleased(ctx context.Context, actor *ateapipb.Actor) {
+	ctx, done := stepSpan(ctx, "ReleaseLocalCheckpoints")
+	defer func() { _ = done(nil) }()
+
+	switch {
+	case actor.GetStatus().GetWorkerAssignment() != nil:
+		markSkipped(ctx, "the worker's terminate prunes them")
+	case len(actor.GetStatus().GetLocalSnapshotInfo().GetNodeVmsWithLocalSnapshots()) == 0:
+		markSkipped(ctx, "the actor holds no local snapshot")
+	default:
+		w.releaseLocalCheckpoints(ctx, actor)
+	}
 }
 
 // loadActorForDelete fetches the current actor record.

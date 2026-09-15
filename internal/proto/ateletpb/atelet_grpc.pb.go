@@ -199,6 +199,7 @@ const (
 	AteomHerder_Checkpoint_FullMethodName             = "/atelet.AteomHerder/Checkpoint"
 	AteomHerder_Restore_FullMethodName                = "/atelet.AteomHerder/Restore"
 	AteomHerder_UploadPausedCheckpoint_FullMethodName = "/atelet.AteomHerder/UploadPausedCheckpoint"
+	AteomHerder_PruneLocalCheckpoints_FullMethodName  = "/atelet.AteomHerder/PruneLocalCheckpoints"
 	AteomHerder_Terminate_FullMethodName              = "/atelet.AteomHerder/Terminate"
 )
 
@@ -225,6 +226,11 @@ type AteomHerderClient interface {
 	// paused, its sandbox is gone; the checkpoint files plus their manifest
 	// already sit under the actor's local-checkpoints directory.
 	UploadPausedCheckpoint(ctx context.Context, in *UploadPausedCheckpointRequest, opts ...grpc.CallOption) (*UploadPausedCheckpointResponse, error)
+	// PruneLocalCheckpoints deletes every local (pause) checkpoint this node
+	// holds for an actor. Sent once nothing can restore them any more: the
+	// actor committed the durable copy of its pause, or is being deleted while
+	// paused. Idempotent; a node without any is a success.
+	PruneLocalCheckpoints(ctx context.Context, in *PruneLocalCheckpointsRequest, opts ...grpc.CallOption) (*PruneLocalCheckpointsResponse, error)
 	// Terminate tells atelet to terminate/kill any running workload for an actor,
 	// unmount its volumes, and clean up actor state on the node.
 	Terminate(ctx context.Context, in *TerminateRequest, opts ...grpc.CallOption) (*TerminateResponse, error)
@@ -278,6 +284,16 @@ func (c *ateomHerderClient) UploadPausedCheckpoint(ctx context.Context, in *Uplo
 	return out, nil
 }
 
+func (c *ateomHerderClient) PruneLocalCheckpoints(ctx context.Context, in *PruneLocalCheckpointsRequest, opts ...grpc.CallOption) (*PruneLocalCheckpointsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PruneLocalCheckpointsResponse)
+	err := c.cc.Invoke(ctx, AteomHerder_PruneLocalCheckpoints_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ateomHerderClient) Terminate(ctx context.Context, in *TerminateRequest, opts ...grpc.CallOption) (*TerminateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TerminateResponse)
@@ -311,6 +327,11 @@ type AteomHerderServer interface {
 	// paused, its sandbox is gone; the checkpoint files plus their manifest
 	// already sit under the actor's local-checkpoints directory.
 	UploadPausedCheckpoint(context.Context, *UploadPausedCheckpointRequest) (*UploadPausedCheckpointResponse, error)
+	// PruneLocalCheckpoints deletes every local (pause) checkpoint this node
+	// holds for an actor. Sent once nothing can restore them any more: the
+	// actor committed the durable copy of its pause, or is being deleted while
+	// paused. Idempotent; a node without any is a success.
+	PruneLocalCheckpoints(context.Context, *PruneLocalCheckpointsRequest) (*PruneLocalCheckpointsResponse, error)
 	// Terminate tells atelet to terminate/kill any running workload for an actor,
 	// unmount its volumes, and clean up actor state on the node.
 	Terminate(context.Context, *TerminateRequest) (*TerminateResponse, error)
@@ -335,6 +356,9 @@ func (UnimplementedAteomHerderServer) Restore(context.Context, *RestoreRequest) 
 }
 func (UnimplementedAteomHerderServer) UploadPausedCheckpoint(context.Context, *UploadPausedCheckpointRequest) (*UploadPausedCheckpointResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UploadPausedCheckpoint not implemented")
+}
+func (UnimplementedAteomHerderServer) PruneLocalCheckpoints(context.Context, *PruneLocalCheckpointsRequest) (*PruneLocalCheckpointsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PruneLocalCheckpoints not implemented")
 }
 func (UnimplementedAteomHerderServer) Terminate(context.Context, *TerminateRequest) (*TerminateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Terminate not implemented")
@@ -432,6 +456,24 @@ func _AteomHerder_UploadPausedCheckpoint_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AteomHerder_PruneLocalCheckpoints_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PruneLocalCheckpointsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AteomHerderServer).PruneLocalCheckpoints(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AteomHerder_PruneLocalCheckpoints_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AteomHerderServer).PruneLocalCheckpoints(ctx, req.(*PruneLocalCheckpointsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AteomHerder_Terminate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TerminateRequest)
 	if err := dec(in); err != nil {
@@ -472,6 +514,10 @@ var AteomHerder_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UploadPausedCheckpoint",
 			Handler:    _AteomHerder_UploadPausedCheckpoint_Handler,
+		},
+		{
+			MethodName: "PruneLocalCheckpoints",
+			Handler:    _AteomHerder_PruneLocalCheckpoints_Handler,
 		},
 		{
 			MethodName: "Terminate",

@@ -881,6 +881,12 @@ func (s *AteomHerder) UploadPausedCheckpoint(ctx context.Context, req *ateletpb.
 		return nil, err
 	}
 
+	if req.GetKeepLocal() {
+		// The actor stays paused on this node: the local checkpoint remains its
+		// fast resume path, the upload its way onto any other node.
+		return &ateletpb.UploadPausedCheckpointResponse{}, nil
+	}
+
 	// The uploaded snapshot supersedes every local pause snapshot of this
 	// actor; free the node's disk (best-effort, like Checkpoint).
 	if err := pruneLocalCheckpoints(ctx, req.GetActorUid()); err != nil {
@@ -888,6 +894,19 @@ func (s *AteomHerder) UploadPausedCheckpoint(ctx context.Context, req *ateletpb.
 	}
 
 	return &ateletpb.UploadPausedCheckpointResponse{}, nil
+}
+
+// PruneLocalCheckpoints deletes every local (pause) checkpoint this node holds
+// for an actor. The control plane sends it once nothing can restore them: the
+// actor committed the durable copy of its pause, or is deleted while paused.
+func (s *AteomHerder) PruneLocalCheckpoints(ctx context.Context, req *ateletpb.PruneLocalCheckpointsRequest) (*ateletpb.PruneLocalCheckpointsResponse, error) {
+	if err := validatePruneLocalCheckpointsRequest(req); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := pruneLocalCheckpoints(ctx, req.GetActorUid()); err != nil {
+		return nil, wrapFileSystemErr("while pruning local checkpoints", err)
+	}
+	return &ateletpb.PruneLocalCheckpointsResponse{}, nil
 }
 
 // uploadLocalCheckpointDir uploads the local checkpoint in localDir to uri,
@@ -1829,6 +1848,14 @@ func validateUploadPausedCheckpointRequest(req *ateletpb.UploadPausedCheckpointR
 		errs = append(errs, field.NotSupported(field.NewPath("desired_scope"), req.GetDesiredScope(),
 			[]string{ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL.String(), ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA.String()}))
 	}
+	return errs.ToAggregate()
+}
+
+func validatePruneLocalCheckpointsRequest(req *ateletpb.PruneLocalCheckpointsRequest) error {
+	var errs field.ErrorList
+	errs = append(errs, resources.ValidateResourceName(req.GetAtespace(), field.NewPath("atespace"))...)
+	errs = append(errs, resources.ValidateResourceName(req.GetActorName(), field.NewPath("actor_name"))...)
+	errs = append(errs, resources.ValidateResourceName(req.GetActorUid(), field.NewPath("actor_uid"))...)
 	return errs.ToAggregate()
 }
 

@@ -35,12 +35,20 @@ service Control {
   // Suspend a given actor to a new snapshot. A running actor is checkpointed
   // on its worker; a paused actor's node-local snapshot is uploaded, narrowed
   // to the template's commit scope where required (Full capture, Data commit).
+  // A paused actor whose pause snapshot already has a durable copy (see
+  // ExternalSnapshot.source_local_snapshot_name) commits that copy as it was
+  // captured, without involving the node.
   rpc SuspendActor(SuspendActorRequest) returns (SuspendActorResponse) {}
 
-  // Pause a given actor and keep its snapshots on node VM.
+  // Pause a given actor and keep its snapshots on node VM. The control plane
+  // then uploads the pause snapshot to durable storage in the background and
+  // records the copy as the actor's external_snapshot; until that completes
+  // the actor can resume only on its node.
   rpc PauseActor(PauseActorRequest) returns (PauseActorResponse) {}
 
-  // Resume an actor from its latest snapshot.
+  // Resume an actor from its latest snapshot. A paused actor resumes from its
+  // node-local snapshot when a worker on that node is free, and from the
+  // snapshot's durable copy on any other eligible worker once one exists.
   rpc ResumeActor(ResumeActorRequest) returns (ResumeActorResponse) {}
 
   // Delete an actor. Only suspended actors can be deleted.
@@ -155,6 +163,19 @@ message ExternalSnapshot {
   // +k8s:minimum=1
   // +k8s:maximum=2 # keep this in sync with the SnapshotContentScope enum
   SnapshotContentScope content_scope = 2;
+
+  // source_local_snapshot_name names the node-local (pause) snapshot this
+  // snapshot was uploaded from, when it was produced by uploading one rather
+  // than by checkpointing a running workload. While the Actor is PAUSED on
+  // that same local snapshot (LocalSnapshotInfo.snapshot_name) the two hold
+  // identical state and the Actor may restore from either: from the local
+  // copy on its node, from this one anywhere else. An external snapshot that
+  // names another local snapshot, or none, predates the pause and never
+  // stands in for it.
+  //
+  // +k8s:optional
+  // +k8s:format=k8s-short-name
+  string source_local_snapshot_name = 3;
 }
 
 message LocalSnapshotInfo {
@@ -166,7 +187,9 @@ message LocalSnapshotInfo {
   string snapshot_name = 1;
 
   // Node VMs that have local snapshots for this actor, while it's PAUSED.
-  // Each node appears at most once.
+  // Each node appears at most once. Resume is confined to these nodes only
+  // until the snapshot has a durable copy (ExternalSnapshot
+  // .source_local_snapshot_name); afterwards they are a placement preference.
   //
   // TODO: revisit this design; a snapshot propagated to every node would
   // grow this list with the fleet, and the bound below is provisional.
@@ -551,11 +574,14 @@ message ActorStatus {
   // external_snapshot is the Actor's current external snapshot.
   // If the Actor was created from a Tag this is the tag's snapshot, borrowed
   // until the Actor's first suspend writes one of its own. Otherwise it is
-  // unset until the Actor is first suspended.
+  // unset until the Actor is first suspended or its first pause snapshot has
+  // been uploaded (source_local_snapshot_name then names that snapshot).
   // +k8s:optional
   ExternalSnapshot external_snapshot = 4;
 
-  // Node-local state used only while the Actor is paused.
+  // Node-local state used only while the Actor is paused. Kept beside
+  // external_snapshot once the pause snapshot has a durable copy: the local
+  // copy is the fast path on its node, the external one the path elsewhere.
   //
   // +k8s:optional
   LocalSnapshotInfo local_snapshot_info = 5;

@@ -22,6 +22,8 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type leaseStore struct{ store.Interface }
@@ -75,4 +77,49 @@ func TestAcquireActorLeaseOutlivesCallerCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("workflow context did not reach its deadline")
 	}
+}
+
+// TestAcquireActorLeaseWaitsOutABriefHolder verifies a workflow waits for a
+// lease another holder has for a moment — the background commit of a pause
+// snapshot's durable copy — instead of answering Aborted, and that a lease
+// held for good is still a conflict.
+func TestAcquireActorLeaseWaitsOutABriefHolder(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+	w := &ActorWorkflow{store: persistence, workflowDeadline: time.Minute}
+
+	t.Run("released while waiting", func(t *testing.T) {
+		held, err := persistence.AcquireLease(ctx, actorLeaseKey(actorRef))
+		if err != nil {
+			t.Fatalf("AcquireLease: %v", err)
+		}
+		go func() {
+			time.Sleep(60 * time.Millisecond)
+			held.Close()
+		}()
+
+		start := time.Now()
+		_, lease, err := w.acquireActorLease(ctx, actorRef)
+		if err != nil {
+			t.Fatalf("acquireActorLease while the holder released after 60 ms: %v", err)
+		}
+		lease.Close()
+		if waited := time.Since(start); waited < 50*time.Millisecond {
+			t.Errorf("acquired after %s, want to have waited for the holder", waited)
+		}
+	})
+
+	t.Run("held for good", func(t *testing.T) {
+		held, err := persistence.AcquireLease(ctx, actorLeaseKey(actorRef))
+		if err != nil {
+			t.Fatalf("AcquireLease: %v", err)
+		}
+		defer held.Close()
+
+		_, _, err = w.acquireActorLease(ctx, actorRef)
+		if got := status.Code(err); got != codes.Aborted {
+			t.Fatalf("acquireActorLease under a held lease = %v, want Aborted", err)
+		}
+	})
 }

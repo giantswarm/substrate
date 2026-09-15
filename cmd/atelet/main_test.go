@@ -1640,3 +1640,29 @@ func TestShouldHaveSnapshots(t *testing.T) {
 		})
 	}
 }
+
+func TestValidatePruneLocalCheckpointsRequest(t *testing.T) {
+	valid := func() *ateletpb.PruneLocalCheckpointsRequest {
+		return &ateletpb.PruneLocalCheckpointsRequest{Atespace: "team-a", ActorName: "actor-1", ActorUid: "6b1f9d0c-4a2e-4d38-9c77-5e0a1b2c3d4e"}
+	}
+	tests := []struct {
+		name    string
+		mutate  func(*ateletpb.PruneLocalCheckpointsRequest)
+		wantErr bool
+	}{
+		{"valid", func(*ateletpb.PruneLocalCheckpointsRequest) {}, false},
+		{"invalid atespace", func(r *ateletpb.PruneLocalCheckpointsRequest) { r.Atespace = "../escape" }, true},
+		{"invalid actor name", func(r *ateletpb.PruneLocalCheckpointsRequest) { r.ActorName = "UPPER" }, true},
+		{"empty actor uid", func(r *ateletpb.PruneLocalCheckpointsRequest) { r.ActorUid = "" }, true},
+		{"path in actor uid", func(r *ateletpb.PruneLocalCheckpointsRequest) { r.ActorUid = "../escape" }, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := valid()
+			tc.mutate(req)
+			if err := validatePruneLocalCheckpointsRequest(req); (err != nil) != tc.wantErr {
+				t.Errorf("validatePruneLocalCheckpointsRequest err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}

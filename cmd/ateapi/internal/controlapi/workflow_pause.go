@@ -90,6 +90,11 @@ func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.Actor
 		return nil, err
 	}
 	actor = finalized
+	if actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_PAUSED {
+		// The node holds the only copy of the actor's state. Make it durable
+		// off the caller's path; the actor is resumable meanwhile.
+		w.pauseUploads.Enqueue(actorRef)
+	}
 	return actor, nil
 }
 
