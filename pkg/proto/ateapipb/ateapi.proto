@@ -808,6 +808,15 @@ message GoldenSnapshotStatus {
   google.protobuf.Timestamp take_golden_snapshot_at = 2;
 
   string error_message = 3;
+
+  // workload_boot_failures counts the golden actor's boots that the workload
+  // itself failed: it exited or never answered its readiness probe
+  // (WORKLOAD_NOT_READY). ate-api gives the template up once they reach its
+  // bound and records why in error_message. A boot the infrastructure failed
+  // — a worker gone, a dial error — is retried without counting here.
+  //
+  // +k8s:optional
+  int32 workload_boot_failures = 4;
 }
 
 message ActorTemplateStatus {

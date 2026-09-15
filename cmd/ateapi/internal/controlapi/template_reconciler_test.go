@@ -17,6 +17,8 @@ package controlapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +27,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
@@ -149,6 +152,7 @@ type fakeGoldenControl struct {
 	resumeErr  error
 	suspendErr error
 	getErr     error
+	crashErr   error
 
 	// exists seeds whether the golden actor pre-exists; goldenState and
 	// goldenSnapshot are its observed state and external snapshot while it
@@ -164,6 +168,8 @@ type fakeGoldenControl struct {
 	resumeReqs   []*ateapipb.ResumeActorRequest
 	suspendReqs  []*ateapipb.SuspendActorRequest
 	atespaceReqs []*ateapipb.CreateAtespaceRequest
+	// crashes records every crashGoldenActor call: the actor and the reason.
+	crashes []string
 }
 
 func (c *fakeGoldenControl) CreateAtespace(_ context.Context, req *ateapipb.CreateAtespaceRequest) (*ateapipb.Atespace, error) {
@@ -235,10 +241,32 @@ func (c *fakeGoldenControl) SuspendActor(_ context.Context, req *ateapipb.Suspen
 	}, nil
 }
 
+func (c *fakeGoldenControl) crashGoldenActor(_ context.Context, actorRef resources.ActorRef, reason string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.crashes = append(c.crashes, actorRef.String()+" "+reason)
+	if c.crashErr != nil {
+		return c.crashErr
+	}
+	c.goldenState = ateapipb.ActorState_ACTOR_STATE_CRASHED
+	return nil
+}
+
 func (c *fakeGoldenControl) callCounts() (creates, resumes, suspends int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.createReqs), len(c.resumeReqs), len(c.suspendReqs)
+}
+
+// workloadNotReadyErr is what ResumeActor returns when ateom ran the readiness
+// probe out: the Run step's wrapping around atelet's status, which carries
+// the reason as an ErrorInfo detail and no crash directive. The message quotes
+// the workload's last output, as ateom does.
+func workloadNotReadyErr() error {
+	ateletErr := ateerrors.NewGRPCError(context.Background(), codes.Internal, ateerrors.ReasonWorkloadNotReady, nil,
+		errors.New(`WORKLOAD_NOT_READY: readyz for "main" never returned 200 within 30s (21776 attempts, last error: connection refused); last output of "main":`+"\n"+
+			`fatal: could not read Username for 'https://github.com': terminal prompts disabled`))
+	return fmt.Errorf("workflow failed at step CallAteletRestore: while creating workload from spec: %w", ateletErr)
 }
 
 const (
@@ -298,6 +326,12 @@ func withFailed(reason string) func(*ateapipb.ActorTemplate) {
 	}
 }
 
+func withWorkloadBootFailures(n int32) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		seededGoldenStatus(tmpl).WorkloadBootFailures = n
+	}
+}
+
 func newTestTemplateReconciler(persistence templateReconcilerStore, control goldenActorControl) *ActorTemplateReconciler {
 	return NewActorTemplateReconciler(persistence, control)
 }
@@ -348,6 +382,10 @@ func TestReconcileOne(t *testing.T) {
 		wantCreates  int
 		wantResumes  int
 		wantSuspends int
+		// wantBootFailures must equal the stored workload_boot_failures.
+		wantBootFailures int32
+		// wantCrashes must equal the crashGoldenActor calls, in order.
+		wantCrashes []string
 	}{
 		{
 			name:         "happy path creates, resumes, and snapshots the golden actor",
@@ -451,6 +489,86 @@ func TestReconcileOne(t *testing.T) {
 			wantResumes: 1,
 		},
 		{
+			// The workload exited before its readiness probe answered (or
+			// never answered it): not a crash, so the boot is counted and
+			// retried — the template is not failed on the first miss.
+			name:     "resume whose workload was not ready counts the boot and requeues",
+			template: testTemplate(),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				resumeErr: workloadNotReadyErr()},
+			wantErr:          true,
+			wantResumes:      1,
+			wantBootFailures: 1,
+		},
+		{
+			name:     "resume whose workload was not ready below the bound keeps counting",
+			template: testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures - 2)),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_RESUMING,
+				resumeErr: workloadNotReadyErr()},
+			wantErr:          true,
+			wantResumes:      1,
+			wantBootFailures: maxWorkloadBootFailures - 1,
+		},
+		{
+			// The last allowed boot fails the same way: the golden actor is
+			// crashed (its worker freed) and the template fails with the
+			// bound, the worker's own message and the workload's last lines.
+			name:     "resume whose workload was not ready at the bound crashes the golden actor and fails the template",
+			template: testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures - 1)),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				resumeErr: workloadNotReadyErr()},
+			wantResumes:      1,
+			wantBootFailures: maxWorkloadBootFailures,
+			wantCrashes:      []string{"ate-golden/" + testTemplateUID + " " + string(ateerrors.ReasonWorkloadNotReady)},
+			wantFailedReason: reasonGoldenActorNotReady,
+			wantMessage:      "failed 3 boots in a row: it exited before its readiness probe answered, or never answered it; last boot: WORKLOAD_NOT_READY: readyz for \"main\" never returned 200 within 30s (21776 attempts, last error: connection refused); last output of \"main\":\nfatal: could not read Username for 'https://github.com': terminal prompts disabled",
+		},
+		{
+			// An infrastructure failure of the resume (no workers, a lease, a
+			// dial) is retried as before and does not count towards the bound.
+			name:     "resume infrastructure failure does not count as a workload boot failure",
+			template: testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures - 1)),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				resumeErr: status.Error(codes.ResourceExhausted, "no free workers available")},
+			wantErr:          true,
+			wantResumes:      1,
+			wantBootFailures: maxWorkloadBootFailures - 1,
+		},
+		{
+			// A pass counted the last allowed boot and died before giving the
+			// template up: the next pass does not boot again.
+			name:             "bound already reached gives the template up without another boot",
+			template:         testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures)),
+			control:          &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_RESUMING},
+			wantBootFailures: maxWorkloadBootFailures,
+			wantCrashes:      []string{"ate-golden/" + testTemplateUID + " " + string(ateerrors.ReasonWorkloadNotReady)},
+			wantFailedReason: reasonGoldenActorNotReady,
+			wantMessage:      "failed 3 boots in a row",
+		},
+		{
+			// A pass crashed the golden actor at the bound and died before
+			// recording why: the crash it observes is attributed to the bound,
+			// not reported as an unexplained crash.
+			name:             "crashed golden actor past the bound fails the template as not ready",
+			template:         testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures)),
+			control:          &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+			wantBootFailures: maxWorkloadBootFailures,
+			wantFailedReason: reasonGoldenActorNotReady,
+			wantMessage:      "failed 3 boots in a row",
+		},
+		{
+			// The crash at the bound failed (the store): the count stands, the
+			// template is not yet failed, and the retry gives it up again.
+			name:     "crash failure at the bound requeues with the count kept",
+			template: testTemplate(withWorkloadBootFailures(maxWorkloadBootFailures - 1)),
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED,
+				resumeErr: workloadNotReadyErr(), crashErr: errors.New("store unavailable")},
+			wantErr:          true,
+			wantResumes:      1,
+			wantBootFailures: maxWorkloadBootFailures,
+			wantCrashes:      []string{"ate-golden/" + testTemplateUID + " " + string(ateerrors.ReasonWorkloadNotReady)},
+		},
+		{
 			name:     "get failure requeues",
 			template: testTemplate(),
 			control:  &fakeGoldenControl{getErr: status.Error(codes.Unavailable, "control plane down")},
@@ -543,6 +661,12 @@ func TestReconcileOne(t *testing.T) {
 			}
 			if tt.wantDeadline && snapshotStatus.GetTakeGoldenSnapshotAt() == nil {
 				t.Error("stored take_golden_snapshot_at is nil, want set")
+			}
+			if got := snapshotStatus.GetWorkloadBootFailures(); got != tt.wantBootFailures {
+				t.Errorf("stored workload_boot_failures = %d, want %d", got, tt.wantBootFailures)
+			}
+			if got := tt.control.crashes; !slices.Equal(got, tt.wantCrashes) {
+				t.Errorf("crashGoldenActor calls = %v, want %v", got, tt.wantCrashes)
 			}
 		})
 	}
@@ -667,6 +791,7 @@ func TestResync_QueuesOnlyActionableTemplates(t *testing.T) {
 	}{
 		{"empty status", nil, true},
 		{"mid warmup", []func(*ateapipb.ActorTemplate){withSnapshotDeadline(time.Now().Add(time.Hour))}, true},
+		{"workload boot failures below the bound", []func(*ateapipb.ActorTemplate){withWorkloadBootFailures(maxWorkloadBootFailures - 1)}, true},
 		{"golden snapshot taken", []func(*ateapipb.ActorTemplate){withGoldenSnapshot(goldenSnapshot)}, false},
 		{"failed", []func(*ateapipb.ActorTemplate){withFailed(reasonGoldenActorCrashed)}, false},
 	}

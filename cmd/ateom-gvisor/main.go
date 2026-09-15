@@ -720,8 +720,12 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 
 	// Create and start each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
+	// The pipe also keeps each container's last lines: a workload that exits
+	// before its readiness probe answers says why on its way out, and the
+	// deadline error below quotes it for the caller.
+	tails := actorlog.OutputTails{}
 	for _, ac := range req.GetSpec().GetContainers() {
-		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName())
+		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName(), tails.Add(ac.GetName()))
 		if err != nil {
 			return nil, fmt.Errorf("while starting json log pipe for %q: %w", ac.GetName(), err)
 		}
@@ -739,7 +743,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	}
 
 	// Block until every readyz-enabled container reports 200.
-	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP); err != nil {
+	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP, tails.Lines); err != nil {
 		return nil, fmt.Errorf("while waiting for container readyz: %w", err)
 	}
 	if err := s.activateActorNetworking(req.GetAtespace(), req.GetActorName(), egress); err != nil {
@@ -1015,9 +1019,11 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 	}
 
 	// Create and restore each application container, each with its own log pipe so
-	// every line is tagged with the originating container (ate.actor.container.name).
+	// every line is tagged with the originating container (ate.actor.container.name),
+	// and its last lines kept for the readyz deadline error, as in RunWorkload.
+	tails := actorlog.OutputTails{}
 	for _, ac := range req.GetSpec().GetContainers() {
-		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName())
+		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName(), tails.Add(ac.GetName()))
 		if err != nil {
 			return nil, fmt.Errorf("while starting json log pipe for %q: %w", ac.GetName(), err)
 		}
@@ -1048,7 +1054,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 	}
 
 	// Block until every readyz-enabled container reports 200.
-	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP); err != nil {
+	if err := readyz.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP, tails.Lines); err != nil {
 		return nil, fmt.Errorf("while waiting for container readyz: %w", err)
 	}
 	if err := s.activateActorNetworking(req.GetAtespace(), req.GetActorName(), egress); err != nil {

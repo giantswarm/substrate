@@ -21,6 +21,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/workercache"
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/objectstore"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
@@ -52,6 +53,14 @@ type RPCService struct {
 }
 
 var _ ateapipb.ControlServer = (*RPCService)(nil)
+
+// crashGoldenActor implements goldenActorControl for the ActorTemplate
+// reconciler: a golden actor whose workload ran out of boots is crashed the
+// way a lifecycle workflow crashes an actor it gives up on — CRASHED, its
+// worker released, ate.actor.crashes counted under the resume operation.
+func (s *RPCService) crashGoldenActor(ctx context.Context, actorRef resources.ActorRef, reason string) error {
+	return crashActor(ctx, s.actorWorkflow.store, actorRef, ateattr.OperationResume, reason)
+}
 
 // VolumePluginRegistry defines the interface for dynamic CSI plugin resolution.
 type VolumePluginRegistry interface {
