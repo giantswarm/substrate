@@ -43,6 +43,14 @@ keeps retrying with exponential backoff until either
   underlying capacity error is returned, surfacing as `503 "actor <id>
   unavailable: no free workers available"`.
 
+A paused actor's local snapshot pins its resume to the node that holds it, and
+the capacity error then names that node: all eligible workers on it busy, or
+no worker on it (yet). Both are parked like any saturation. A node that has
+**left the cluster** is different: the snapshot is gone with it, no wait
+clears that, and the control plane answers `DataLoss` — crashing the actor
+when it has no durable snapshot to fall back to — which the router does not
+park on and maps to `410 "actor <id> unrecoverable: …"` at once.
+
 **The budget bounds retries, not a committed resume.** When the budget elapses
 the router stops starting new resume attempts, but an attempt already in
 flight is **never canceled**: by then the control plane has committed work to
