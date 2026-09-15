@@ -118,6 +118,13 @@ func mapResumeError(actorRef resources.ActorRef, err error) error {
 		// full, the caller did not send too many requests.
 		re.StatusCode = int(envoy_type.StatusCode_ServiceUnavailable)
 		re.Msg = fmt.Sprintf("actor %s unavailable: %s", actorRef, statusDescription(err))
+	case codes.DataLoss:
+		// The actor's state is gone for good (its paused snapshot left with
+		// its node; a restore that crashed it): a retry cannot bring it back,
+		// so 410 rather than a 5xx a client would retry. The description names
+		// the cause and is not security-sensitive.
+		re.StatusCode = int(envoy_type.StatusCode_Gone)
+		re.Msg = fmt.Sprintf("actor %s unrecoverable: %s", actorRef, statusDescription(err))
 	default:
 		re.StatusCode = int(envoy_type.StatusCode_InternalServerError)
 		re.Msg = fmt.Sprintf("error resuming actor %s", actorRef)

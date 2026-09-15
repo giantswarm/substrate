@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	grpcCodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -70,12 +71,16 @@ func markSkipped(ctx context.Context, reason string) {
 
 // ActorWorkflow handles the workflows for actor's resume / suspend operations.
 type ActorWorkflow struct {
-	store                actorWorkflowStore
-	workerCache          *workercache.Cache
-	scheduler            scheduling.Scheduler
-	dialer               *AteletDialer
-	sandboxConfigLister  listersv1alpha1.SandboxConfigLister
-	storageClassLister   storagev1listers.StorageClassLister
+	store               actorWorkflowStore
+	workerCache         *workercache.Cache
+	scheduler           scheduling.Scheduler
+	dialer              *AteletDialer
+	sandboxConfigLister listersv1alpha1.SandboxConfigLister
+	storageClassLister  storagev1listers.StorageClassLister
+	// nodeLister answers whether a node a PAUSED actor's local snapshot is
+	// recorded on still exists in the cluster (localSnapshotNodesGone). May be
+	// nil: then no node is ever declared gone.
+	nodeLister           corev1listers.NodeLister
 	instruments          *Instruments
 	egressGatewayAddress string
 	pluginRegistry       VolumePluginRegistry
@@ -87,14 +92,15 @@ type ActorWorkflow struct {
 // NewActorWorkflow creates a new ActorWorkflow. workflowDeadline bounds how
 // long a single Resume/Suspend can run end-to-end; restoreBudget bounds one
 // atelet restore attempt within a Resume (see restoreWithBudget; 0 leaves an
-// attempt bounded by the workflow deadline alone); instruments and objectStore
-// may be nil.
+// attempt bounded by the workflow deadline alone); nodeLister, instruments
+// and objectStore may be nil.
 func NewActorWorkflow(
 	store actorWorkflowStore,
 	workerCache *workercache.Cache,
 	dialer *AteletDialer,
 	sandboxConfigLister listersv1alpha1.SandboxConfigLister,
 	storageClassLister storagev1listers.StorageClassLister,
+	nodeLister corev1listers.NodeLister,
 	instruments *Instruments,
 	egressGatewayAddress string,
 	pluginRegistry VolumePluginRegistry,
@@ -109,6 +115,7 @@ func NewActorWorkflow(
 		dialer:               dialer,
 		sandboxConfigLister:  sandboxConfigLister,
 		storageClassLister:   storageClassLister,
+		nodeLister:           nodeLister,
 		instruments:          instruments,
 		egressGatewayAddress: egressGatewayAddress,
 		pluginRegistry:       pluginRegistry,

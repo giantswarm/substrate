@@ -27,6 +27,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/volume/csi"
 	listersv1alpha1 "github.com/agent-substrate/substrate/pkg/client/listers/api/v1alpha1"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -67,6 +68,7 @@ func NewRPCService(
 	sandboxConfigLister listersv1alpha1.SandboxConfigLister,
 	csiDriverConfigLister listersv1alpha1.CSIDriverConfigLister,
 	storageClassLister storagev1listers.StorageClassLister,
+	nodeLister corev1listers.NodeLister,
 	dialer *AteletDialer,
 	instruments *Instruments,
 	egressGatewayAddress string,
@@ -87,7 +89,7 @@ func NewRPCService(
 		volumePlugins:         volumePlugins,
 		objectStore:           objectStore,
 	}
-	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
+	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, nodeLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
 }

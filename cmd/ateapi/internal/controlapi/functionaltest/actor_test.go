@@ -25,6 +25,8 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/ateattr"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
+	"github.com/agent-substrate/substrate/internal/installdefaults"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
@@ -38,7 +40,10 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 )
 
 // TestCreateActor_Success tests the happy path for creating an actor.
@@ -3254,11 +3259,12 @@ func TestResumeActor_RelocatesAfterSuspendFromPaused(t *testing.T) {
 	createWorkerPod(t, tc, ns, "worker-2", "node2", "pool1")
 	setupAteletOnNode(t, tc, "atelet-node2", "node2")
 
-	// Capacity exhaustion is ResourceExhausted.
+	// Capacity exhaustion is ResourceExhausted, and under the snapshot's node
+	// pin it names the node rather than pointing at cluster capacity.
 	_, err = tc.client.ResumeActor(context.Background(), &ateapipb.ResumeActorRequest{
 		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: pinned},
 	})
-	assertGrpcError(t, err, codes.ResourceExhausted, "no free workers available")
+	assertGrpcError(t, err, codes.ResourceExhausted, "actor's local snapshot is on node(s) [node1] but all eligible workers on those nodes are busy")
 
 	suspended, err := tc.client.SuspendActor(context.Background(), &ateapipb.SuspendActorRequest{
 		Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: pinned},
@@ -3462,5 +3468,94 @@ func TestDeleteActor_ReleasesAnAssignmentTheActorDoesNotReference(t *testing.T) 
 	}
 	if got := worker.GetStatus().GetAllocated().GetActors(); got != 0 {
 		t.Errorf("worker still books %d actors after the Actor was deleted, want 0", got)
+	}
+}
+
+// TestResumeActor_PausedOnGoneNodeCrashesAndDeletes covers a PAUSED actor
+// whose node left the cluster: its local snapshot went with the node, so the
+// next resume cannot park on "no free workers" until a budget elapses. The
+// control plane answers DataLoss with the crash directive as soon as it sees
+// the node gone, the actor is CRASHED, and its owner can delete it.
+func TestResumeActor_PausedOnGoneNodeCrashesAndDeletes(t *testing.T) {
+	ns := namespaceForTest("ns-resume-node-gone")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	ctx := context.Background()
+
+	createTemplate(t, tc, ns)
+	const node = "node-orphaned"
+	if _, err := tc.k8sClient.CoreV1().Nodes().Create(ctx, &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: node}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create Node %s: %v", node, err)
+	}
+	t.Cleanup(func() {
+		_ = tc.k8sClient.CoreV1().Nodes().Delete(context.Background(), node, metav1.DeleteOptions{})
+	})
+	// The pool's only worker is on the node under test, so the first sprint
+	// lands there and the pause records that node.
+	workerName := createWorkerPod(t, tc, ns, "worker-orphaned", node, "pool1")
+	setupAteletOnNode(t, tc, "atelet-orphaned", node)
+
+	const name = "actor-orphan"
+	if _, err := tc.client.CreateActor(ctx, &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: name},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+	}}); err != nil {
+		t.Fatalf("CreateActor failed: %v", err)
+	}
+	if _, err := tc.client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}}); err != nil {
+		t.Fatalf("ResumeActor failed: %v", err)
+	}
+	if _, err := tc.client.PauseActor(ctx, &ateapipb.PauseActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}}); err != nil {
+		t.Fatalf("PauseActor failed: %v", err)
+	}
+	paused, err := tc.client.GetActor(ctx, &ateapipb.GetActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}})
+	if err != nil {
+		t.Fatalf("GetActor failed: %v", err)
+	}
+	if got := paused.GetStatus().GetLocalSnapshotInfo().GetNodeVmsWithLocalSnapshots(); len(got) != 1 || got[0] != node {
+		t.Fatalf("paused actor pinned to %v, want [%s]", got, node)
+	}
+	waitForWorkerAvailable(t, tc, workerName)
+	// Free capacity elsewhere from now on, so the refusal below is about the
+	// node, not the pool.
+	createWorkerPod(t, tc, ns, "worker-elsewhere", "node1", "pool1")
+
+	// The node leaves the cluster: its worker, its atelet and the Node itself.
+	deleteWorkerPod(t, tc, ns, "worker-orphaned")
+	if err := tc.k8sClient.CoreV1().Pods(installdefaults.SystemNamespace).Delete(ctx, "atelet-orphaned", metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}); err != nil {
+		t.Fatalf("delete atelet pod: %v", err)
+	}
+	if err := tc.k8sClient.CoreV1().Nodes().Delete(ctx, node, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("delete Node %s: %v", node, err)
+	}
+
+	// Until the Node informer has seen the deletion the refusal is the
+	// retryable "no workers on that node"; then it is terminal.
+	var resumeErr error
+	if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+		_, resumeErr = tc.client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}})
+		return status.Code(resumeErr) != codes.ResourceExhausted, nil
+	}); err != nil {
+		t.Fatalf("ResumeActor kept answering %v after the node was deleted", resumeErr)
+	}
+	assertGrpcError(t, resumeErr, codes.DataLoss, fmt.Sprintf("actor %s/%s crashed: its local snapshot %q is on node(s) [%s], which no longer exist in the cluster, and it has no durable snapshot", testAtespace, name, paused.GetStatus().GetLocalSnapshotInfo().GetSnapshotName(), node))
+	if !ateerrors.ActorCrashRequested(resumeErr) {
+		t.Errorf("ResumeActor error carries no crash directive: %v", resumeErr)
+	}
+	if got := ateerrors.ExtractReason(resumeErr); got != string(ateerrors.ReasonLocalSnapshotGone) {
+		t.Errorf("reason = %q, want %q", got, ateerrors.ReasonLocalSnapshotGone)
+	}
+
+	crashed, err := tc.client.GetActor(ctx, &ateapipb.GetActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}})
+	if err != nil {
+		t.Fatalf("GetActor failed: %v", err)
+	}
+	if got := crashed.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED {
+		t.Fatalf("state = %v, want CRASHED", got)
+	}
+
+	// The actor is the owner's to delete now.
+	if _, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}}); err != nil {
+		t.Fatalf("DeleteActor of the crashed actor failed: %v", err)
 	}
 }

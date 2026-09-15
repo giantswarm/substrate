@@ -17,6 +17,8 @@ package scheduling
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/agent-substrate/substrate/internal/ateattr"
@@ -716,4 +718,93 @@ func TestSchedule_EligibleWorkersMetric(t *testing.T) {
 			t.Fatalf("ate.scheduler.eligible_workers metric not found")
 		}
 	})
+}
+
+// TestSchedule_NoCapacityUnderNodeRestriction verifies that a placement
+// restricted to nodes that finds no free worker reports what the pass saw on
+// those nodes -- eligible workers that are all full, workers of other pools,
+// or no worker at all -- while still matching ErrNoCapacity, and that an
+// unrestricted placement keeps the bare sentinel.
+func TestSchedule_NoCapacityUnderNodeRestriction(t *testing.T) {
+	restricted := Constraints{SandboxClass: "gvisor", RequiredNodes: []string{"node-a"}}
+	tests := []struct {
+		name        string
+		fleet       fleet
+		constraints Constraints
+		want        *NoCapacityError // nil: the bare ErrNoCapacity
+		wantMessage string
+	}{
+		{
+			name: "eligible workers on the node are full",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", nil, assigned("demo", "resident")),
+				worker("w-b", "gvisor", "node-b", nil),
+			},
+			constraints: restricted,
+			want:        &NoCapacityError{RequiredNodes: []string{"node-a"}, EligibleOnRequiredNodes: 1, WorkersOnRequiredNodes: 1},
+			wantMessage: "the 1 eligible worker(s) on node(s) [node-a] are full",
+		},
+		{
+			name: "only another pool's worker reports the node",
+			fleet: fleet{
+				worker("w-a", "microvm", "node-a", nil),
+				worker("w-b", "gvisor", "node-b", nil),
+			},
+			constraints: restricted,
+			want:        &NoCapacityError{RequiredNodes: []string{"node-a"}, WorkersOnRequiredNodes: 1},
+			wantMessage: "no eligible worker on node(s) [node-a] (1 worker(s) of other pools report them)",
+		},
+		{
+			// A worker that is not ACTIVE is on its way out; it does not vouch
+			// for the node.
+			name: "a draining worker on the node does not report it",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", nil, withState(ateapipb.WorkerState_WORKER_STATE_DRAINING)),
+			},
+			constraints: restricted,
+			want:        &NoCapacityError{RequiredNodes: []string{"node-a"}},
+			wantMessage: "no worker reports node(s) [node-a]",
+		},
+		{
+			name: "no worker reports the node",
+			fleet: fleet{
+				worker("w-b", "gvisor", "node-b", nil),
+			},
+			constraints: restricted,
+			want:        &NoCapacityError{RequiredNodes: []string{"node-a"}},
+			wantMessage: "no worker reports node(s) [node-a]",
+		},
+		{
+			name: "without a node restriction the bare sentinel is returned",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", nil, assigned("demo", "resident")),
+			},
+			constraints: Constraints{SandboxClass: "gvisor"},
+			wantMessage: ErrNoCapacity.Error(),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New(tc.fleet, WithIntn(firstIntn))
+			_, err := s.Schedule(context.Background(), tc.constraints)
+			if !errors.Is(err, ErrNoCapacity) {
+				t.Fatalf("Schedule() error = %v, want ErrNoCapacity", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantMessage) {
+				t.Errorf("Schedule() error = %q, want it to contain %q", err, tc.wantMessage)
+			}
+			var got *NoCapacityError
+			if errors.As(err, &got) != (tc.want != nil) {
+				t.Fatalf("Schedule() error = %#v, want NoCapacityError: %v", err, tc.want != nil)
+			}
+			if tc.want == nil {
+				return
+			}
+			if !slices.Equal(got.RequiredNodes, tc.want.RequiredNodes) ||
+				got.EligibleOnRequiredNodes != tc.want.EligibleOnRequiredNodes ||
+				got.WorkersOnRequiredNodes != tc.want.WorkersOnRequiredNodes {
+				t.Errorf("Schedule() error = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
 }

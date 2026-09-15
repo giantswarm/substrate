@@ -52,6 +52,37 @@ type Constraints struct {
 // constraints.
 var ErrNoCapacity = errors.New("no free workers satisfy the constraints")
 
+// NoCapacityError is the ErrNoCapacity of a placement restricted to nodes (a
+// PAUSED actor whose local snapshot lives on them). It carries what the one
+// pass over the fleet saw on those nodes, so the caller can tell a snapshot
+// locality conflict from a full pool -- and a node that no longer hosts any
+// worker, which may mean the snapshot is gone with it. It matches
+// ErrNoCapacity through errors.Is.
+type NoCapacityError struct {
+	// RequiredNodes is the restriction that was in effect.
+	RequiredNodes []string
+	// EligibleOnRequiredNodes counts the workers on those nodes that satisfy
+	// every other constraint; all of them were full.
+	EligibleOnRequiredNodes int
+	// WorkersOnRequiredNodes counts the ACTIVE workers of any pool on those
+	// nodes. Zero means no worker reports any of the nodes at all.
+	WorkersOnRequiredNodes int
+}
+
+func (e *NoCapacityError) Error() string {
+	switch {
+	case e.EligibleOnRequiredNodes > 0:
+		return fmt.Sprintf("%v: the %d eligible worker(s) on node(s) %v are full", ErrNoCapacity, e.EligibleOnRequiredNodes, e.RequiredNodes)
+	case e.WorkersOnRequiredNodes > 0:
+		return fmt.Sprintf("%v: no eligible worker on node(s) %v (%d worker(s) of other pools report them)", ErrNoCapacity, e.RequiredNodes, e.WorkersOnRequiredNodes)
+	default:
+		return fmt.Sprintf("%v: no worker reports node(s) %v", ErrNoCapacity, e.RequiredNodes)
+	}
+}
+
+// Is makes errors.Is(err, ErrNoCapacity) hold for a NoCapacityError.
+func (e *NoCapacityError) Is(target error) bool { return target == ErrNoCapacity }
+
 // Scheduler answers placement questions against the current worker fleet.
 type Scheduler interface {
 	// Schedule returns a free worker satisfying constraints.
@@ -108,7 +139,16 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 
 	matching := make([]*ateapipb.Worker, 0, len(workers))
 	var candidates []*ateapipb.Worker
+	// Under a node restriction, every ACTIVE worker on one of the nodes is
+	// counted whatever its pool: the count tells a node that still hosts
+	// workers from one that hosts none.
+	onRequiredNodes := 0
 	for _, worker := range workers {
+		if len(constraints.RequiredNodes) > 0 &&
+			worker.GetStatus().GetState() == ateapipb.WorkerState_WORKER_STATE_ACTIVE &&
+			slices.Contains(constraints.RequiredNodes, worker.GetNodeName()) {
+			onRequiredNodes++
+		}
 		if !s.Applies(worker, constraints) {
 			continue
 		}
@@ -122,6 +162,13 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 	s.recordEligibleWorkers(ctx, matching, constraints)
 
 	if len(candidates) == 0 {
+		if len(constraints.RequiredNodes) > 0 {
+			return nil, &NoCapacityError{
+				RequiredNodes:           slices.Clone(constraints.RequiredNodes),
+				EligibleOnRequiredNodes: len(matching),
+				WorkersOnRequiredNodes:  onRequiredNodes,
+			}
+		}
 		return nil, ErrNoCapacity
 	}
 

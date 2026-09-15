@@ -623,3 +623,45 @@ func TestActorResumer_FlightKeepsCallerTraceContext(t *testing.T) {
 		t.Error("flight RPC lost the caller's sampled flag")
 	}
 }
+
+// TestActorResumer_TerminalDataLossIsNotParked verifies a resume the control
+// plane refused for good -- DataLoss: the actor's paused snapshot left with
+// its node, a restore that crashed it -- fails at once with that status even
+// while parking is enabled, instead of being retried until the budget elapses
+// on an error no wait can clear.
+func TestActorResumer_TerminalDataLossIsNotParked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var calls int
+		mock := &resumerMockClient{
+			resumeFn: func(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
+				mu.Lock()
+				calls++
+				mu.Unlock()
+				return nil, status.Error(codes.DataLoss, "actor team-a/actor-lost crashed: its local snapshot is lost with its node")
+			},
+		}
+
+		resumer := NewActorResumer(mock, withParking(ParkedRequestConfig{Max: 1, Budget: 5 * time.Second}))
+		start := time.Now()
+		_, outcome, err := resumer.ResumeActor(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "actor-lost"})
+		if got := status.Code(err); got != codes.DataLoss {
+			t.Fatalf("expected DataLoss, got %v (err=%v)", got, err)
+		}
+		var budget *budgetExhaustedError
+		if errors.As(err, &budget) {
+			t.Errorf("a terminal error must not be reported as budget exhaustion: %v", err)
+		}
+		if outcome != ResumeOutcomeNone {
+			t.Errorf("outcome = %q, want %q", outcome, ResumeOutcomeNone)
+		}
+		if elapsed := time.Since(start); elapsed >= time.Second {
+			t.Errorf("the resume took %v; a terminal error must not be parked", elapsed)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if calls != 1 {
+			t.Errorf("expected exactly 1 resume attempt, got %d", calls)
+		}
+	})
+}

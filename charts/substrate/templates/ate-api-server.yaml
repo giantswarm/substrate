@@ -22,6 +22,12 @@ rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "watch", "list"]
+# Nodes are read to tell a node that left the cluster from one whose workers
+# are momentarily absent: a PAUSED actor's local snapshot lives on a node, and
+# only a node that is gone makes it lost (see the Resume workflow).
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "watch", "list"]
 - apiGroups: ["ate.dev"]
   resources: ["workerpools", "sandboxconfigs", "csidriverconfigs"]
   verbs: ["get", "watch", "list"]

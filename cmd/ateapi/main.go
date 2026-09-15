@@ -177,6 +177,10 @@ func main() {
 	ateletPodInformerFactory, ateletPodInformer := controlapi.AteletInformer(clientset, ateletNamespace)
 	scInformerFactory := informers.NewSharedInformerFactory(clientset, 0)
 	storageClassLister := scInformerFactory.Storage().V1().StorageClasses().Lister()
+	// Nodes: whether a node that holds a PAUSED actor's local snapshot still
+	// exists, the one signal that tells a node gone from one whose workers are
+	// momentarily absent.
+	nodeLister := scInformerFactory.Core().V1().Nodes().Lister()
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -213,7 +217,7 @@ func main() {
 		dialerOpts = append(dialerOpts, controlapi.WithInsecureCredentials())
 	}
 	ateletDialer := controlapi.NewAteletDialer(workerPodInformer.GetIndexer(), ateletPodInformer.GetIndexer(), *ateletClientCredBundle, *podIdentityCACerts, dialerOpts...)
-	controlSrv := controlapi.NewRPCService(persistence, workerCache, sandboxConfigLister, csiDriverConfigLister, storageClassLister, ateletDialer, instruments, *egressGatewayAddress, *actorWorkflowDeadline, *actorRestoreBudget, volPlugins, objectStore)
+	controlSrv := controlapi.NewRPCService(persistence, workerCache, sandboxConfigLister, csiDriverConfigLister, storageClassLister, nodeLister, ateletDialer, instruments, *egressGatewayAddress, *actorWorkflowDeadline, *actorRestoreBudget, volPlugins, objectStore)
 
 	// Drive stored ActorTemplates through the golden actor flow.
 	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv)
