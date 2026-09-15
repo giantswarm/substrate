@@ -67,6 +67,14 @@ data:
         - backends:
           - dynamic:
               target: source.connectHeaders["host"]
+          policies:
+            substrateEgress:
+              host: {{ include "substrate.fullname" (list "api" .) }}.{{ .Release.Namespace }}.svc:443
+              policies:
+                backendTLS:
+                  cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+                  root: /run/servicedns.podcert.ate.dev/trust-bundle.pem
       - protocol: TCP
         tcpRoutes:
         - backends:
@@ -147,7 +155,7 @@ spec:
         - --actor-identity-ca-file=/run/actor-id-ca-certs/ca.crt
         - --otlp-collector-address=
         - --envoy-admin-address=localhost:15000
-        - --atenet-router=agentgateway
+        - --atenet-dataplane=agentgateway
         env:
         - name: POD_NAME
           valueFrom:

@@ -31,6 +31,7 @@ data:
   config.yaml: |
     # yaml-language-server: $schema=https://agentgateway.dev/schema/config
     config:
+      statsAddr: 0.0.0.0:15020
       # Actor sandboxes behind a worker IP are replaced between requests. Do
       # not retain an idle connection that may belong to the previous actor.
       backend:
@@ -208,7 +209,7 @@ spec:
         app: atenet-router
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "9090"
+        prometheus.io/port: "15020"
     spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atenet-router" .) }}
       containers:
@@ -217,7 +218,7 @@ spec:
         args:
         - "router"
         - "--mode=ingress"
-        - "--atenet-router=agentgateway"
+        - "--atenet-dataplane=agentgateway"
         - "--namespace={{ .Release.Namespace }}"
         - "--port-http=8080"
         - "--port-extproc=50051"
@@ -373,4 +374,8 @@ spec:
   - name: status
     port: 4040
     targetPort: status
+    protocol: TCP
+  - name: stats
+    port: 15020
+    targetPort: gw-metrics
     protocol: TCP
