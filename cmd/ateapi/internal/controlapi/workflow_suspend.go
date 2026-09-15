@@ -266,7 +266,8 @@ func (w *ActorWorkflow) ensurePausedSnapshotUploaded(ctx context.Context, actorR
 	defer func() { err = done(err) }()
 
 	local := actor.GetStatus().GetLocalSnapshotInfo()
-	if len(local.GetNodeVmsWithLocalSnapshots()) == 0 {
+	nodes := localSnapshotNodes(actor)
+	if len(nodes) == 0 {
 		// Without the node the snapshot can never be found (mirrors
 		// FinalizePaused, which crashes rather than record an unknown node).
 		if err := crashActor(ctx, w.store, actorRef, ateattr.OperationSuspend, ateattr.ReasonCorruptedAssignment); err != nil {
@@ -275,12 +276,23 @@ func (w *ActorWorkflow) ensurePausedSnapshotUploaded(ctx context.Context, actorR
 		return "", fmt.Errorf("actor is CRASHED because it was suspending a paused snapshot with no node recorded")
 	}
 
-	ateletConn, err := w.dialer.DialForAteletOnNode(local.GetNodeVmsWithLocalSnapshots()[0])
+	ateletConn, err := w.dialer.DialForAteletOnNode(nodes[0])
 	if err != nil {
-		// No atelet on the node is indistinguishable from an atelet restart or
-		// informer lag, and the snapshot bytes may still be on its disk: stay
-		// retryable rather than crash.
-		return "", fmt.Errorf("while getting atelet conn for node %q: %w", local.GetNodeVmsWithLocalSnapshots()[0], err)
+		if errors.Is(err, ErrNoAteletOnNode) {
+			// A node that has left the cluster took the snapshot with it;
+			// nothing to upload, ever.
+			gone, lerr := w.localSnapshotNodesGone(nodes)
+			if lerr != nil {
+				return "", lerr
+			}
+			if gone {
+				return "", w.localSnapshotLost(ctx, actorRef, actor, ateattr.OperationSuspend, nodes)
+			}
+		}
+		// No atelet on a node that is still there is indistinguishable from an
+		// atelet restart or informer lag, and the snapshot bytes are still on
+		// its disk: stay retryable rather than crash.
+		return "", fmt.Errorf("while getting atelet conn for node %q: %w", nodes[0], err)
 	}
 	client := ateletpb.NewAteomHerderClient(ateletConn)
 

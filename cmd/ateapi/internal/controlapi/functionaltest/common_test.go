@@ -133,6 +133,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 	ateletFactory, ateletInformer := controlapi.AteletInformer(k8sClient, installdefaults.SystemNamespace)
 	scFactory := informers.NewSharedInformerFactory(k8sClient, 0)
 	scLister := scFactory.Storage().V1().StorageClasses().Lister()
+	nodeLister := scFactory.Core().V1().Nodes().Lister()
 
 	substrateInformerFactory := externalversions.NewSharedInformerFactory(substrateClient, 0)
 	workerPoolLister := substrateInformerFactory.Api().V1alpha1().WorkerPools().Lister()
@@ -215,6 +216,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 		sandboxConfigLister,
 		csiDriverConfigLister,
 		scLister,
+		nodeLister,
 		dialer,
 		instruments,
 		"",
