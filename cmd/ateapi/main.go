@@ -310,6 +310,8 @@ func main() {
 	// Drive stored ActorTemplates through the golden actor flow.
 	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv, *templateResyncInterval)
 	templateReconciler.Start(shutdownCtx)
+	// Make every pause durable in the background.
+	controlSrv.Start(shutdownCtx)
 
 	// Crash the Actors lost when a Worker's ateom restarts.
 	workerAssignmentReconciler := controlapi.NewWorkerAssignmentReconciler(persistence, workerCache)

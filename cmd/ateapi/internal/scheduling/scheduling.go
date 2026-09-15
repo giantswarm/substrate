@@ -39,8 +39,14 @@ type Constraints struct {
 
 	// RequiredNodes, when non-empty, restricts placement to workers running
 	// on one of these nodes. Used when the actor's latest snapshot is local
-	// to specific node VMs.
+	// to specific node VMs and exists nowhere else.
 	RequiredNodes []string
+
+	// PreferredNodes, when non-empty, ranks workers running on one of these
+	// nodes ahead of every other eligible worker without excluding any. Used
+	// when the actor's latest snapshot is local to these nodes but also has a
+	// durable copy: the node is the fast path, not the only one.
+	PreferredNodes []string
 
 	// Limits are the actor's declared resource limits, named as a Worker names
 	// the capacity it reports, so the two subtract.
@@ -174,6 +180,9 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 		}
 		return nil, ErrNoCapacity
 	}
+	if preferred := candidatesOnNodes(candidates, constraints.PreferredNodes); len(preferred) > 0 {
+		candidates = preferred
+	}
 	if len(candidates) == 1 {
 		return candidates[0].worker, nil
 	}
@@ -260,6 +269,21 @@ func quantitiesUtilization(capQ, usedQ resources.Quantities) float64 {
 		return 1
 	}
 	return maxRatio
+}
+
+// candidatesOnNodes returns the candidates running on one of nodes; none for an
+// empty nodes.
+func candidatesOnNodes(candidates []candidate, nodes []string) []candidate {
+	if len(nodes) == 0 {
+		return nil
+	}
+	var onNodes []candidate
+	for _, cand := range candidates {
+		if slices.Contains(nodes, cand.worker.GetNodeName()) {
+			onNodes = append(onNodes, cand)
+		}
+	}
+	return onNodes
 }
 
 func (s *scheduler) Applies(worker *ateapipb.Worker, constraints Constraints) bool {

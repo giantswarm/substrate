@@ -69,15 +69,18 @@ func (w *ActorWorkflow) localSnapshotNodesGone(nodes []string) (bool, error) {
 
 // crashMessageLocalSnapshotGone is the ActorCrash.message of a paused actor
 // whose local snapshot went with its node while no durable snapshot remained.
-const crashMessageLocalSnapshotGone = "local snapshot lost with its node and no durable snapshot remains"
+const crashMessageLocalSnapshotGone = "local snapshot lost with its node and no durable copy of it remains"
 
 // localSnapshotLost is the terminal answer for a PAUSED actor whose local
-// snapshot went with its node. With no durable snapshot to fall back to the
-// actor is crashed: a paused actor holds no worker, so CRASHED releases
-// nothing here, but it makes the actor deletable and tells the consumer
-// that this session's runtime state is gone. With a durable snapshot the
-// actor is left as it is and the call fails at once with the cause; parking
-// would wait on a node that will not return.
+// snapshot went with its node. With no durable copy of that snapshot to fall
+// back to (durablePauseCopy; an external snapshot of an earlier suspend does
+// not count: restoring it would silently revert the actor) the actor is
+// crashed: a paused actor holds no worker, so CRASHED releases nothing here,
+// but it makes the actor deletable and tells the consumer that this session's
+// runtime state is gone. With a durable copy the node is only a placement
+// preference and the resume never gets here; should it, the actor is left as
+// it is and the call fails at once with the cause; parking would wait on a
+// node that will not return.
 //
 // The status is DataLoss either way: a dataplane parks a request on
 // ResourceExhausted, FailedPrecondition and Unavailable, and this is not a
@@ -87,16 +90,16 @@ func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resource
 	attrs := ateattr.ActorRefLogAttrs(actorRef)
 	attrs = append(attrs, slog.String("snapshot", snapshot), slog.Any("nodes", nodes))
 
-	if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() != "" {
-		slog.LogAttrs(ctx, slog.LevelError, "Paused actor's local snapshot is lost with its node; a durable snapshot remains", attrs...)
+	if durablePauseCopy(actor) != nil {
+		slog.LogAttrs(ctx, slog.LevelError, "Paused actor's local snapshot is lost with its node; its durable copy remains", attrs...)
 		return status.Errorf(codes.DataLoss, "actor %s: its local snapshot %q is on node(s) %v, which no longer exist in the cluster; the paused state is lost", actorRef, snapshot, nodes)
 	}
 
-	slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its local snapshot is lost with its node and it has no durable snapshot", attrs...)
+	slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its local snapshot is lost with its node and it has no durable copy of it", attrs...)
 	if cerr := crashActor(ctx, w.store, actorRef, opName, fmt.Sprintf("%s: snapshot %q on node(s) %v", crashMessageLocalSnapshotGone, snapshot, nodes)); cerr != nil {
 		return cerr
 	}
-	return status.Errorf(codes.DataLoss, "actor %s crashed: its local snapshot %q is on node(s) %v, which no longer exist in the cluster, and it has no durable snapshot", actorRef, snapshot, nodes)
+	return status.Errorf(codes.DataLoss, "actor %s crashed: its local snapshot %q is on node(s) %v, which no longer exist in the cluster, and it has no durable copy of it", actorRef, snapshot, nodes)
 }
 
 // noFreeWorkerError turns the scheduler's refusal into the caller's status.
