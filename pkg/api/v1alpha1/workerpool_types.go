@@ -27,8 +27,9 @@ import (
 type WorkerPoolLabelValue string
 
 // WorkerPoolPodTemplate defines optional metadata, scheduling, and resource
-// settings for worker workloads. NodeAffinity is mapped to
-// spec.affinity.nodeAffinity on the pod.
+// settings for worker workloads. NodeAffinity and PodAntiAffinity are mapped
+// to spec.affinity.nodeAffinity and spec.affinity.podAntiAffinity on the pod;
+// TopologySpreadConstraints to spec.topologySpreadConstraints.
 type WorkerPoolPodTemplate struct {
 	// Labels are added to the generated Deployment and worker pods. Keys in
 	// the ate.dev domain and its subdomains are reserved for controllers.
@@ -70,6 +71,24 @@ type WorkerPoolPodTemplate struct {
 	//
 	// +optional
 	NodeAffinity *corev1.NodeAffinity `json:"nodeAffinity,omitempty"`
+
+	// PodAntiAffinity scheduling rules for the worker pods. Mapped to
+	// spec.affinity.podAntiAffinity on the pod. A term that keeps this pool's
+	// workers apart selects them by the label the controller puts on every
+	// worker pod, ate.dev/worker-pool: <pool name>.
+	//
+	// +optional
+	PodAntiAffinity *corev1.PodAntiAffinity `json:"podAntiAffinity,omitempty"`
+
+	// TopologySpreadConstraints for the worker pods. Mapped to
+	// spec.topologySpreadConstraints on the pod. A constraint that spreads
+	// this pool's workers over nodes or zones selects them by the label the
+	// controller puts on every worker pod, ate.dev/worker-pool: <pool name>.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	// +listType=atomic
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 
 	// Resources are the compute resources allocated for each worker pod.
 	//
