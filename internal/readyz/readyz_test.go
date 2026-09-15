@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,7 +108,7 @@ func TestWait_ReturnsOnFirst200(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := Wait(ctx, "main", probe, ip); err != nil {
+	if err := Wait(ctx, "main", probe, ip, nil); err != nil {
 		t.Fatalf("Wait returned error: %v", err)
 	}
 }
@@ -135,7 +136,7 @@ func TestWait_WaitsForServerToBecomeReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	start := time.Now()
-	if err := Wait(ctx, "main", probe, ip); err != nil {
+	if err := Wait(ctx, "main", probe, ip, nil); err != nil {
 		t.Fatalf("Wait returned error: %v", err)
 	}
 	elapsed := time.Since(start)
@@ -159,7 +160,7 @@ func TestWait_ContextCancellation(t *testing.T) {
 		cancel()
 	}()
 
-	err := Wait(ctx, "main", probe, "127.0.0.1")
+	err := Wait(ctx, "main", probe, "127.0.0.1", nil)
 	if err == nil {
 		t.Fatalf("Wait returned nil, expected cancellation error")
 	}
@@ -215,7 +216,7 @@ func TestWait_GivesUpAtProbeTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	start := time.Now()
-	err := Wait(ctx, "main", probe, "127.0.0.1")
+	err := Wait(ctx, "main", probe, "127.0.0.1", nil)
 	if err == nil {
 		t.Fatalf("Wait returned nil, expected a timeout error")
 	}
@@ -231,6 +232,40 @@ func TestWait_GivesUpAtProbeTimeout(t *testing.T) {
 	}
 }
 
+// A workload that exits before its probe ever answers says why on its way out,
+// to a pod log the template's owner cannot read. The deadline error quotes the
+// container's last output when the caller keeps it, and stays as it was when
+// nothing is known.
+func TestWait_DeadlineErrorQuotesTheLastOutput(t *testing.T) {
+	port := pickFreePort(t)
+	probe := &ateompb.Readyz{HttpGet: &ateompb.HTTPGetAction{Port: int32(port)}, TimeoutSeconds: 1}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	output := map[string][]string{"main": {
+		"fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+		`{"level":"ERROR","msg":"failed to materialize Agent Plugins"}`,
+	}}
+	lastOutput := func(containerName string) []string { return output[containerName] }
+
+	err := Wait(ctx, "main", probe, "127.0.0.1", lastOutput)
+	if err == nil {
+		t.Fatal("Wait returned nil, expected a timeout error")
+	}
+	if !errors.Is(err, ateerrors.ReasonWorkloadNotReady) {
+		t.Errorf("Wait error = %v, want it to carry %v", err, ateerrors.ReasonWorkloadNotReady)
+	}
+	want := "; last output of \"main\":\n" + strings.Join(output["main"], "\n")
+	if !strings.HasSuffix(err.Error(), want) {
+		t.Errorf("Wait error = %q, want it to end with %q", err, want)
+	}
+
+	err = Wait(ctx, "other", probe, "127.0.0.1", lastOutput)
+	if err == nil || strings.Contains(err.Error(), "last output") {
+		t.Errorf("Wait error for a container without output = %v, want the plain deadline error", err)
+	}
+}
+
 func TestWaitAll_SkipsContainersWithoutProbe(t *testing.T) {
 	// No server bound, but no probes => should return nil immediately.
 	containers := []*ateompb.Container{
@@ -239,7 +274,7 @@ func TestWaitAll_SkipsContainersWithoutProbe(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if err := WaitAll(ctx, containers, "127.0.0.1"); err != nil {
+	if err := WaitAll(ctx, containers, "127.0.0.1", nil); err != nil {
 		t.Fatalf("WaitAll with no probes returned error: %v", err)
 	}
 }
@@ -285,7 +320,7 @@ func TestWaitAll_ReasonSurvivesTheRPCBoundary(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	err := WaitAll(ctx, containers, "127.0.0.1")
+	err := WaitAll(ctx, containers, "127.0.0.1", nil)
 	if err == nil {
 		t.Fatal("WaitAll returned nil, expected a timeout error")
 	}
