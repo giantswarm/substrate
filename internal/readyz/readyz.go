@@ -65,6 +65,14 @@ var HTTPClient = func() *http.Client {
 	return &http.Client{Transport: tr, Timeout: RequestTimeout}
 }
 
+// LastOutput returns the most recent lines a container wrote to its stdout
+// and stderr, oldest first, or nil when none are known. A missed readiness
+// deadline quotes them: a workload that exits before its probe ever answers
+// says why on its way out, and that line is otherwise only in the pod log,
+// which the owner of the ActorTemplate cannot read. A nil LastOutput quotes
+// nothing.
+type LastOutput func(containerName string) []string
+
 // WaitAll blocks until every container with a readyz probe set reports 200,
 // or returns the first error. Containers without a probe are skipped (their
 // absence means "no readiness gate").
@@ -73,7 +81,7 @@ var HTTPClient = func() *http.Client {
 // errors.As cannot cross a process, and the interceptor would flatten it to a
 // bare codes.Internal, leaving atelet reading UNKNOWN. The ErrorInfo detail is
 // what carries it. Internal and no crash directive both match today's behavior.
-func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP string) error {
+func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP string, lastOutput LastOutput) error {
 	g, gctx := errgroup.WithContext(ctx)
 	for _, ac := range containers {
 		if ac.GetReadyz() == nil {
@@ -81,7 +89,7 @@ func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP strin
 		}
 		ac := ac
 		g.Go(func() error {
-			return Wait(gctx, ac.GetName(), ac.GetReadyz(), actorIP)
+			return Wait(gctx, ac.GetName(), ac.GetReadyz(), actorIP, lastOutput)
 		})
 	}
 	err := g.Wait()
@@ -92,8 +100,9 @@ func WaitAll(ctx context.Context, containers []*ateompb.Container, actorIP strin
 }
 
 // Wait polls the configured HTTP endpoint until it returns 200, the context
-// is cancelled, or the overall deadline is exceeded.
-func Wait(ctx context.Context, containerName string, probe *ateompb.Readyz, actorIP string) error {
+// is cancelled, or the overall deadline is exceeded. The deadline error quotes
+// the container's last output when lastOutput knows it.
+func Wait(ctx context.Context, containerName string, probe *ateompb.Readyz, actorIP string, lastOutput LastOutput) error {
 	url, err := URL(probe, actorIP)
 	if err != nil {
 		return fmt.Errorf("invalid readyz config for %q: %w", containerName, err)
@@ -114,8 +123,8 @@ func Wait(ctx context.Context, containerName string, probe *ateompb.Readyz, acto
 		}
 		if time.Now().After(deadline) {
 			// Tagged only here: the cancellation above is ateom draining, not the actor failing.
-			return fmt.Errorf("%w: readyz for %q never returned 200 within %s (%d attempts, last error: %v)",
-				ateerrors.ReasonWorkloadNotReady, containerName, timeout, attempts, lastErr)
+			return fmt.Errorf("%w: readyz for %q never returned 200 within %s (%d attempts, last error: %v)%s",
+				ateerrors.ReasonWorkloadNotReady, containerName, timeout, attempts, lastErr, quoteLastOutput(containerName, lastOutput))
 		}
 
 		attempts++
@@ -141,6 +150,19 @@ func Wait(ctx context.Context, containerName string, probe *ateompb.Readyz, acto
 		case <-time.After(PollInterval):
 		}
 	}
+}
+
+// quoteLastOutput renders the container's last output for the deadline error,
+// one line per line after a heading; "" when nothing is known.
+func quoteLastOutput(containerName string, lastOutput LastOutput) string {
+	if lastOutput == nil {
+		return ""
+	}
+	lines := lastOutput(containerName)
+	if len(lines) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("; last output of %q:\n%s", containerName, strings.Join(lines, "\n"))
 }
 
 // overallTimeout resolves how long Wait polls before giving up. A

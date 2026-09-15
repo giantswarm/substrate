@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -46,11 +47,25 @@ const (
 )
 
 const (
-	reasonGoldenTagConflict  = "GoldenTagConflict"
-	reasonGoldenActorInvalid = "GoldenActorInvalid"
-	reasonGoldenActorCrashed = "GoldenActorCrashed"
-	reasonUnexpectedState    = "GoldenActorUnexpectedState"
+	reasonGoldenTagConflict   = "GoldenTagConflict"
+	reasonGoldenActorInvalid  = "GoldenActorInvalid"
+	reasonGoldenActorCrashed  = "GoldenActorCrashed"
+	reasonGoldenActorNotReady = "GoldenActorNotReady"
+	reasonUnexpectedState     = "GoldenActorUnexpectedState"
 )
+
+// maxWorkloadBootFailures bounds the golden boots the workload itself fails —
+// it exited before its readiness probe answered, or never answered it
+// (WORKLOAD_NOT_READY) — before the template is given up with
+// reasonGoldenActorNotReady. Such a boot is not a crash: ateom returns the
+// missed deadline, the actor stays SUSPENDED or RESUMING, and nothing marks
+// it terminal, so without a bound the same boot ran again on every retry for
+// as long as the template existed, and the cause stayed in the worker's log.
+// Each attempt runs the probe out to its deadline (30 s unless the template
+// says otherwise) and the retry follows at once, so the bound is reached in a
+// few minutes. A boot the infrastructure failed — a worker gone, a dial that
+// failed, a lease — is retried without bound, as before.
+const maxWorkloadBootFailures = 3
 
 // templateReconcilerStore enumerates the exact storage methods needed by
 // ActorTemplateReconciler and nothing more.
@@ -73,6 +88,10 @@ type goldenActorControl interface {
 	GetActor(ctx context.Context, req *ateapipb.GetActorRequest) (*ateapipb.Actor, error)
 	ResumeActor(ctx context.Context, req *ateapipb.ResumeActorRequest) (*ateapipb.ResumeActorResponse, error)
 	SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error)
+	// crashGoldenActor moves the golden actor to CRASHED and frees its worker,
+	// the way a lifecycle workflow gives an actor up. No Control RPC does
+	// that, so the reconciler reaches the store through the service.
+	crashGoldenActor(ctx context.Context, actorRef resources.ActorRef, reason string) error
 }
 
 // ActorTemplateReconciler drives stored ActorTemplates through the golden
@@ -240,6 +259,10 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 
 		switch state := actor.GetStatus().GetState(); state {
 		case ateapipb.ActorState_ACTOR_STATE_CRASHED:
+			if failures := goldenSnapshotStatus.GetWorkloadBootFailures(); failures >= maxWorkloadBootFailures {
+				// giveUpGoldenBoot crashed it and died before recording why.
+				return 0, r.fail(ctx, tmpl, reasonGoldenActorNotReady, workloadBootFailuresMessage(failures, nil))
+			}
 			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, "golden actor crashed before its snapshot was taken")
 
 		case ateapipb.ActorState_ACTOR_STATE_RUNNING:
@@ -286,17 +309,39 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				// without being recorded.
 				return 0, r.tagGoldenActor(ctx, tmpl, goldenActorRef)
 			}
-			if _, err := r.control.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: goldenActorRef}); err != nil {
-				if ateerrors.ActorCrashRequested(err) {
+			if failures := goldenSnapshotStatus.GetWorkloadBootFailures(); failures >= maxWorkloadBootFailures {
+				// A previous pass counted the last allowed boot and died before
+				// giving the template up; there is nothing left to boot.
+				return 0, r.giveUpGoldenBoot(ctx, tmpl, goldenActorRef, failures, nil)
+			}
+			if _, resumeErr := r.control.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: goldenActorRef}); resumeErr != nil {
+				if ateerrors.ActorCrashRequested(resumeErr) {
 					// The resume crashed the golden actor and says why — an
 					// image the registry refuses, a container with no runnable
 					// process. Record the cause now; the retry would observe
 					// CRASHED without it.
-					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, status.Convert(err).Message())
+					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, status.Convert(resumeErr).Message())
+				}
+				if workloadFailedBoot(resumeErr) {
+					// The workload itself failed the boot — it exited before
+					// its readiness probe answered, or never answered it — and
+					// the actor is not crashed, so nothing but this count ends
+					// the retries. Persisted before the verdict: the count is
+					// what makes the bound hold across passes and replicas.
+					failures := goldenSnapshotStatus.GetWorkloadBootFailures() + 1
+					if tmpl, err = r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
+						snapshotStatus.WorkloadBootFailures = failures
+					}); err != nil {
+						return 0, err
+					}
+					if failures < maxWorkloadBootFailures {
+						return 0, fmt.Errorf("while resuming golden actor (workload boot failure %d of %d): %w", failures, maxWorkloadBootFailures, resumeErr)
+					}
+					return 0, r.giveUpGoldenBoot(ctx, tmpl, goldenActorRef, failures, resumeErr)
 				}
 				// Anything else is retried; a crash the resume did not report
 				// is observed as CRASHED on the retry.
-				return 0, fmt.Errorf("while resuming golden actor: %w", err)
+				return 0, fmt.Errorf("while resuming golden actor: %w", resumeErr)
 			}
 			deadline := time.Now().Add(goldenSnapshotWarmupFor(tmpl.GetContainers()))
 			if tmpl, err = r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
@@ -313,6 +358,50 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 			return r.resyncInterval, nil
 		}
 	}
+}
+
+// workloadFailedBoot reports whether a resume failed on the workload's own
+// account rather than the infrastructure's: the failure reason is in the
+// workload fault domain (ateattr.FailureDomain) — today WORKLOAD_NOT_READY,
+// the readiness deadline ateom reports when the workload exited or never
+// answered. The domain is the classification the metrics already emit, so a
+// reason that joins it later bounds the golden boot without a change here.
+func workloadFailedBoot(err error) bool {
+	return ateattr.FailureDomain(ateattr.FailureReason(err)) == ateattr.FailureDomainWorkload
+}
+
+// giveUpGoldenBoot ends a golden boot whose workload failed
+// maxWorkloadBootFailures times. The golden actor is crashed first — a failed
+// boot leaves it RESUMING on the worker it claimed, and once the template is
+// terminal nothing would reclaim that worker — then the template fails with
+// the cause. Reentrant across a pass that dies in between: the persisted count
+// makes the next pass give up without another boot, and attribute the CRASHED
+// actor it then observes to this bound rather than to an unexplained crash.
+func (r *ActorTemplateReconciler) giveUpGoldenBoot(ctx context.Context, tmpl *ateapipb.ActorTemplate, goldenActorRef *ateapipb.ObjectRef, failures int32, lastErr error) error {
+	reason := string(ateerrors.ReasonWorkloadNotReady)
+	if lastErr != nil {
+		reason = ateattr.FailureReason(lastErr)
+	}
+	if err := r.control.crashGoldenActor(ctx, resources.ActorRefFromObjectRef(goldenActorRef), reason); err != nil {
+		return fmt.Errorf("while crashing golden actor after %d failed boots: %w", failures, err)
+	}
+	return r.fail(ctx, tmpl, reasonGoldenActorNotReady, workloadBootFailuresMessage(failures, lastErr))
+}
+
+// workloadBootFailuresMessage words the bound for the template's error
+// message, followed by the last boot's own error when one is at hand: the
+// worker's message — the missed readiness deadline and the last lines the
+// workload wrote — without the workflow's step wrapping around it.
+func workloadBootFailuresMessage(failures int32, lastErr error) string {
+	msg := fmt.Sprintf("the golden actor's workload failed %d boots in a row: it exited before its readiness probe answered, or never answered it", failures)
+	if lastErr == nil {
+		return msg
+	}
+	var statusErr interface{ GRPCStatus() *status.Status }
+	if errors.As(lastErr, &statusErr) {
+		return msg + "; last boot: " + statusErr.GRPCStatus().Message()
+	}
+	return msg + "; last boot: " + lastErr.Error()
 }
 
 // suspendActor waits for the golden actor to produce an external snapshot.

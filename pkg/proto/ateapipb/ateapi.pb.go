@@ -2319,6 +2319,14 @@ type GoldenSnapshotStatus struct {
 	// golden snapshot may be taken.
 	TakeGoldenSnapshotAt *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=take_golden_snapshot_at,json=takeGoldenSnapshotAt,proto3" json:"take_golden_snapshot_at,omitempty"`
 	ErrorMessage         string                 `protobuf:"bytes,3,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	// workload_boot_failures counts the golden actor's boots that the workload
+	// itself failed: it exited or never answered its readiness probe
+	// (WORKLOAD_NOT_READY). ate-api gives the template up once they reach its
+	// bound and records why in error_message. A boot the infrastructure failed
+	// — a worker gone, a dial error — is retried without counting here.
+	//
+	// +k8s:optional
+	WorkloadBootFailures int32 `protobuf:"varint,4,opt,name=workload_boot_failures,json=workloadBootFailures,proto3" json:"workload_boot_failures,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -2372,6 +2380,13 @@ func (x *GoldenSnapshotStatus) GetErrorMessage() string {
 		return x.ErrorMessage
 	}
 	return ""
+}
+
+func (x *GoldenSnapshotStatus) GetWorkloadBootFailures() int32 {
+	if x != nil {
+		return x.WorkloadBootFailures
+	}
+	return 0
 }
 
 type ActorTemplateStatus struct {
@@ -7096,12 +7111,13 @@ const file_ateapi_proto_rawDesc = "" +
 	"\x06limits\x18\x01 \x03(\v2\x0e.ateapi.LimitsR\x06limits\"8\n" +
 	"\x06Limits\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
-	"\bquantity\x18\x02 \x01(\tR\bquantity\"\xc0\x01\n" +
+	"\bquantity\x18\x02 \x01(\tR\bquantity\"\xf6\x01\n" +
 	"\x14GoldenSnapshotStatus\x120\n" +
 	"\n" +
 	"golden_tag\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\tgoldenTag\x12Q\n" +
 	"\x17take_golden_snapshot_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x14takeGoldenSnapshotAt\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"i\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x124\n" +
+	"\x16workload_boot_failures\x18\x04 \x01(\x05R\x14workloadBootFailures\"i\n" +
 	"\x13ActorTemplateStatus\x12R\n" +
 	"\x16golden_snapshot_status\x18\x01 \x01(\v2\x1c.ateapi.GoldenSnapshotStatusR\x14goldenSnapshotStatus\"k\n" +
 	"\rSandboxConfig\x129\n" +
