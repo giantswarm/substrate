@@ -86,6 +86,32 @@ func TestSchedule(t *testing.T) {
 			wantPod:     "w-b",
 		},
 		{
+			name: "preferred node wins over other free workers",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", tierTwo),
+				worker("w-b", "gvisor", "node-b", tierTwo),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", PreferredNodes: []string{"node-b"}},
+			wantPod:     "w-b",
+		},
+		{
+			name: "preferred node without a free worker yields to any eligible worker",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", tierTwo),
+				worker("w-b-busy", "gvisor", "node-b", tierTwo, assigned("demo", "other")),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", PreferredNodes: []string{"node-b"}},
+			wantPod:     "w-a",
+		},
+		{
+			name: "preferred node that is gone yields to any eligible worker",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", tierTwo),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", PreferredNodes: []string{"node-gone"}},
+			wantPod:     "w-a",
+		},
+		{
 			name: "nil selectors match everything",
 			fleet: fleet{
 				worker("w-1", "gvisor", "node-a", nil),
