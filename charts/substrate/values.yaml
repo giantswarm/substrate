@@ -141,17 +141,25 @@ image:
   registry: ghcr.io/kagent-dev/substrate
   tag: ""
 
-# Every reference names its registry. A Docker Hub short name (`postgres:…`,
-# `rustfs/rustfs:…`) is resolved by the node's container runtime, and only
-# containerd defaults it to docker.io: CRI-O and Podman resolve short names
-# through containers-registries.conf(5) and, with short-name mode enforcing
-# (CRI-O's default), refuse a name that is not an alias — the pod fails with
-# `ImageInspectError: short name mode is enforcing, but image name
-# rustfs/rustfs:… returns ambiguous list`.
+# Every reference names its registry (awsCli: see below). A Docker Hub short
+# name (`postgres:…`, `rustfs/rustfs:…`) is resolved by the node's container
+# runtime, and only containerd defaults it to docker.io: CRI-O and Podman
+# resolve short names through containers-registries.conf(5) and, with
+# short-name mode enforcing (CRI-O's default), refuse a name that is not an
+# alias — the pod fails with `ImageInspectError: short name mode is
+# enforcing, but image name rustfs/rustfs:… returns ambiguous list`.
 images:
   postgres: docker.io/library/postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
   rustfs: docker.io/rustfs/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
-  awsCli: docker.io/amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+  # Still a short name: this is the image of the rustfs-bucket-init Job, and a
+  # Job's pod template is immutable. Any change of this value — this one, or
+  # a version bump — fails the upgrade of every existing installation with
+  # `Job.batch "rustfs-bucket-init" is invalid: spec.template: … field is
+  # immutable` until someone deletes the completed Job by hand. Qualify it
+  # together with a change that lets the Job be recreated (a hook Job with
+  # before-hook-creation, or a name that carries the template's hash — the
+  # platform's network policies select the Job by `job-name`).
+  awsCli: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
   # The agentgateway build atenet-router and atenet-egress run: a release of the
   # Giant Swarm line of agentgateway. Its egress config (atenet-egress.yaml) is
   # written for this build's config schema, so the two move together; the
