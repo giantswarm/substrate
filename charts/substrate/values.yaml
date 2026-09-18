@@ -148,9 +148,17 @@ image:
 # short-name mode enforcing (CRI-O's default), refuse a name that is not an
 # alias — the pod fails with `ImageInspectError: short name mode is
 # enforcing, but image name rustfs/rustfs:… returns ambiguous list`.
+#
+# The registry is gsoci.azurecr.io, the one every Giant Swarm installation
+# pulls from and whose signing identity its image policy trusts: each value
+# is upstream's pin — the same tag, the same digest — under its gsoci copy
+# (retagger mirrors library/postgres, rustfs/rustfs, library/busybox and the
+# agentgateway line's release tags there). Docker Hub's floating `18-alpine`
+# is carried by digest, which the mirror publishes under the versioned tag
+# it was; a re-pin keeps the digest equal to upstream's.
 images:
-  postgres: docker.io/library/postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
-  rustfs: docker.io/rustfs/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
+  postgres: gsoci.azurecr.io/giantswarm/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+  rustfs: gsoci.azurecr.io/giantswarm/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
   # Still a short name: this is the image of the rustfs-bucket-init Job, and a
   # Job's pod template is immutable. Any change of this value — this one, or
   # a version bump — fails the upgrade of every existing installation with
@@ -158,11 +166,15 @@ images:
   # immutable` until someone deletes the completed Job by hand. Qualify it
   # together with a change that lets the Job be recreated (a hook Job with
   # before-hook-creation, or a name that carries the template's hash — the
-  # platform's network policies select the Job by `job-name`).
+  # platform's network policies select the Job by `job-name`). Its gsoci copy
+  # is gsoci.azurecr.io/giantswarm/aws-cli:2.17.0, the same digest.
   awsCli: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
   # The agentgateway build atenet-router and atenet-egress run: a release of the
-  # Giant Swarm line of agentgateway. Its egress config (atenet-egress.yaml) is
-  # written for this build's config schema, so the two move together; the
-  # publish workflow stamps AGENTGATEWAY_IMAGE here and refuses a drift.
-  agentgateway: ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.4
-  busybox: docker.io/library/busybox:1.36
+  # Giant Swarm line of agentgateway, from its gsoci copy (retagger mirrors the
+  # line's release tags to gsoci.azurecr.io/giantswarm/agentgateway). Its egress
+  # config (atenet-egress.yaml) is written for this build's config schema, so
+  # the two move together; the publish workflow stamps AGENTGATEWAY_IMAGE here
+  # and refuses a drift.
+  agentgateway: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
+  # Not rendered by any template of this chart; kept as upstream keeps it.
+  busybox: gsoci.azurecr.io/giantswarm/busybox:1.36
