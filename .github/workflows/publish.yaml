@@ -22,7 +22,11 @@
 # agentgateway image atenet-router and atenet-egress run, which comes from the
 # Giant Swarm line of agentgateway (giantswarm/agentgateway-upstream, pinned
 # below) instead of upstream's build. Every own image is scanned before the
-# charts that reference it are pushed.
+# charts that reference it are pushed. A release's charts (X.Y.Z-gs.N) are
+# pushed to gsoci.azurecr.io as well (GSOCI_HELM_REPO: the same path under the
+# org's registry; needs the repository secrets ACR_GSOCI_USERNAME /
+# ACR_GSOCI_PASSWORD, a token with push on that path — dev builds stay on
+# ghcr.io).
 name: publish
 
 on:
@@ -43,6 +47,11 @@ permissions:
 
 env:
   REGISTRY: ghcr.io/${{ github.repository }}
+  # Where a release's charts are published as well: the ghcr.io path under the
+  # org's registry (gsoci.azurecr.io/giantswarm/substrate/helm/{substrate-crds,
+  # substrate}), the path retagger copies the release images to.
+  GSOCI_REGISTRY: gsoci.azurecr.io
+  GSOCI_HELM_REPO: oci://gsoci.azurecr.io/${{ github.repository }}/helm
   UPSTREAM_REPO: kagent-dev/substrate
   COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
   # The agentgateway build atenet-router and atenet-egress run: a release of
@@ -267,4 +276,28 @@ jobs:
             echo "${out}"
             digest=$(sed -n 's/^Digest: //p' <<<"${out}")
             echo "| \`oci://${REGISTRY}/helm/${chart}:${VERSION}\` | \`${digest}\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+      - name: Push the release charts to gsoci.azurecr.io
+        # A release only: the consumers' registry holds the line's releases,
+        # whose images retagger copies there under the same paths; a dev build
+        # is a ghcr.io artifact and selected from there. The same packages,
+        # byte for byte: one build, two registries.
+        if: contains(needs.version.outputs.version, '-gs.')
+        env:
+          USERNAME: ${{ secrets.ACR_GSOCI_USERNAME }}
+          PASSWORD: ${{ secrets.ACR_GSOCI_PASSWORD }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          echo "${PASSWORD}" | helm registry login "${GSOCI_REGISTRY}" --username "${USERNAME}" --password-stdin
+          {
+            echo "## Charts ${VERSION} on ${GSOCI_REGISTRY}"
+            echo
+            echo '| Chart | Digest |'
+            echo '|---|---|'
+          } >> "$GITHUB_STEP_SUMMARY"
+          for chart in substrate-crds substrate; do
+            out=$(helm push "dist/${chart}-${VERSION}.tgz" "${GSOCI_HELM_REPO}" 2>&1)
+            echo "${out}"
+            digest=$(sed -n 's/^Digest: //p' <<<"${out}")
+            echo "| \`${GSOCI_HELM_REPO}/${chart}:${VERSION}\` | \`${digest}\` |" >> "$GITHUB_STEP_SUMMARY"
           done
