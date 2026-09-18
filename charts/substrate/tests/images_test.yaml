@@ -1,0 +1,108 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# The third-party images the chart runs next to its own components — the
+# bundled database, the bundled store and its bucket-init Job, the agentgateway
+# of the atenet router and egress — are the `images:` defaults: each names its
+# registry (a short name is the node runtime's call, and CRI-O refuses it),
+# and each is the gsoci copy of upstream's pin, the same digest. The bucket-init
+# Job is the one short name kept: its pod template is immutable, so the value
+# cannot move without a Job that can be recreated (values.yaml says so).
+suite: third-party image defaults
+templates:
+- postgres.yaml
+- rustfs.yaml
+- atenet-router.yaml
+- atenet-egress.yaml
+tests:
+- it: runs the bundled database from the gsoci copy of upstream's postgres pin, by digest
+  template: postgres.yaml
+  set:
+    postgres.enabled: true
+  documentSelector:
+    path: kind
+    value: StatefulSet
+  asserts:
+  - matchRegex:
+      path: spec.template.spec.containers[0].image
+      pattern: ^gsoci\.azurecr\.io/giantswarm/postgres:[0-9][^@]*@sha256:[a-f0-9]{64}$
+  - equal:
+      path: spec.template.spec.initContainers[0].image
+      value: gsoci.azurecr.io/giantswarm/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+  - equal:
+      path: spec.template.spec.containers[0].image
+      value: gsoci.azurecr.io/giantswarm/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+
+- it: runs the bundled store from the gsoci copy of upstream's rustfs pin, by digest
+  template: rustfs.yaml
+  set:
+    rustfs.enabled: true
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[0].image
+      value: gsoci.azurecr.io/giantswarm/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
+
+- it: keeps the bucket-init Job's image at upstream's short name (an immutable pod template)
+  template: rustfs.yaml
+  set:
+    rustfs.enabled: true
+  documentSelector:
+    path: kind
+    value: Job
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[0].image
+      value: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+
+- it: runs the atenet router's agentgateway from the gsoci copy of the agentgateway line's release
+  template: atenet-router.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[1].name
+      value: agentgateway
+  - matchRegex:
+      path: spec.template.spec.containers[1].image
+      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway:v[0-9]+\.[0-9]+\.[0-9]+-gs\.[0-9]+$
+
+- it: runs the atenet egress's agentgateway from the same gsoci copy
+  template: atenet-egress.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[0].name
+      value: agentgateway
+  - equal:
+      path: spec.template.spec.containers[0].image
+      value: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
+
+- it: names a registry on every third-party default
+  template: rustfs.yaml
+  set:
+    rustfs.enabled: true
+    images.rustfs: rustfs/rustfs:1.0.0-beta.3
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.containers[0].image
+      value: rustfs/rustfs:1.0.0-beta.3

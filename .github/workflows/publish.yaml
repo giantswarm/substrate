@@ -47,11 +47,14 @@ env:
   COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
   # The agentgateway build atenet-router and atenet-egress run: a release of
   # the Giant Swarm line of agentgateway (FORK.md, "Publishing" and
-  # https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md),
-  # stamped into the chart's images.agentgateway at package time and scanned
-  # with the own images. Move it together with the pin (its FORK.md,
-  # "Convergence with the Substrate line").
-  AGENTGATEWAY_IMAGE: ghcr.io/giantswarm/agentgateway-upstream/agentgateway:v1.5.1-gs.4
+  # https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md)
+  # from its gsoci copy — retagger mirrors the line's release tags from
+  # ghcr.io/giantswarm/agentgateway-upstream/agentgateway to
+  # gsoci.azurecr.io/giantswarm/agentgateway, the same digest — stamped into
+  # the chart's images.agentgateway at package time and scanned with the own
+  # images. Move it together with the pin (its FORK.md, "Convergence with the
+  # Substrate line"); the copy exists once retagger has run on the line's tag.
+  AGENTGATEWAY_IMAGE: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
 
 jobs:
   version:
