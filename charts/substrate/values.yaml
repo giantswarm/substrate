@@ -206,11 +206,11 @@ images:
   # is gsoci.azurecr.io/giantswarm/aws-cli:2.17.0, the same digest.
   awsCli: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
   # The agentgateway build atenet-router and atenet-egress run: a release of the
-  # Giant Swarm line of agentgateway, from its gsoci copy (retagger mirrors the
-  # line's release tags to gsoci.azurecr.io/giantswarm/agentgateway). Its egress
-  # config (atenet-egress.yaml) is written for this build's config schema, so
-  # the two move together; the publish workflow stamps AGENTGATEWAY_IMAGE here
-  # and refuses a drift.
-  agentgateway: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
+  # Giant Swarm line of agentgateway, published by that line from CircleCI to
+  # gsoci under its own path and versioned on its own (decoupled from upstream's
+  # versions, as this chart's are). Its egress config (atenet-egress.yaml) is
+  # written for this build's config schema, so the two move together; the
+  # publish pipeline stamps AGENTGATEWAY_IMAGE here and refuses a drift.
+  agentgateway: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.0.0
   # Not rendered by any template of this chart; kept as upstream keeps it.
   busybox: gsoci.azurecr.io/giantswarm/busybox:1.36
