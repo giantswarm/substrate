@@ -29,7 +29,7 @@ kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/
 | Why this one | `giantswarm/kagent-upstream` pins `github.com/kagent-dev/substrate v0.0.29` in `go/go.mod` (the `replace` of `github.com/agent-substrate/substrate`) since upstream kagent-dev/kagent#2802 (`2d843e37`, "upgrade Substrate to v0.0.29"): the ate-api gRPC contract between kagent's client and Substrate's server must match, and that kagent addresses an actor by the `ate-target-actor` header, which the router knows from v0.0.28 on — a kagent at or past #2802 on a 0.0.27 Substrate is green in CI and fails every turn on a cluster, so the two lines moved together (2026-09-14). |
 | agentgateway it runs | the `agentgateway-image` parameter of `.circleci/config.yml`, equal to the chart default `images.agentgateway` (the publish refuses a drift — the chart must install unstamped, and its egress config is written for this build's schema): a release of the agentgateway line from its gsoci copy, `gsoci.azurecr.io/giantswarm/agentgateway:vX.Y.Z-gs.N` (retagger's `renamed-agentgateway.yaml` mirrors the line's release tags there, the same digest as `ghcr.io/giantswarm/agentgateway-upstream/agentgateway`) — **`v1.5.1-gs.4`** = upstream agentgateway `main` @ `c1d24607` (2026-09-14, ≥ `9f9744cf`: #3237's CONNECT-time actor authorization, #3318's `substrateEgressActorResolution` frontend policy, #3409's substrate ingress header, #3428) + the line's patch admitting a `RESUMING` actor + its `GRPCRoute` method-match translation. Upstream's chart pins `ghcr.io/agentgateway/agentgateway:v0.0.0-alpha.9f9744cf` at v0.0.29 (kagent-dev/substrate#28, a nightly of that commit); the line runs the same protocol from its own scanned and signed build (the agentgateway line's `FORK.md`, "Convergence with the Substrate line"). |
 | When it moves | only together with kagent's pin, proven in agentlab first (`agentlab configure --defaults --chart-branch poc/kagent-main && agentlab up` and the proofs) — see "Re-pin". Not on a schedule. |
-| Derived how | `git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' giantswarm` with upstream's tags fetched; the line's own tags carry a pre-release suffix and are excluded. The workflows compute it, nothing records it twice. |
+| Derived how | the highest stable `v*` tag reachable from `giantswarm` that upstream also has (`git tag --merged` against `git ls-remote --tags upstream`): the line's own tags version the package (see "Versions") and share the `v*` namespace, so they never count — and upstream `main`, rebased onto agent-substrate, has no release tag as an ancestor, so a merge-base with it cannot serve. The sync workflow computes it; `.circleci/config.yml` states it once, as the annotation `io.giantswarm.upstream.version` every image carries. |
 
 ## Carried patches
 
@@ -181,7 +181,9 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
      commit), then `git push --force-with-lease=refs/heads/giantswarm origin HEAD:giantswarm` and close the pull
      request. **Do not merge it** — the line is a rebased branch; a merge would fold the old pin back in.
    - `dry_run: true` does everything except the pushes; the run summary shows the outcome.
-3. Update this file (pin, carried patches) in a pull request, and the Substrate rows of #37742.
+3. In a pull request: this file (pin, carried patches), the pin annotation of the six push jobs in
+   `.circleci/config.yml` (`index:io.giantswarm.upstream.version=<tag>` — every image carries the pin from there),
+   and the Substrate rows of #37742.
 4. Move the consumers to the new dev version (see "Consumers"), prove it in agentlab, then let the meta chart's
    pin and kagent-upstream follow.
 
@@ -216,15 +218,19 @@ git push --force-with-lease=refs/heads/giantswarm origin HEAD:giantswarm
 ## Publishing
 
 The CircleCI pipeline `.circleci/config.yml` publishes to `gsoci.azurecr.io/giantswarm/substrate` on every push
-to a branch and on every `v*` tag — `images` (ko, the six components; each index resolved from its tag and checked
-to carry both platforms, then signed) → `scan` (Trivy, per image by digest) → `charts` (stamped, packaged, pushed,
-signed). Nothing is ever pushed by hand, nothing publishes from GitHub Actions, and nothing pushes to ghcr.io: the
-registry credentials exist in CircleCI's `architect` context only, and the signing identity is the pipeline's own.
+to `giantswarm` (a dev build) and on every release tag `vX.Y.Z` or `vX.Y.Z-rc.N` — six `architect/push-to-registries`
+jobs of the architect orb, one per component (built from `.circleci/Dockerfile` for linux/amd64 and linux/arm64;
+the index signed, with provenance and an SPDX SBOM, annotated `io.giantswarm.upstream.version=<pin>`) → `scan`
+(Trivy, per image) → `charts` (stamped, packaged, pushed, signed). The version is the orb's, from the git tags
+(see "Versions"); the pipeline computes none. Every other branch runs the same six builds with `push: false`: a
+pull request validates the Dockerfile for both platforms and nothing leaves the builder. Nothing is ever pushed by
+hand, nothing publishes from GitHub Actions, and nothing pushes to ghcr.io: the registry credentials exist in
+CircleCI's `architect` context only, and the signing identity is the pipeline's own.
 
 | Artifact | Name |
 |---|---|
-| Control plane and node images | `gsoci.azurecr.io/giantswarm/substrate/{ateapi,atecontroller,atelet,atenet,podcertcontroller}:<version>` — linux/amd64 + linux/arm64, built with ko from `./cmd/<name>` on the distroless base `.ko.yaml` pins; the index signed |
-| Worker image | `gsoci.azurecr.io/giantswarm/substrate/ateom-gvisor:<version>` — the `WorkerPool.spec.workerImage` of the platform's pool; the index signed |
+| Control plane and node images | `gsoci.azurecr.io/giantswarm/substrate/{ateapi,atecontroller,atelet,atenet,podcertcontroller}:<version>` — linux/amd64 + linux/arm64, `.circleci/Dockerfile` with `COMPONENT=<name>`: `./cmd/<name>` compiled as ko compiles it (`CGO_ENABLED=0`, `-trimpath`, the vendored modules, the VCS revision embedded) at `/ko-app/<name>` on the distroless base `.ko.yaml` pins, `/ko-app` on `PATH`, the binary the ENTRYPOINT; the index signed, with provenance and SBOM |
+| Worker image | `gsoci.azurecr.io/giantswarm/substrate/ateom-gvisor:<version>` — the `WorkerPool.spec.workerImage` of the platform's pool, built the same way; the index signed |
 | agentgateway | not built or mirrored here any more: `images.agentgateway` is stamped to a **release of the Giant Swarm line of agentgateway** from its gsoci copy — `gsoci.azurecr.io/giantswarm/agentgateway:vX.Y.Z-gs.N` (how it gets there is that line's `FORK.md`), the `agentgateway-image` parameter of `.circleci/config.yml` — which atenet-router and atenet-egress run ([giantswarm/agentgateway-upstream `FORK.md`](https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md), tracking [giantswarm/giantswarm#37758](https://github.com/giantswarm/giantswarm/issues/37758)) |
 | Charts | `oci://gsoci.azurecr.io/giantswarm/substrate/helm/substrate-crds:<version>`, `oci://gsoci.azurecr.io/giantswarm/substrate/helm/substrate:<version>` — `image.registry` and `image.tag` stamped to this registry, `images.agentgateway` to the agentgateway line's release; `version` = `appVersion` = the image tag; each chart signed |
 
@@ -234,33 +240,33 @@ tags and digests — under their `gsoci.azurecr.io/giantswarm/…` copies (`post
 agentgateway line's release; the carried patch above), except `amazon/aws-cli`, which stays the Docker Hub short
 name until the bucket-init Job can be recreated.
 
-**Versions.**
+**Versions.** The line's versions are its own, decoupled from upstream's, as the company's semver rules for
+packaged upstream software require (RFC "Semantic Versioning of Upstream Software"): the upstream release a
+version is built from is documented here ("Pin") and carried by every image as the index annotation
+`io.giantswarm.upstream.version`, never encoded in the version.
 
-- Image tags of this line carry **no `v`** (ko's convention; upstream's do). The sibling agentgateway line keeps upstream's
-  `v` on its image tags (`v1.5.1-gs.1`) because its consumers and the retagger rules carry it — two deliberate choices, do not
-  "fix" one to match the other.
-- Dev build, on every push to a branch: `<next upstream patch>-dev.<branch>.<YYYY-MM-DD>.<HH-MM-SS>.h<sha7>`
-  (for the pin v0.0.29: `0.0.30-dev.giantswarm.…`), the schema the kagent line uses — base = the pin's patch + 1,
-  branch lowercased to `[a-z0-9-]`, committer date in UTC, so a rebuild of the same commit yields the same version
-  and versions sort chronologically within the branch. Consumers that follow the channel use a Flux
-  `OCIRepository` with `semver: ">=0.0.30-0 <0.1.0-0"` and `semverFilter: ".*-dev\.giantswarm\..*"`; exact pins
-  name the full string.
-- Release, on a tag `vX.Y.Z-gs.N` where `X.Y.Z` is upstream's **next** version (the dev base) and `N` counts the
-  line's releases of that pin: `v0.0.30-gs.1`. Ordering by semver: `0.0.30-dev.… < 0.0.30-gs.1 < 0.0.30`, so a dev
-  build never outranks a release, a fork release never outranks the upstream version it anticipates, and the
-  switch to an upstream tag one day is a range change, not a rename. A fleet consumer follows
-  `semverFilter: ".*-gs\..*"`.
-- A pipeline triggered through the API with the `version` parameter publishes that string (for a one-off).
+- Release: a git tag `vX.Y.Z` (`vX.Y.Z-rc.N` for a candidate) publishes the images and both charts as `X.Y.Z`
+  (the tag without `v`; `appVersion` the same). **`1.0.0`** is the first release of the scheme — the next major
+  above the `0.0.30-gs.N` releases, which were coupled to upstream's next patch and are superseded. Consumers
+  follow a Flux `OCIRepository` range, `semver: ">=1.0.0 <2.0.0"`.
+- Dev build, on every push to `giantswarm`: gitsemver's dev version — the next patch above the last release and a
+  pre-release identifier from the branch, the commit's committer time (UTC) and its short hash — so a rebuild of a
+  commit yields the same version, dev builds sort chronologically within the branch and below the release they
+  anticipate. The dev channel is selected with `semverFilter` on that pre-release shape; exact pins name the full
+  string.
+- Image tags carry no `v`, as every Giant Swarm image tag does.
 
 **Signatures.** Every index and chart is signed keyless with cosign under the pipeline's CircleCI OIDC identity
-(issuer `https://oidc.circleci.com`, subject `https://circleci.com/api/v2/projects/<project>/pipeline-definitions/<definition>`),
-through the architect orb's `cosign-sign-verify` — the identity the platform's image policy trusts. To check one:
+(issuer `https://oidc.circleci.com`, subject `https://circleci.com/api/v2/projects/<project>/pipeline-definitions/<definition>`)
+— the images and their SBOM attestations by the orb's push job, the charts through the orb's `cosign-sign-verify` —
+the identity the platform's image policy trusts. To check one:
 `cosign verify --certificate-oidc-issuer https://oidc.circleci.com --certificate-identity-regexp '^https://circleci\.com/api/v2/projects/[a-f0-9-]+/pipeline-definitions/[a-f0-9-]+$' <repository>@<digest>`.
 
-**Digests.** Every pipeline prints `Images <version>` and `Charts <version>` with the digest of each pushed artifact
-and stores them as the artifacts `image-refs.txt` (`<name> <repository>@<digest>`, the agentgateway image included)
-and `chart-refs.txt` of the `images` and `charts` jobs; the platform pins by tag and verifies by digest and signature
-from there. Release digests are recorded here:
+**Digests.** Every push job prints the digest of the index it pushed; the pipeline prints `Images <version>` and
+`Charts <version>` with the digest of each artifact and stores them as the artifacts `image-refs.txt`
+(`<name> <repository>@<digest>`, the agentgateway image included) of the `scan` job and `chart-refs.txt` of the
+`charts` job; the platform pins by tag and verifies by digest and signature from there. Release digests are recorded
+here:
 
 | Release | Pin | Images and charts |
 |---|---|---|
@@ -287,10 +293,15 @@ request and weekly.
 
 ## Consumers
 
+Each consumer moves to the decoupled versions (`1.0.0` and up, "Versions") in its own change: the agent-platform
+meta chart's ranges (giantswarm/agent-platform#580), the kagent line's `SUBSTRATE_VERSION` at its re-pin
+(giantswarm/giantswarm#37872), agentlab's defaults (giantswarm/agentlab#229), and retagger's
+`renamed-substrate.yaml` entries, retired (giantswarm/retagger#1238).
+
 | Consumer | Where the pin lives | Selects |
 |---|---|---|
 | [agentlab](https://github.com/giantswarm/agentlab) | `internal/lab/substrate.go` (`substrateChartsRepo`, `substrateImageRegistry`, `substrateVersion`) | an exact dev version or release; installs `substrate-crds` + `substrate` and preloads the worker image |
-| agent-platform meta chart 4.0 (`components.substrate` / `components.substrate-crds`, the `substrate:` values block; [giantswarm/agent-platform#342](https://github.com/giantswarm/agent-platform/issues/342)) | `helm/agent-platform/values.yaml`: the two components' version pins and `kagent.substrateWorkerPool.workerImage` | the `substrate-crds` + `substrate` charts at an exact dev version or release and the `ateom-gvisor` image at the same version (the `WorkerPool` the kagent chart renders) |
+| agent-platform meta chart 4.0 (`components.substrate` / `components.substrate-crds`, the `substrate:` values block; [giantswarm/agent-platform#342](https://github.com/giantswarm/agent-platform/issues/342)) | `helm/agent-platform/values.yaml`: the two components' version ranges and `kagent.substrateWorkerPool.workerImage` | the `substrate-crds` + `substrate` charts by release range (`>=1.0.0 <2.0.0`) or at an exact dev version, and the `ateom-gvisor` image at the same version (the `WorkerPool` the kagent chart renders) |
 | [giantswarm/kagent-upstream](https://github.com/giantswarm/kagent-upstream) | `Makefile` `SUBSTRATE_REPO ?= oci://gsoci.azurecr.io/giantswarm/substrate/helm` (the kagent line follows the path with its own move to gsoci, giantswarm/giantswarm#37872), `SUBSTRATE_VERSION` | the `substrate`/`substrate-crds` chart dependencies of the kagent charts (off in the platform, which installs Substrate as cluster infrastructure) |
 
 ## Assets that are not images
