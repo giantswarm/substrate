@@ -68,7 +68,7 @@ tests:
       path: spec.template.spec.containers[0].image
       value: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
 
-- it: runs the atenet router's agentgateway from the gsoci copy of the agentgateway line's release
+- it: runs the atenet router's agentgateway from a release of the agentgateway line on gsoci
   template: atenet-router.yaml
   documentSelector:
     path: kind
@@ -79,9 +79,9 @@ tests:
       value: agentgateway
   - matchRegex:
       path: spec.template.spec.containers[1].image
-      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway:v[0-9]+\.[0-9]+\.[0-9]+-gs\.[0-9]+$
+      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway-upstream/agentgateway:[0-9]+\.[0-9]+\.[0-9]+$
 
-- it: runs the atenet egress's agentgateway from the same gsoci copy
+- it: runs the atenet egress's agentgateway from the same release
   template: atenet-egress.yaml
   documentSelector:
     path: kind
@@ -92,7 +92,7 @@ tests:
       value: agentgateway
   - equal:
       path: spec.template.spec.containers[0].image
-      value: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
+      value: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.0.0
 
 - it: names a registry on every third-party default
   template: rustfs.yaml
