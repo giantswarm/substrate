@@ -134,8 +134,15 @@ jobs:
         run: |
           set -o errexit -o nounset -o pipefail
           # The pin is the nearest upstream release tag reachable from the
-          # branch; the line's own tags carry a pre-release suffix and are excluded.
-          current=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
+          # branch. Only upstream's tags count: the line's own tags (v1.0.0, …)
+          # version the package, not the software (FORK.md, "Versions"), and they
+          # share the v* namespace — a stable tag reachable from HEAD is the pin
+          # only when upstream has it. (upstream main is rebased onto
+          # agent-substrate and has no release tag as an ancestor, so the
+          # merge-base with it cannot serve.)
+          upstream_tags=$(git ls-remote --tags --refs upstream 'refs/tags/v[0-9]*' | awk -F/ '{ print $NF }')
+          current=$(git tag --merged HEAD --list 'v[0-9]*' | grep -v -- - | grep -Fx -f <(printf '%s\n' "${upstream_tags}") | sort -V | tail -1)
+          test -n "${current}"
           new="${INPUT_PIN:-${current}}"
           if ! git rev-parse --verify --quiet "${new}^{commit}" >/dev/null; then
             echo "::error::pin '${new}' is not a known upstream tag or commit"

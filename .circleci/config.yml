@@ -13,30 +13,29 @@
 # limitations under the License.
 
 # Fork (giantswarm/substrate): publishes the Giant Swarm line of Agent
-# Substrate to gsoci.azurecr.io/giantswarm/substrate — every push to a branch
-# as a dev build, every `v*` tag as a release (FORK.md, "Publishing"). What is
-# published: the six images the agent platform runs (ateapi, atecontroller,
-# atelet, atenet, podcertcontroller, ateom-gvisor; linux/amd64 + linux/arm64,
-# built with ko like upstream's release.yaml, each index signed with the
-# organisation's CircleCI identity through the architect orb) and the charts
-# substrate-crds and substrate with their image defaults stamped to this
-# registry — including the agentgateway image atenet-router and atenet-egress
-# run, which comes from the Giant Swarm line of agentgateway (pinned below)
-# instead of upstream's build. Every own image is scanned before the charts
-# that reference it are pushed. Hand-written: the repository carries upstream's
-# workflows and its own, nothing devctl-generated.
+# Substrate to gsoci.azurecr.io/giantswarm/substrate through the architect
+# orb — every push to `giantswarm` as a dev build, every release tag `vX.Y.Z`
+# (or `-rc.N`) as the release `X.Y.Z` (FORK.md, "Publishing"). The six images
+# the agent platform runs (ateapi, atecontroller, atelet, atenet,
+# podcertcontroller, ateom-gvisor) are one architect/push-to-registries job
+# each: built from .circleci/Dockerfile for linux/amd64 and linux/arm64,
+# signed with the organisation's CircleCI identity, with provenance and an
+# SBOM, the index annotated with the upstream pin. The version is the orb's
+# (gitsemver, from the git tags) — nothing here computes one. Every own image
+# is scanned before the charts that reference it are pushed: substrate-crds
+# and substrate with their image defaults stamped to this registry, including
+# the agentgateway image atenet-router and atenet-egress run, which comes from
+# the Giant Swarm line of agentgateway (pinned below) instead of upstream's
+# build. Every other branch builds the six images without pushing, so a
+# Dockerfile regression surfaces on the pull request. Hand-written: the
+# repository carries upstream's workflows and its own, nothing
+# devctl-generated.
 version: 2.1
 
 orbs:
-  architect: giantswarm/architect@10.5.0
+  architect: giantswarm/architect@10.6.0
 
 parameters:
-  version:
-    description: >
-      The version to publish (a one-off through the API). Empty: the tag
-      without "v", or a dev version derived from the commit.
-    type: string
-    default: ""
   agentgateway-image:
     description: >
       The agentgateway build atenet-router and atenet-egress run: a release of
@@ -48,150 +47,70 @@ parameters:
     default: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
 
 jobs:
-  images:
+  scan:
     executor: architect/architect
-    resource_class: large
+    resource_class: small
     # The line's registry path: images at REGISTRY/<component>, charts at
-    # oci://REGISTRY/helm.
+    # oci://REGISTRY/helm. The version is the one the push jobs computed
+    # (.build_version, from the workspace).
     environment: &publish-environment
       REGISTRY: gsoci.azurecr.io/giantswarm/substrate
       COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
       AGENTGATEWAY_IMAGE: << pipeline.parameters.agentgateway-image >>
-      INPUT_VERSION: << pipeline.parameters.version >>
-    steps:
-      - checkout
-      - run:
-          name: Resolve the version
-          command: |
-            set -o errexit -o nounset -o pipefail
-            if [ -n "${INPUT_VERSION}" ]; then
-              version="${INPUT_VERSION}"
-            elif [ -n "${CIRCLE_TAG:-}" ]; then
-              version="${CIRCLE_TAG#v}"
-            else
-              # Dev version in the schema giantswarm's gitsemver emits today:
-              #   <base>-dev.<branch lowercased, [a-z0-9-]>.<committer date UTC YYYY-MM-DD>.<HH-MM-SS>.h<sha7>
-              # base = the next patch of the pin, the nearest upstream release tag
-              # reachable from the branch (the line's own tags carry a pre-release
-              # suffix and are excluded). Consumers select the channel with a Flux
-              # semverFilter on the branch part (`.*-dev\.giantswarm\..*`); the
-              # timestamp keeps semver order across rebuilds.
-              git fetch --quiet https://github.com/kagent-dev/substrate.git 'refs/tags/v*:refs/tags/v*'
-              pin=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
-              base=$(printf '%s' "${pin#v}" | awk -F. '{ printf "%d.%d.%d", $1, $2, $3 + 1 }')
-              branch=$(printf '%s' "${CIRCLE_BRANCH}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
-              stamp=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%d.%H-%M-%S "${CIRCLE_SHA1}")
-              version="${base}-dev.${branch}.${stamp}.h${CIRCLE_SHA1:0:7}"
-              echo "pin ${pin} -> dev base ${base}"
-            fi
-            if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-              echo "ERROR: '${version}' is not a semver version" >&2
-              exit 1
-            fi
-            printf '%s' "${version}" | tee .version
-            echo
-            echo "export VERSION=$(cat .version)" >> "${BASH_ENV}"
-      - architect/go-cache-restore
-      - run:
-          name: Log in to the registry
-          # ko, oras and cosign read ~/.docker/config.json; the docker CLI's
-          # login needs no daemon but the file is all that is needed.
-          command: |
-            set -o errexit -o nounset -o pipefail
-            mkdir -p ~/.docker
-            auth=$(printf '%s:%s' "${ACR_GSOCI_USERNAME}" "${ACR_GSOCI_PASSWORD}" | base64 -w0)
-            printf '{"auths":{"gsoci.azurecr.io":{"auth":"%s"}}}' "${auth}" > ~/.docker/config.json
-            chmod 600 ~/.docker/config.json
-      - run:
-          name: Build and push the component images
-          # ko cross-compiles both platforms (no QEMU) onto the distroless base
-          # .ko.yaml pins and pushes one index per component under the version
-          # tag. Go itself is the version go.mod names (the toolchain is fetched
-          # into the module cache when the executor's is older).
-          no_output_timeout: 20m
-          command: |
-            set -o errexit -o nounset -o pipefail
-            go version
-            for component in ${COMPONENTS}; do
-              KO_DOCKER_REPO="${REGISTRY}/${component}" ./hack/run-tool.sh ko build \
-                --bare --platform linux/amd64,linux/arm64 \
-                --tags "${VERSION}" \
-                "./cmd/${component}"
-            done
-      - run:
-          name: Resolve the pushed indexes and the agentgateway image
-          # image-refs.txt: `<name> <repository>@<index digest>` per own image
-          # (the index the tag points to, checked to carry both platforms) and
-          # for the agentgateway image the chart deploys — the scan, the
-          # signing and the ledger read it. The own indexes are staged for
-          # signing.
-          command: |
-            set -o errexit -o nounset -o pipefail
-            : > image-refs.txt
-            : > /tmp/.cosign_refs
-            for component in ${COMPONENTS}; do
-              ref="${REGISTRY}/${component}:${VERSION}"
-              digest=$(oras manifest fetch --descriptor "${ref}" | jq -r '.digest')
-              platforms=$(oras manifest fetch "${ref}" | jq -r '[.manifests[] | select(.platform.os == "linux" and .platform.architecture != "unknown") | .platform.architecture] | sort | join(",")')
-              if [ "${platforms}" != "amd64,arm64" ]; then
-                echo "ERROR: ${ref} is not an index of linux/amd64 and linux/arm64 (found: ${platforms:-none})" >&2
-                exit 1
-              fi
-              echo "${component} ${REGISTRY}/${component}@${digest}" >> image-refs.txt
-              echo "${REGISTRY}/${component}@${digest}" >> /tmp/.cosign_refs
-            done
-            # atenet-router and atenet-egress run the Giant Swarm line's
-            # agentgateway (AGENTGATEWAY_IMAGE), not upstream's build; recorded
-            # by digest with the own images so the scan and the ledger see it.
-            digest=$(oras manifest fetch --descriptor "${AGENTGATEWAY_IMAGE}" | jq -r '.digest')
-            echo "agentgateway ${AGENTGATEWAY_IMAGE%:*}@${digest}" >> image-refs.txt
-            echo "Images ${VERSION}"
-            cat image-refs.txt
-      - architect/cosign-sign-verify
-      - architect/go-cache-save
-      - store_artifacts:
-          path: image-refs.txt
-      - persist_to_workspace:
-          root: .
-          paths:
-            - .version
-            - image-refs.txt
-            - .trivyignore
-
-  scan:
-    docker:
-      - image: gsoci.azurecr.io/giantswarm/trivy:0.74.0
-    resource_class: small
-    shell: /bin/sh
-    environment:
+      TRIVY_IMAGE: gsoci.azurecr.io/giantswarm/trivy:0.74.0
       # The trivy database mirrors, tried in order (ghcr rate-limits anonymous pulls).
       TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
     steps:
+      - checkout
       - attach_workspace:
           at: .
+      - setup_remote_docker
       - run:
-          name: Scan every image by digest
+          name: Scan every image
           # Own images gate the charts: a fixable HIGH or CRITICAL finding
           # fails the publish (fix it — bump the module, or time-box it in
           # .trivyignore with an expiry when upstream has no fix). The
           # agentgateway image is the Giant Swarm line's build and reports
           # only here: its scan gates its own publish in
           # giantswarm/agentgateway-upstream, and a finding is fixed there.
+          # Trivy runs from its image on the remote docker engine, one
+          # container per image sharing one database cache; a bind mount does
+          # not reach a remote engine, so .trivyignore is copied in.
+          # image-refs.txt (`<name> <repository>@<digest>`) records what was
+          # scanned, by digest, as the run's artifact.
           no_output_timeout: 20m
           command: |
-            set -eu
+            set -o errexit -o nounset -o pipefail
+            VERSION=$(cat .build_version)
+            refs=""
+            for component in ${COMPONENTS}; do
+              refs="${refs} ${component}=${REGISTRY}/${component}:${VERSION}"
+            done
+            refs="${refs} agentgateway=${AGENTGATEWAY_IMAGE}"
+            : > image-refs.txt
             failed=0
-            while read -r name ref; do
-              [ -n "${name}" ] || continue
+            for entry in ${refs}; do
+              name="${entry%%=*}"
+              ref="${entry#*=}"
+              digest=$(oras manifest fetch --descriptor "${ref}" | jq -r '.digest')
+              echo "${name} ${ref%:*}@${digest}" >> image-refs.txt
               if [ "${name}" = agentgateway ]; then exit_code=0; else exit_code=1; fi
-              echo "==> ${name}: ${ref}"
-              if ! trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .trivyignore \
-                  --exit-code "${exit_code}" --format table "${ref}"; then
+              echo "==> ${name}: ${ref} (${digest})"
+              docker create --name "trivy-${name}" \
+                -e TRIVY_DB_REPOSITORY -e TRIVY_CACHE_DIR=/cache -v trivy-cache:/cache \
+                "${TRIVY_IMAGE}" image --severity CRITICAL,HIGH --ignore-unfixed \
+                --ignorefile /.trivyignore --exit-code "${exit_code}" --format table "${ref}" > /dev/null
+              docker cp .trivyignore "trivy-${name}:/.trivyignore"
+              if ! docker start --attach "trivy-${name}"; then
                 echo "ERROR: ${name} carries a fixable HIGH or CRITICAL finding" >&2
                 failed=1
               fi
-            done < image-refs.txt
+            done
+            echo "Images ${VERSION}"
+            cat image-refs.txt
             exit "${failed}"
+      - store_artifacts:
+          path: image-refs.txt
 
   charts:
     executor: architect/architect
@@ -212,7 +131,7 @@ jobs:
           # signing.
           command: |
             set -o errexit -o nounset -o pipefail
-            VERSION=$(cat .version)
+            VERSION=$(cat .build_version)
             values=charts/substrate/values.yaml
             # The agentgateway stamp anchors on the key, not on upstream's value:
             # upstream moves that value between pins.
@@ -265,23 +184,117 @@ jobs:
           path: chart-refs.txt
 
 workflows:
+  # The line's branch and its release tags: build, push, scan, then the charts.
+  # Exactly one push job persists the version to the workspace (CircleCI refuses
+  # to attach a path two concurrent jobs persisted); the other five run with
+  # persist-build-version false.
   publish:
     jobs:
-      - images:
+      - architect/push-to-registries: &publish-push
+          name: push-ateapi
           context: architect
-          filters:
+          image: giantswarm/substrate/ateapi
+          build-args: COMPONENT=ateapi
+          persist-build-version: true
+          dockerfile: .circleci/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          resource_class: large
+          registries-data: public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true
+          # The upstream release this line is built from (FORK.md, "Pin"); moved with the pin.
+          annotations: index:io.giantswarm.upstream.version=v0.0.29
+          filters: &publish-filters
+            branches:
+              only: giantswarm
             tags:
-              only: /^v.*/
+              only: /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-atecontroller
+          image: giantswarm/substrate/atecontroller
+          build-args: COMPONENT=atecontroller
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-atelet
+          image: giantswarm/substrate/atelet
+          build-args: COMPONENT=atelet
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-atenet
+          image: giantswarm/substrate/atenet
+          build-args: COMPONENT=atenet
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-podcertcontroller
+          image: giantswarm/substrate/podcertcontroller
+          build-args: COMPONENT=podcertcontroller
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-ateom-gvisor
+          image: giantswarm/substrate/ateom-gvisor
+          build-args: COMPONENT=ateom-gvisor
+          persist-build-version: false
       - scan:
           requires:
-            - images
-          filters:
-            tags:
-              only: /^v.*/
+            - push-ateapi
+            - push-atecontroller
+            - push-atelet
+            - push-atenet
+            - push-podcertcontroller
+            - push-ateom-gvisor
+          filters: *publish-filters
       - charts:
           context: architect
           requires:
             - scan
-          filters:
-            tags:
-              only: /^v.*/
+          filters: *publish-filters
+
+  # Every other branch: the same six builds for both platforms, nothing pushed.
+  validate:
+    jobs:
+      - architect/push-to-registries: &validate-push
+          name: build-ateapi
+          image: giantswarm/substrate/ateapi
+          build-args: COMPONENT=ateapi
+          push: false
+          persist-build-version: true
+          dockerfile: .circleci/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          resource_class: large
+          annotations: index:io.giantswarm.upstream.version=v0.0.29
+          filters: &validate-filters
+            branches:
+              ignore: giantswarm
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-atecontroller
+          image: giantswarm/substrate/atecontroller
+          build-args: COMPONENT=atecontroller
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-atelet
+          image: giantswarm/substrate/atelet
+          build-args: COMPONENT=atelet
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-atenet
+          image: giantswarm/substrate/atenet
+          build-args: COMPONENT=atenet
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-podcertcontroller
+          image: giantswarm/substrate/podcertcontroller
+          build-args: COMPONENT=podcertcontroller
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-ateom-gvisor
+          image: giantswarm/substrate/ateom-gvisor
+          build-args: COMPONENT=ateom-gvisor
+          persist-build-version: false
