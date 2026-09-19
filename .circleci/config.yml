@@ -1,0 +1,287 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork (giantswarm/substrate): publishes the Giant Swarm line of Agent
+# Substrate to gsoci.azurecr.io/giantswarm/substrate — every push to a branch
+# as a dev build, every `v*` tag as a release (FORK.md, "Publishing"). What is
+# published: the six images the agent platform runs (ateapi, atecontroller,
+# atelet, atenet, podcertcontroller, ateom-gvisor; linux/amd64 + linux/arm64,
+# built with ko like upstream's release.yaml, each index signed with the
+# organisation's CircleCI identity through the architect orb) and the charts
+# substrate-crds and substrate with their image defaults stamped to this
+# registry — including the agentgateway image atenet-router and atenet-egress
+# run, which comes from the Giant Swarm line of agentgateway (pinned below)
+# instead of upstream's build. Every own image is scanned before the charts
+# that reference it are pushed. Hand-written: the repository carries upstream's
+# workflows and its own, nothing devctl-generated.
+version: 2.1
+
+orbs:
+  architect: giantswarm/architect@10.5.0
+
+parameters:
+  version:
+    description: >
+      The version to publish (a one-off through the API). Empty: the tag
+      without "v", or a dev version derived from the commit.
+    type: string
+    default: ""
+  agentgateway-image:
+    description: >
+      The agentgateway build atenet-router and atenet-egress run: a release of
+      the Giant Swarm line of agentgateway (FORK.md, "Publishing"), stamped into
+      the chart's images.agentgateway at package time and scanned with the own
+      images. Moves only together with the chart default, and only with the pin
+      (FORK.md, "Re-pin"); never bumped by Renovate on its own.
+    type: string
+    default: gsoci.azurecr.io/giantswarm/agentgateway:v1.5.1-gs.4
+
+jobs:
+  images:
+    executor: architect/architect
+    resource_class: large
+    # The line's registry path: images at REGISTRY/<component>, charts at
+    # oci://REGISTRY/helm.
+    environment: &publish-environment
+      REGISTRY: gsoci.azurecr.io/giantswarm/substrate
+      COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
+      AGENTGATEWAY_IMAGE: << pipeline.parameters.agentgateway-image >>
+      INPUT_VERSION: << pipeline.parameters.version >>
+    steps:
+      - checkout
+      - run:
+          name: Resolve the version
+          command: |
+            set -o errexit -o nounset -o pipefail
+            if [ -n "${INPUT_VERSION}" ]; then
+              version="${INPUT_VERSION}"
+            elif [ -n "${CIRCLE_TAG:-}" ]; then
+              version="${CIRCLE_TAG#v}"
+            else
+              # Dev version in the schema giantswarm's gitsemver emits today:
+              #   <base>-dev.<branch lowercased, [a-z0-9-]>.<committer date UTC YYYY-MM-DD>.<HH-MM-SS>.h<sha7>
+              # base = the next patch of the pin, the nearest upstream release tag
+              # reachable from the branch (the line's own tags carry a pre-release
+              # suffix and are excluded). Consumers select the channel with a Flux
+              # semverFilter on the branch part (`.*-dev\.giantswarm\..*`); the
+              # timestamp keeps semver order across rebuilds.
+              git fetch --quiet https://github.com/kagent-dev/substrate.git 'refs/tags/v*:refs/tags/v*'
+              pin=$(git describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-*' HEAD)
+              base=$(printf '%s' "${pin#v}" | awk -F. '{ printf "%d.%d.%d", $1, $2, $3 + 1 }')
+              branch=$(printf '%s' "${CIRCLE_BRANCH}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
+              stamp=$(TZ=UTC git show -s --format=%cd --date=format-local:%Y-%m-%d.%H-%M-%S "${CIRCLE_SHA1}")
+              version="${base}-dev.${branch}.${stamp}.h${CIRCLE_SHA1:0:7}"
+              echo "pin ${pin} -> dev base ${base}"
+            fi
+            if ! [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+              echo "ERROR: '${version}' is not a semver version" >&2
+              exit 1
+            fi
+            printf '%s' "${version}" | tee .version
+            echo
+            echo "export VERSION=$(cat .version)" >> "${BASH_ENV}"
+      - architect/go-cache-restore
+      - run:
+          name: Log in to the registry
+          # ko, oras and cosign read ~/.docker/config.json; the docker CLI's
+          # login needs no daemon but the file is all that is needed.
+          command: |
+            set -o errexit -o nounset -o pipefail
+            mkdir -p ~/.docker
+            auth=$(printf '%s:%s' "${ACR_GSOCI_USERNAME}" "${ACR_GSOCI_PASSWORD}" | base64 -w0)
+            printf '{"auths":{"gsoci.azurecr.io":{"auth":"%s"}}}' "${auth}" > ~/.docker/config.json
+            chmod 600 ~/.docker/config.json
+      - run:
+          name: Build and push the component images
+          # ko cross-compiles both platforms (no QEMU) onto the distroless base
+          # .ko.yaml pins and pushes one index per component under the version
+          # tag. Go itself is the version go.mod names (the toolchain is fetched
+          # into the module cache when the executor's is older).
+          no_output_timeout: 20m
+          command: |
+            set -o errexit -o nounset -o pipefail
+            go version
+            for component in ${COMPONENTS}; do
+              KO_DOCKER_REPO="${REGISTRY}/${component}" ./hack/run-tool.sh ko build \
+                --bare --platform linux/amd64,linux/arm64 \
+                --tags "${VERSION}" \
+                "./cmd/${component}"
+            done
+      - run:
+          name: Resolve the pushed indexes and the agentgateway image
+          # image-refs.txt: `<name> <repository>@<index digest>` per own image
+          # (the index the tag points to, checked to carry both platforms) and
+          # for the agentgateway image the chart deploys — the scan, the
+          # signing and the ledger read it. The own indexes are staged for
+          # signing.
+          command: |
+            set -o errexit -o nounset -o pipefail
+            : > image-refs.txt
+            : > /tmp/.cosign_refs
+            for component in ${COMPONENTS}; do
+              ref="${REGISTRY}/${component}:${VERSION}"
+              digest=$(oras manifest fetch --descriptor "${ref}" | jq -r '.digest')
+              platforms=$(oras manifest fetch "${ref}" | jq -r '[.manifests[] | select(.platform.os == "linux" and .platform.architecture != "unknown") | .platform.architecture] | sort | join(",")')
+              if [ "${platforms}" != "amd64,arm64" ]; then
+                echo "ERROR: ${ref} is not an index of linux/amd64 and linux/arm64 (found: ${platforms:-none})" >&2
+                exit 1
+              fi
+              echo "${component} ${REGISTRY}/${component}@${digest}" >> image-refs.txt
+              echo "${REGISTRY}/${component}@${digest}" >> /tmp/.cosign_refs
+            done
+            # atenet-router and atenet-egress run the Giant Swarm line's
+            # agentgateway (AGENTGATEWAY_IMAGE), not upstream's build; recorded
+            # by digest with the own images so the scan and the ledger see it.
+            digest=$(oras manifest fetch --descriptor "${AGENTGATEWAY_IMAGE}" | jq -r '.digest')
+            echo "agentgateway ${AGENTGATEWAY_IMAGE%:*}@${digest}" >> image-refs.txt
+            echo "Images ${VERSION}"
+            cat image-refs.txt
+      - architect/cosign-sign-verify
+      - architect/go-cache-save
+      - store_artifacts:
+          path: image-refs.txt
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .version
+            - image-refs.txt
+            - .trivyignore
+
+  scan:
+    docker:
+      - image: gsoci.azurecr.io/giantswarm/trivy:0.74.0
+    resource_class: small
+    shell: /bin/sh
+    environment:
+      # The trivy database mirrors, tried in order (ghcr rate-limits anonymous pulls).
+      TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Scan every image by digest
+          # Own images gate the charts: a fixable HIGH or CRITICAL finding
+          # fails the publish (fix it — bump the module, or time-box it in
+          # .trivyignore with an expiry when upstream has no fix). The
+          # agentgateway image is the Giant Swarm line's build and reports
+          # only here: its scan gates its own publish in
+          # giantswarm/agentgateway-upstream, and a finding is fixed there.
+          no_output_timeout: 20m
+          command: |
+            set -eu
+            failed=0
+            while read -r name ref; do
+              [ -n "${name}" ] || continue
+              if [ "${name}" = agentgateway ]; then exit_code=0; else exit_code=1; fi
+              echo "==> ${name}: ${ref}"
+              if ! trivy image --severity CRITICAL,HIGH --ignore-unfixed --ignorefile .trivyignore \
+                  --exit-code "${exit_code}" --format table "${ref}"; then
+                echo "ERROR: ${name} carries a fixable HIGH or CRITICAL finding" >&2
+                failed=1
+              fi
+            done < image-refs.txt
+            exit "${failed}"
+
+  charts:
+    executor: architect/architect
+    resource_class: small
+    environment: *publish-environment
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: Stamp, package and push the charts
+          # The chart's image defaults are stamped to this registry and version
+          # (image.tag explicitly, although the helper falls back to
+          # .Chart.AppVersion: `helm show values` is documentation); the checks
+          # make a missed anchor fail the job instead of shipping upstream's
+          # defaults. The chart version is the artifact version, as upstream
+          # does. chart-refs.txt: `<chart> <repository>@<digest>`, staged for
+          # signing.
+          command: |
+            set -o errexit -o nounset -o pipefail
+            VERSION=$(cat .version)
+            values=charts/substrate/values.yaml
+            # The agentgateway stamp anchors on the key, not on upstream's value:
+            # upstream moves that value between pins.
+            test "$(grep -c '^  agentgateway: ' "${values}")" = 1
+            # The chart default must already be the pinned build: the egress config
+            # is written for its schema, and helm-e2e installs the unstamped chart.
+            if [ "$(sed -n 's/^  agentgateway: //p' "${values}")" != "${AGENTGATEWAY_IMAGE}" ]; then
+              echo "ERROR: ${values} images.agentgateway differs from the agentgateway-image parameter (${AGENTGATEWAY_IMAGE}); move both together" >&2
+              exit 1
+            fi
+            sed -i \
+              -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
+              -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
+              -e "s|^  agentgateway: .*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
+              "${values}"
+            grep -q "^  registry: ${REGISTRY}$" "${values}"
+            grep -q "^  tag: \"${VERSION}\"$" "${values}"
+            grep -q "^  agentgateway: ${AGENTGATEWAY_IMAGE}$" "${values}"
+            if grep -n "kagent-dev/substrate" "${values}"; then
+              echo "ERROR: ${values} still references upstream's registry after stamping" >&2
+              exit 1
+            fi
+
+            mkdir -p dist
+            for chart in substrate-crds substrate; do
+              helm package "charts/${chart}" --destination dist --version "${VERSION}" --app-version "${VERSION}"
+            done
+
+            printf '%s' "${ACR_GSOCI_PASSWORD}" | helm registry login gsoci.azurecr.io --username "${ACR_GSOCI_USERNAME}" --password-stdin
+            # cosign reads ~/.docker/config.json, not helm's registry config.
+            mkdir -p ~/.docker
+            auth=$(printf '%s:%s' "${ACR_GSOCI_USERNAME}" "${ACR_GSOCI_PASSWORD}" | base64 -w0)
+            printf '{"auths":{"gsoci.azurecr.io":{"auth":"%s"}}}' "${auth}" > ~/.docker/config.json
+            chmod 600 ~/.docker/config.json
+
+            : > chart-refs.txt
+            : > /tmp/.cosign_refs
+            for chart in substrate-crds substrate; do
+              out=$(helm push "dist/${chart}-${VERSION}.tgz" "oci://${REGISTRY}/helm" 2>&1)
+              echo "${out}"
+              digest=$(printf '%s\n' "${out}" | sed -n 's/^Digest: //p')
+              test -n "${digest}"
+              echo "${chart} ${REGISTRY}/helm/${chart}@${digest}" >> chart-refs.txt
+              echo "${REGISTRY}/helm/${chart}@${digest}" >> /tmp/.cosign_refs
+            done
+            echo "Charts ${VERSION}"
+            cat chart-refs.txt
+      - architect/cosign-sign-verify
+      - store_artifacts:
+          path: chart-refs.txt
+
+workflows:
+  publish:
+    jobs:
+      - images:
+          context: architect
+          filters:
+            tags:
+              only: /^v.*/
+      - scan:
+          requires:
+            - images
+          filters:
+            tags:
+              only: /^v.*/
+      - charts:
+          context: architect
+          requires:
+            - scan
+          filters:
+            tags:
+              only: /^v.*/
