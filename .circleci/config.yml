@@ -44,7 +44,7 @@ parameters:
       images. Moves only together with the chart default, and only with the pin
       (FORK.md, "Re-pin"); never bumped by Renovate on its own.
     type: string
-    default: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.0.0
+    default: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:0.0.0-dev.giantswarm.2026-09-22.11-31-30.h6afcce9
 
 jobs:
   scan:
@@ -55,7 +55,7 @@ jobs:
     # (.build_version, from the workspace).
     environment: &publish-environment
       REGISTRY: gsoci.azurecr.io/giantswarm/substrate
-      COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor
+      COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor kubernetes-secrets
       AGENTGATEWAY_IMAGE: << pipeline.parameters.agentgateway-image >>
       TRIVY_IMAGE: gsoci.azurecr.io/giantswarm/trivy:0.74.0
       # The trivy database mirrors, tried in order (ghcr rate-limits anonymous pulls).
@@ -142,12 +142,16 @@ jobs:
               echo "ERROR: ${values} images.agentgateway differs from the agentgateway-image parameter (${AGENTGATEWAY_IMAGE}); move both together" >&2
               exit 1
             fi
+            # image.registry is the host and image.repository the path (the
+            # chart's registry/repository split); the component name follows.
             sed -i \
-              -e "s|^  registry: ghcr.io/kagent-dev/substrate$|  registry: ${REGISTRY}|" \
+              -e "s|^  registry: ghcr.io$|  registry: ${REGISTRY%%/*}|" \
+              -e "s|^  repository: kagent-dev/substrate$|  repository: ${REGISTRY#*/}|" \
               -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
               -e "s|^  agentgateway: .*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
               "${values}"
-            grep -q "^  registry: ${REGISTRY}$" "${values}"
+            grep -q "^  registry: ${REGISTRY%%/*}$" "${values}"
+            grep -q "^  repository: ${REGISTRY#*/}$" "${values}"
             grep -q "^  tag: \"${VERSION}\"$" "${values}"
             grep -q "^  agentgateway: ${AGENTGATEWAY_IMAGE}$" "${values}"
             if grep -n "kagent-dev/substrate" "${values}"; then
@@ -201,7 +205,7 @@ workflows:
           resource_class: large
           registries-data: public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true
           # The upstream release this line is built from (FORK.md, "Pin"); moved with the pin.
-          annotations: index:io.giantswarm.upstream.version=v0.0.29
+          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta4
           filters: &publish-filters
             branches:
               only: giantswarm
@@ -237,6 +241,17 @@ workflows:
           image: giantswarm/substrate/ateom-gvisor
           build-args: COMPONENT=ateom-gvisor
           persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-kubernetes-secrets
+          image: giantswarm/substrate/kubernetes-secrets
+          # The credential provider the egress gateway injects Secret-backed
+          # credentials from; its source lives one directory deeper than the
+          # binary's name.
+          build-args: |
+            COMPONENT=kubernetes-secrets
+            COMPONENT_PATH=credential-provider/kubernetes-secrets
+          persist-build-version: false
       - scan:
           requires:
             - push-ateapi
@@ -245,6 +260,7 @@ workflows:
             - push-atenet
             - push-podcertcontroller
             - push-ateom-gvisor
+            - push-kubernetes-secrets
           filters: *publish-filters
       - charts:
           context: architect
@@ -264,7 +280,7 @@ workflows:
           dockerfile: .circleci/Dockerfile
           platforms: linux/amd64,linux/arm64
           resource_class: large
-          annotations: index:io.giantswarm.upstream.version=v0.0.29
+          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta4
           filters: &validate-filters
             branches:
               ignore: giantswarm
@@ -297,4 +313,12 @@ workflows:
           name: build-ateom-gvisor
           image: giantswarm/substrate/ateom-gvisor
           build-args: COMPONENT=ateom-gvisor
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-kubernetes-secrets
+          image: giantswarm/substrate/kubernetes-secrets
+          build-args: |
+            COMPONENT=kubernetes-secrets
+            COMPONENT_PATH=credential-provider/kubernetes-secrets
           persist-build-version: false

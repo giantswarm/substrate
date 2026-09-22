@@ -33,11 +33,13 @@ ARG COMPONENT
 
 FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
 ARG COMPONENT
+# The package path under cmd/ when it differs from the binary's name.
+ARG COMPONENT_PATH=""
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
 COPY . .
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -mod=vendor -o /ko-app/${COMPONENT} ./cmd/${COMPONENT}
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -mod=vendor -o /ko-app/${COMPONENT} ./cmd/${COMPONENT_PATH:-${COMPONENT}}
 
 FROM gcr.io/distroless/static-debian13:latest@sha256:f2ea2709ac8db56323cbd7d014277f32cb572d9ea124b0076f7aafe5980678fe AS runtime
 ARG COMPONENT
@@ -61,5 +63,8 @@ ENTRYPOINT ["/ko-app/podcertcontroller"]
 
 FROM runtime AS ateom-gvisor
 ENTRYPOINT ["/ko-app/ateom-gvisor"]
+
+FROM runtime AS kubernetes-secrets
+ENTRYPOINT ["/ko-app/kubernetes-secrets"]
 
 FROM ${COMPONENT}
