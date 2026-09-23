@@ -17,6 +17,9 @@ package e2e
 import (
 	"context"
 	"encoding/pem"
+	"maps"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,43 +51,127 @@ const (
 // waits until the reconciler-published bundle is non-empty. It provisions a
 // pool only when there is none and never replaces one it finds: the pool is
 // cluster-wide, and the sdsmint gateway mounts the one the install created.
-// A suite that needs to OWN the pool's contents (the identity suite's
-// deterministic assertions and rotation) uses ReplaceEgressTrustPool.
+// A suite that needs to OWN the bundle's contents (the identity suite's
+// deterministic assertions and rotation) uses RotateEgressTrustPool.
 func EnsureEgressTrustBundle(t *testing.T, ctx context.Context, clients *Clients) {
 	t.Helper()
-	secret, _ := newEgressTrustPool(t)
-	createEgressTrustPool(t, ctx, clients, secret)
+	createEgressTrustPool(t, ctx, clients, newEgressTrustPool(t))
 	waitForEgressTrustBundle(t, ctx, clients, "")
 }
 
-// ReplaceEgressTrustPool installs a fresh single-CA pool, waits for the
-// reconciler to publish the derived bundle, and returns the PEM of the new
-// CA's root certificate — exactly what a trustBundle projection must then
-// deliver. cn keeps successive pools distinguishable in failure output.
-// Create-or-replace keeps reruns self-healing after a failed prior run.
-func ReplaceEgressTrustPool(t *testing.T, ctx context.Context, clients *Clients, cn string) string {
+// rotatedCAIDPrefix marks the CAs RotateEgressTrustPool adds, the only ones it
+// ever removes again.
+const rotatedCAIDPrefix = "e2e-rotation-"
+
+// RotateEgressTrustPool changes the egress trust bundle without changing the
+// CA the MITM gateway signs with: it adds a fresh CA (ID cn, which keeps
+// successive bundles distinguishable in failure output) to the pool, dropping
+// only the one an earlier call added, waits for the reconciler to publish the
+// derived bundle, and returns its PEM — the anchors a trustBundle projection
+// must then deliver, in any order (see SameCertificates). The pool the call
+// found is put back when the test ends; one it had to create is deleted.
+//
+// A rotation never removes a CA it did not add because the two ends of the
+// chain follow the pool at different speeds: atelet delivers the bundle to
+// actors within seconds of the reconciler, while the gateway reads its CA from
+// a Secret volume that kubelet refreshes on its own schedule, up to a minute
+// or more later. A bundle without the gateway's CA would, for that long, leave
+// every actor that loads its anchors unable to verify the leaves the gateway
+// still mints — in whichever suite is running in parallel.
+func RotateEgressTrustPool(t *testing.T, ctx context.Context, clients *Clients, cn string) string {
 	t.Helper()
-	secret, wantPEM := newEgressTrustPool(t)
-	if !createEgressTrustPool(t, ctx, clients, secret) {
-		// Took over an existing pool: overwrite its contents without adopting
-		// its cleanup, since whoever created it registered one already.
-		existing, err := clients.K8s.CoreV1().Secrets(egressCAPoolNamespace).Get(ctx, egressCAPoolSecretName, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("reading existing CA pool secret: %v", err)
-		}
-		existing.Data = secret.Data
-		if _, err := clients.K8s.CoreV1().Secrets(egressCAPoolNamespace).Update(ctx, existing, metav1.UpdateOptions{}); err != nil {
-			t.Fatalf("updating CA pool secret: %v", err)
+	secrets := clients.K8s.CoreV1().Secrets(egressCAPoolNamespace)
+	created := createEgressTrustPool(t, ctx, clients, newEgressTrustPool(t))
+	secret, err := secrets.Get(ctx, egressCAPoolSecretName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("reading CA pool secret: %v", err)
+	}
+	if !created {
+		original := maps.Clone(secret.Data)
+		t.Cleanup(func() { restoreEgressTrustPool(t, clients, original) })
+	}
+
+	found, err := localca.Unmarshal(secret.Data[egressCAPoolSecretKey])
+	if err != nil {
+		t.Fatalf("parsing CA pool secret: %v", err)
+	}
+	rotated := &localca.ConcretePool{ActiveForSigning: found.ActiveForSigning}
+	for _, ca := range found.CAs {
+		if !strings.HasPrefix(ca.ID, rotatedCAIDPrefix) {
+			rotated.CAs = append(rotated.CAs, ca)
 		}
 	}
-	waitForEgressTrustBundle(t, ctx, clients, wantPEM)
-	return wantPEM
+	ca, err := localca.GenerateCA(rotatedCAIDPrefix+cn, localca.KeyTypeECDSAP256, 365*24*time.Hour)
+	if err != nil {
+		t.Fatalf("generating CA %q for the egress pool: %v", cn, err)
+	}
+	rotated.CAs = append(rotated.CAs, ca)
+	poolBytes, err := localca.Marshal(rotated)
+	if err != nil {
+		t.Fatalf("marshaling the rotated egress pool: %v", err)
+	}
+	// Only the pool changes: tls.crt and tls.key are the signer's, which stays.
+	secret.Data[egressCAPoolSecretKey] = poolBytes
+	if _, err := secrets.Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("updating CA pool secret: %v", err)
+	}
+
+	// The reconciler's rendering: every root, in pool order.
+	var want strings.Builder
+	for _, ca := range rotated.CAs {
+		want.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.RootCertificate.Raw}))
+	}
+	waitForEgressTrustBundle(t, ctx, clients, want.String())
+	return want.String()
+}
+
+// restoreEgressTrustPool puts back the pool contents RotateEgressTrustPool
+// found, unless the pool has gone meanwhile: then its creator removed it, and
+// recreating it would leave one behind.
+func restoreEgressTrustPool(t *testing.T, clients *Clients, data map[string][]byte) {
+	ctx := context.Background()
+	secrets := clients.K8s.CoreV1().Secrets(egressCAPoolNamespace)
+	secret, err := secrets.Get(ctx, egressCAPoolSecretName, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return
+	}
+	if err != nil {
+		t.Errorf("restoring the egress CA pool: %v", err)
+		return
+	}
+	secret.Data = data
+	if _, err := secrets.Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+		t.Errorf("restoring the egress CA pool: %v", err)
+	}
+}
+
+// SameCertificates reports whether two PEM bundles carry the same set of
+// certificates. atelet shuffles a projected bundle's anchors (order carries no
+// meaning), so a bundle of more than one is compared as a set.
+func SameCertificates(a, b string) bool {
+	return slices.Equal(certificateDERs(a), certificateDERs(b))
+}
+
+// certificateDERs returns the sorted DER bytes of a bundle's CERTIFICATE blocks.
+func certificateDERs(bundle string) []string {
+	var ders []string
+	rest := []byte(bundle)
+	for {
+		var block *pem.Block
+		if block, rest = pem.Decode(rest); block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" {
+			ders = append(ders, string(block.Bytes))
+		}
+	}
+	slices.Sort(ders)
+	return ders
 }
 
 // newEgressTrustPool builds a fresh single-CA pool Secret — the shape
-// `kubectl-ate admin make-ca-pool` writes for the egress MITM CA — and the PEM
-// of its root certificate.
-func newEgressTrustPool(t *testing.T) (*corev1.Secret, string) {
+// `kubectl-ate admin make-ca-pool` writes for the egress MITM CA.
+func newEgressTrustPool(t *testing.T) *corev1.Secret {
 	t.Helper()
 	ca, err := localca.GenerateCA("mitm", localca.KeyTypeECDSAP256, 365*24*time.Hour)
 	if err != nil {
@@ -110,7 +197,7 @@ func newEgressTrustPool(t *testing.T) (*corev1.Secret, string) {
 			corev1.TLSCertKey:       certificateChain,
 			corev1.TLSPrivateKeyKey: privateKey,
 		},
-	}, string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.RootCertificate.Raw}))
+	}
 }
 
 // createEgressTrustPool creates secret and reports whether this call created
