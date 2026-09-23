@@ -75,10 +75,10 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 	ctx := context.Background()
 	clients := e2e.GetClients()
 
-	// Own the pool's contents before the fixture deploys (DeployProbe only
+	// Own the bundle's contents before the fixture deploys (DeployProbe only
 	// ensures a bundle EXISTS): the assertions below compare the projected
-	// file against this run's CA, and rotation later replaces it again.
-	wantTrust := e2e.ReplaceEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust")
+	// file against this run's bundle, and rotation later changes it again.
+	wantTrust := e2e.RotateEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust")
 	var tmpl *ateapipb.ActorTemplate
 	probeNamespace, tmpl = e2e.DeployProbe(t, env["BUCKET_NAME"], "identity", e2e.WithTrustBundle())
 	// The golden actor's id, for the not-golden assertion below. Coupled to
@@ -128,11 +128,12 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 			t.Errorf("actor %q: /run/ate/atespace = %q, want %q (probe read error: %q)", id, got.Atespace, probeNamespace, got.Error)
 		}
 
-		// The projected trust bundle must be this run's pool CA, as published
-		// by the reconciler and sanitized by atelet (byte-identical here: the
-		// reconciler emits clean CERTIFICATE blocks; junk-tolerant
-		// sanitization is pinned by the resolve and pemutil unit tests).
-		if got.Trust != wantTrust {
+		// The projected trust bundle must be this run's pool roots, as
+		// published by the reconciler and sanitized by atelet (the same
+		// certificates, shuffled: the reconciler emits clean CERTIFICATE
+		// blocks; junk-tolerant sanitization is pinned by the resolve and
+		// pemutil unit tests).
+		if !e2e.SameCertificates(got.Trust, wantTrust) {
 			t.Errorf("actor %q: /run/ate/trust-bundle.pem = %q, want the sanitized bundle %q (probe read error: %q)", id, got.Trust, wantTrust, got.Error)
 		}
 
@@ -155,7 +156,7 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 	// Live refresh: rotate the pool while both actors run and wait until each
 	// sees the new sanitized contents at the same path. Both runtimes must
 	// surface the host-side rename on their next read.
-	liveTrust := e2e.ReplaceEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust-live")
+	liveTrust := e2e.RotateEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust-live")
 	for _, id := range ids {
 		waitForTrust(t, ctx, rc, id, liveTrust, 2*time.Minute)
 	}
@@ -168,7 +169,7 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 	// The bundle is rotated first and the suspend does not wait for the live
 	// rewrite: whichever side of the suspend it lands on, the resumed actor
 	// must see the rotated contents.
-	rotatedTrust := e2e.ReplaceEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust-rotated")
+	rotatedTrust := e2e.RotateEgressTrustPool(t, ctx, clients, "ate-e2e-probe-trust-rotated")
 	id := ids[0]
 	ref := &ateapipb.ObjectRef{Atespace: probeNamespace, Name: id}
 	if _, err := clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: ref}); err != nil {
@@ -200,15 +201,15 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 	waitForTrust(t, ctx, rc, ids[1], rotatedTrust, 2*time.Minute)
 }
 
-// waitForTrust polls the probe until its projected trust bundle equals want;
-// live refresh has no completion signal to wait on.
+// waitForTrust polls the probe until its projected trust bundle carries the
+// certificates of want; live refresh has no completion signal to wait on.
 func waitForTrust(t *testing.T, ctx context.Context, rc *e2e.RouterClient, id, want string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	var got whoamiResponse
 	var lastErr error
 	for time.Now().Before(deadline) {
-		if got, lastErr = tryWhoami(ctx, rc, id); lastErr == nil && got.Trust == want {
+		if got, lastErr = tryWhoami(ctx, rc, id); lastErr == nil && e2e.SameCertificates(got.Trust, want) {
 			return
 		}
 		time.Sleep(2 * time.Second)
