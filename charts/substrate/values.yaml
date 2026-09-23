@@ -23,6 +23,16 @@
 # manifests/ate-install/ install path (kubectl apply).
 createNamespace: false
 
+# Pod certificates: every component authenticates with certificates kubelet
+# requests through podCertificate projected-volume sources and the chart's
+# signers issue. maxExpirationSeconds caps the lifetime kubelet asks for (the
+# signers issue at most 24h; kubelet accepts 3600 to 7862400); unset keeps
+# kubelet's default of 86400. A short value exercises certificate rotation on a
+# live installation within an hour: kubelet re-requests and rewrites each
+# bundle 30 minutes before it expires.
+podCertificates:
+  maxExpirationSeconds: null
+
 postgres:
   enabled: true
   storageSize: 1Gi
