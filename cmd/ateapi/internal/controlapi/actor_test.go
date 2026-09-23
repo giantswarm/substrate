@@ -16,6 +16,7 @@ package controlapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -27,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -1530,4 +1532,85 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateActor_DefaultEgressPolicy pins that an actor created from a
+// template carrying default_egress_policy has its "default" EgressPolicy the
+// moment it exists, with the template's rules, and that a template without
+// one leaves the actor without a policy.
+func TestCreateActor_DefaultEgressPolicy(t *testing.T) {
+	rules := []*ateapipb.EgressRule{
+		{Hostnames: &ateapipb.HostnameRule{Patterns: []string{"api.anthropic.com"}}},
+		{Hostnames: &ateapipb.HostnameRule{Patterns: []string{"github.com"}}},
+	}
+	for _, scenario := range []string{"with policy", "without policy", "explicit policy wins"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			persistence := newTestPersistence(t)
+			storetest.MustCreateAtespace(t, ctx, persistence, "team-a")
+			tmpl := seedSubstrateTemplate(t, ctx, persistence, "tmpl")
+			if scenario != "without policy" {
+				var err error
+				tmpl, err = persistence.UpdateActorTemplate(ctx, resources.ActorTemplateRefFromActorTemplate(tmpl), store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
+					db.DefaultEgressPolicy = &ateapipb.EgressPolicyTemplate{Rules: rules}
+					return nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			actor := &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor"}, ActorTemplate: resources.ActorTemplateRefFromActorTemplate(tmpl).ToObjectRef()}
+			svc := &ServiceImpl{store: persistence}
+			var created *ateapipb.Actor
+			var err error
+			wantRules := rules
+			switch scenario {
+			case "explicit policy wins":
+				wantRules = []*ateapipb.EgressRule{{Cidrs: &ateapipb.CIDRRule{Cidrs: []string{"10.0.0.0/8"}}}}
+				created, err = svc.CreateActorWithEgressPolicy(ctx, actor, &ateapipb.EgressPolicy{
+					Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "default"},
+					Rules:    wantRules,
+				})
+			default:
+				created, err = svc.CreateActor(ctx, actor)
+			}
+			if err != nil {
+				t.Fatalf("CreateActor = %v", err)
+			}
+			policy, err := persistence.GetEgressPolicy(ctx, resources.ActorRefFromActor(created))
+			if scenario == "without policy" {
+				if status.Code(err) != codes.NotFound && !errors.Is(err, store.ErrNotFound) {
+					t.Fatalf("GetEgressPolicy = %v, %v; want ErrNotFound", policy, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetEgressPolicy = %v", err)
+			}
+			if got := policy.GetMetadata(); got.GetName() != "default" || got.GetAtespace() != "team-a" {
+				t.Fatalf("policy metadata = %v", got)
+			}
+			if diff := cmp.Diff(wantRules, policy.GetRules(), protocmp.Transform()); diff != "" {
+				t.Fatalf("policy rules differ (-want +got):\n%s", diff)
+			}
+			// The copy is a snapshot: the template's rules are not aliased.
+			wantRules = cloneRules(wantRules)
+			tmpl.GetDefaultEgressPolicy().GetRules()[0].GetHostnames().Patterns[0] = "changed.example.com"
+			again, err := persistence.GetEgressPolicy(ctx, resources.ActorRefFromActor(created))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(wantRules, again.GetRules(), protocmp.Transform()); diff != "" {
+				t.Fatalf("stored rules changed with the template (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func cloneRules(rules []*ateapipb.EgressRule) []*ateapipb.EgressRule {
+	out := make([]*ateapipb.EgressRule, 0, len(rules))
+	for _, rule := range rules {
+		out = append(out, proto.CloneOf(rule))
+	}
+	return out
 }
