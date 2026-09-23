@@ -209,6 +209,7 @@ spec:
           defaultMode: 0600
           sources:
           - podCertificate:
+{{- include "substrate.podCertificateMaxExpiration" $ | nindent 14 }}
               signerName: servicedns.podcert.ate.dev/identity
               keyType: ECDSAP256
               credentialBundlePath: credential-bundle.pem
