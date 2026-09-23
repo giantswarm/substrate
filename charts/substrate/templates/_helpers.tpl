@@ -241,3 +241,15 @@ substrateIngress policy's requestParking block, from .Values.atenetRouter.
 requestParking:
   {{- toYaml .Values.atenetRouter.requestParking | nindent 2 }}
 {{- end -}}
+
+{{/*
+substrate.podCertificateMaxExpiration renders the maxExpirationSeconds of a
+podCertificate projected-volume source when podCertificates.maxExpirationSeconds
+is set. Every pod certificate the chart requests goes through it, so one value
+caps them all; unset, kubelet's default applies and nothing is rendered.
+*/}}
+{{- define "substrate.podCertificateMaxExpiration" -}}
+{{- with (.Values.podCertificates | default dict).maxExpirationSeconds }}
+maxExpirationSeconds: {{ int . }}
+{{- end }}
+{{- end }}
