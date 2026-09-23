@@ -44,7 +44,7 @@ parameters:
       images. Moves only together with the chart default, and only with the pin
       (FORK.md, "Re-pin"); never bumped by Renovate on its own.
     type: string
-    default: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.1.1
+    default: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.1.2
 
 jobs:
   scan:
