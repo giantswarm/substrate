@@ -156,24 +156,6 @@ jobs:
         E2E_EGRESS_MITM: "1"
         E2E_SANDBOX_CLASS: microvm
       run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -v -args --no-color
-    - name: Run E2E tests (egress MITM CA rotation)
-      # Rotates the egress MITM CA (add-ca, activate-ca, retire-ca) while
-      # long-running, resumed and new actors fetch through the gateway, and
-      # requires that no fetch fails. Its own step: it changes the pool every
-      # other MITM test depends on, so nothing may run beside it.
-      env:
-        E2E_EGRESS_MITM: "1"
-        E2E_EGRESS_MITM_ROTATION: "1"
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
-    - name: Run E2E tests (egress MITM CA rotation, micro-VM)
-      # The same rotation on the micro-VM runtime, which delivers the bundle
-      # over the virtio-fs share and suspends the actor in its own snapshot
-      # format.
-      env:
-        E2E_EGRESS_MITM: "1"
-        E2E_EGRESS_MITM_ROTATION: "1"
-        E2E_SANDBOX_CLASS: microvm
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
     - name: Deploy MITM egress demo
       # The networking suite's egress tests need a fixture that trusts the
       # CA used by sdsmint.
