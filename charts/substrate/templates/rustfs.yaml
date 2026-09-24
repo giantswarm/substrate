@@ -51,9 +51,9 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: 1
-  # The data volume is a ReadWriteOnce claim: a rolling update's new pod could
-  # never attach it while the old pod holds it, and the rollout would wait
-  # forever. Recreate stops the old pod first.
+  # The data volume is a ReadWriteOnce claim, which attaches to one node: a
+  # rolling update whose new pod lands on another node waits forever for the
+  # volume the old pod holds. Recreate stops the old pod first.
   strategy:
     type: Recreate
   selector:
