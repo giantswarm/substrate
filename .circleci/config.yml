@@ -205,7 +205,7 @@ workflows:
           resource_class: large
           registries-data: public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true
           # The upstream release this line is built from (FORK.md, "Pin"); moved with the pin.
-          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta4
+          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta5
           filters: &publish-filters
             branches:
               only: giantswarm
@@ -280,7 +280,7 @@ workflows:
           dockerfile: .circleci/Dockerfile
           platforms: linux/amd64,linux/arm64
           resource_class: large
-          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta4
+          annotations: index:io.giantswarm.upstream.version=v0.2.0-beta5
           filters: &validate-filters
             branches:
               ignore: giantswarm
