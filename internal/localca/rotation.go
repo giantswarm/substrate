@@ -34,6 +34,11 @@ import (
 // one that loaded its anchors before this call and never reloads them. The
 // cross-certificate is left out when the active CA has expired: nothing
 // verifies against an expired root, so there is no trust left to carry over.
+//
+// The new root and its cross-certificate are valid from the active CA's start
+// until validity from now: a relying party whose clock lags behind — a
+// micro-VM restored from a snapshot reads the snapshot's time until its clock
+// is repaired — accepts them as long as it accepts the current root.
 func (p *ConcretePool) AddCA(id string, keyType KeyType, validity time.Duration) (*CA, error) {
 	if id == "" {
 		return nil, fmt.Errorf("a new CA needs an ID")
@@ -46,11 +51,16 @@ func (p *ConcretePool) AddCA(id string, keyType KeyType, validity time.Duration)
 		return nil, err
 	}
 
-	ca, err := GenerateCA(id, keyType, validity)
+	now := time.Now()
+	notBefore := now
+	if signer.RootCertificate.NotBefore.Before(now) {
+		notBefore = signer.RootCertificate.NotBefore
+	}
+	ca, err := generateCA(id, keyType, notBefore, now.Add(validity))
 	if err != nil {
 		return nil, err
 	}
-	if time.Now().Before(signer.RootCertificate.NotAfter) {
+	if now.Before(signer.RootCertificate.NotAfter) {
 		ca.CrossCertificate, err = crossCertify(ca, signer)
 		if err != nil {
 			return nil, fmt.Errorf("while cross-certifying CA %q under CA %q: %w", id, signer.ID, err)

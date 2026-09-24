@@ -177,6 +177,40 @@ func TestActivateRefusesACAWithoutCrossCertificate(t *testing.T) {
 	}
 }
 
+// TestRotationToleratesALaggingClock checks that the new CA does not start
+// after the one it replaces: a relying party whose clock lags behind the
+// rotation — a micro-VM restored from a snapshot taken before it — verifies
+// the new chain as long as its clock accepts the old root.
+func TestRotationToleratesALaggingClock(t *testing.T) {
+	pool := newPool(t, "a", KeyTypeECDSAP256)
+	a := pool.CAs[0]
+	b, err := pool.AddCA("b", KeyTypeECDSAP256, 365*24*time.Hour)
+	if err != nil {
+		t.Fatalf("AddCA: %v", err)
+	}
+	if !b.RootCertificate.NotBefore.Equal(a.RootCertificate.NotBefore) || !b.CrossCertificate.NotBefore.Equal(a.RootCertificate.NotBefore) {
+		t.Errorf("b's root and cross-certificate start at %v and %v, want a's start %v", b.RootCertificate.NotBefore, b.CrossCertificate.NotBefore, a.RootCertificate.NotBefore)
+	}
+	if _, err := pool.Activate("b", time.Now()); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	chain := serve(t, pool)
+	lagging := a.RootCertificate.NotBefore
+	for _, rp := range []relyingParty{trusting("only a", a), trusting("only b", b)} {
+		intermediates := x509.NewCertPool()
+		intermediates.AddCert(chain[1])
+		if _, err := chain[0].Verify(x509.VerifyOptions{
+			DNSName:       "example.com",
+			Roots:         rp.roots,
+			Intermediates: intermediates,
+			CurrentTime:   lagging,
+		}); err != nil {
+			t.Errorf("relying party trusting %s with its clock at a's start: %v", rp.name, err)
+		}
+	}
+}
+
 func TestActivateRefusesACrossCertificateFromAnotherCA(t *testing.T) {
 	pool := newPool(t, "a", KeyTypeECDSAP256)
 	for _, id := range []string{"b", "c"} {
