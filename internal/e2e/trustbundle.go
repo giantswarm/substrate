@@ -17,10 +17,12 @@ package e2e
 import (
 	"context"
 	"encoding/pem"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/agent-substrate/substrate/internal/localca"
+	"github.com/agent-substrate/substrate/internal/localca/poolsecret"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +46,7 @@ const (
 	// way, so it does not follow the deployment's naming.
 	egressCAPoolSecretName = "egress-mitm-ca-pool"
 
-	egressCAPoolSecretKey = "pool"
+	egressCAPoolSecretKey = poolsecret.PoolKey
 )
 
 // EnsureEgressTrustBundle makes sure the egress trust bundle exists, then
@@ -82,6 +84,41 @@ func ReplaceEgressTrustPool(t *testing.T, ctx context.Context, clients *Clients,
 	}
 	waitForEgressTrustBundle(t, ctx, clients, wantPEM)
 	return wantPEM
+}
+
+// EgressTrustPool reads the egress MITM CA pool.
+func EgressTrustPool(t *testing.T, ctx context.Context, clients *Clients) *localca.ConcretePool {
+	t.Helper()
+	pool, err := poolsecret.Get(ctx, clients.K8s.CoreV1().Secrets(SystemNamespace()), egressCAPoolSecretName)
+	if err != nil {
+		t.Fatalf("reading the egress CA pool: %v", err)
+	}
+	return pool
+}
+
+// UpdateEgressTrustPool changes the egress MITM CA pool the way the
+// `kubectl-ate admin` CA rotation commands do — mutate applied through
+// poolsecret.Update, which keeps tls.crt and tls.key on the signing CA — and
+// waits until the reconciler publishes the bundle of the resulting pool's
+// roots. It returns the pool as written.
+func UpdateEgressTrustPool(t *testing.T, ctx context.Context, clients *Clients, mutate func(*localca.ConcretePool) error) *localca.ConcretePool {
+	t.Helper()
+	pool, err := poolsecret.Update(ctx, clients.K8s.CoreV1().Secrets(SystemNamespace()), egressCAPoolSecretName, mutate)
+	if err != nil {
+		t.Fatalf("updating the egress CA pool: %v", err)
+	}
+	waitForEgressTrustBundle(t, ctx, clients, rootsPEM(pool))
+	return pool
+}
+
+// rootsPEM renders a pool the way the reconciler does: every root, in pool
+// order.
+func rootsPEM(pool *localca.ConcretePool) string {
+	var b strings.Builder
+	for _, ca := range pool.CAs {
+		b.Write(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.RootCertificate.Raw}))
+	}
+	return b.String()
 }
 
 // newEgressTrustPool builds a fresh single-CA pool Secret — the shape
