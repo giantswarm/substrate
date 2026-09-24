@@ -341,8 +341,12 @@ func fetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		Timeout: 20 * time.Second,
+		// Every fetch builds its own Transport, and a Transport keeps its idle
+		// connections open without limit: a suite that fetches continuously
+		// would pile up one open connection through the egress gateway per
+		// fetch for the life of the process.
+		Transport: &http.Transport{TLSClientConfig: tlsCfg, DisableKeepAlives: true},
 	}
 	res, err := client.Get(url)
 	if err != nil {

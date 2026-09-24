@@ -196,9 +196,12 @@ func (r *rotation) check(id, roots string, out fetchResponse, err error) bool {
 	default:
 		msg += "status " + out.Status
 	}
+	msg = time.Now().UTC().Format(time.TimeOnly) + " " + msg
 	r.mu.Lock()
-	r.failures = append(r.failures, time.Now().UTC().Format(time.TimeOnly)+" "+msg)
+	r.failures = append(r.failures, msg)
 	r.mu.Unlock()
+	// Logged at once as well: a later fatal step must not hide it.
+	r.t.Log("fetch failed: " + msg)
 	return false
 }
 
@@ -238,7 +241,12 @@ func (r *rotation) waitForSigner(id string, want *localca.CA) {
 		var got string
 		if id != "" {
 			out, err := fetch(r.ctx, r.rc, r.atespace, id, "https://"+egressOriginHost+"/", "bundle")
-			if err == nil && out.Error == "" {
+			switch {
+			case err != nil:
+				r.t.Logf("%s: waiting for CA %q through actor %s: %v", r.phase.Load(), want.ID, id, err)
+			case out.Error != "":
+				r.t.Logf("%s: waiting for CA %q through actor %s: %s", r.phase.Load(), want.ID, id, out.Error)
+			default:
 				got = out.LeafAuthorityKeyID
 			}
 		} else {
@@ -259,6 +267,7 @@ func (r *rotation) waitForSigner(id string, want *localca.CA) {
 		if got == keyID(want) {
 			return
 		}
+		r.t.Logf("%s: the gateway serves leaves signed by key %q, waiting for CA %q's %s", r.phase.Load(), got, want.ID, keyID(want))
 		if time.Now().After(deadline) {
 			r.t.Fatalf("%s: the gateway still serves leaves signed by key %q after 4 minutes, want CA %q's %s", r.phase.Load(), got, want.ID, keyID(want))
 		}
