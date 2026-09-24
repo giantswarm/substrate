@@ -22,6 +22,7 @@ package egressmitm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,11 +34,11 @@ import (
 	"github.com/agent-substrate/substrate/internal/e2e"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const probeTemplate = "probe"
-
-var probeNamespace string
 
 // TestActorEgressMITMTrust proves an actor can do TLS through the MITM
 // egress gateway using only the projected trust bundle:
@@ -79,11 +80,11 @@ func TestActorEgressMITMTrust(t *testing.T) {
 	// missing.)
 	e2e.EnsureEgressTrustBundle(t, ctx, clients)
 
-	probeNamespace, _ = e2e.DeployProbe(t, env["BUCKET_NAME"], "egressmitm", e2e.WithTrustBundle())
+	atespace, _ := e2e.DeployProbe(t, env["BUCKET_NAME"], "egressmitm", e2e.WithTrustBundle())
 
 	const id = "probe-mitm"
-	createAndResumeActor(t, ctx, clients, id)
-	waitForActorState(t, ctx, clients, id, ateapipb.ActorState_ACTOR_STATE_RUNNING)
+	createAndResumeActor(t, ctx, clients, atespace, id)
+	waitForActorState(t, ctx, clients, atespace, id, ateapipb.ActorState_ACTOR_STATE_RUNNING)
 
 	rc, err := e2e.NewRouterClient(ctx)
 	if err != nil {
@@ -102,7 +103,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Minute)
 	var pos fetchResponse
 	for {
-		pos = probeFetch(t, ctx, rc, id, origin, "bundle")
+		pos = probeFetch(t, ctx, rc, atespace, id, origin, "bundle")
 		isCertErr := strings.Contains(pos.Error, "certificate") || strings.Contains(pos.Error, "x509")
 		if pos.Error == "" || !isCertErr || time.Now().After(deadline) {
 			break
@@ -116,7 +117,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 		t.Fatalf("fetch %s via projected bundle: status %s, want 200", origin, pos.Status)
 	}
 
-	neg := probeFetch(t, ctx, rc, id, origin, "system")
+	neg := probeFetch(t, ctx, rc, atespace, id, origin, "system")
 	if neg.Error == "" {
 		t.Errorf("fetch with system roots unexpectedly succeeded (status %s): the minted leaf should chain to no public CA — is the egress gateway actually terminating TLS?", neg.Status)
 	} else if !strings.Contains(neg.Error, "certificate") && !strings.Contains(neg.Error, "x509") {
@@ -127,7 +128,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 	// must validate with the system roots. That is also the proof it was not
 	// intercepted.
 	const passthroughOrigin = "https://" + egressOriginPassthroughHost + "/"
-	pt := probeFetch(t, ctx, rc, id, passthroughOrigin, "system")
+	pt := probeFetch(t, ctx, rc, atespace, id, passthroughOrigin, "system")
 	if pt.Error != "" {
 		t.Fatalf("TLS passthrough to %s failed: %s — the origin's certificate did not validate against the system roots, so the connection was intercepted, misrouted, or closed", passthroughOrigin, pt.Error)
 	}
@@ -136,7 +137,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 	}
 
 	// The gateway dials the name the SNI claims.
-	bySNI := probeFetch(t, ctx, rc, id, passthroughOrigin, "system", "dial="+url.QueryEscape(unreachableAddress))
+	bySNI := probeFetch(t, ctx, rc, atespace, id, passthroughOrigin, "system", "dial="+url.QueryEscape(unreachableAddress))
 	switch {
 	case bySNI.Error != "":
 		t.Errorf("TLS passthrough to %s dialed at %s failed: %s — the gateway dialed the actor's address instead of resolving the SNI", passthroughOrigin, unreachableAddress, bySNI.Error)
@@ -148,12 +149,12 @@ func TestActorEgressMITMTrust(t *testing.T) {
 	// request on 443 and denies it; Envoy closes it at the ClientHello.
 	const wrongPortOrigin = "https://" + egressOriginPassthroughWrongPortHost + "/"
 	if os.Getenv(e2e.AtenetDataplaneEnv) == "agentgateway" {
-		wrongPort := probeFetch(t, ctx, rc, id, wrongPortOrigin, "bundle")
+		wrongPort := probeFetch(t, ctx, rc, atespace, id, wrongPortOrigin, "bundle")
 		if wrongPort.Error != "" || wrongPort.Status != "403" {
 			t.Errorf("fetch of %s on a disallowed port: error %q, status %s, want HTTP 403", wrongPortOrigin, wrongPort.Error, wrongPort.Status)
 		}
 	} else {
-		wrongPort := probeFetch(t, ctx, rc, id, wrongPortOrigin, "system")
+		wrongPort := probeFetch(t, ctx, rc, atespace, id, wrongPortOrigin, "system")
 		switch {
 		case wrongPort.Error == "":
 			t.Errorf("fetch of %s succeeded with status %s, want the connection closed at the ClientHello: its passthrough rule names port 8443, not 443", wrongPortOrigin, wrongPort.Status)
@@ -166,7 +167,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 
 	// Agentgateway intercepts TLS and returns HTTP 403 for a host outside
 	// the policy; Envoy closes the connection at the ClientHello.
-	denied := probeFetch(t, ctx, rc, id, "https://example.org/", "bundle")
+	denied := probeFetch(t, ctx, rc, atespace, id, "https://example.org/", "bundle")
 	if os.Getenv(e2e.AtenetDataplaneEnv) == "agentgateway" {
 		if denied.Error != "" || denied.Status != "403" {
 			t.Errorf("fetch of a host outside the policy: error %q, status %s, want HTTP 403", denied.Error, denied.Status)
@@ -198,41 +199,54 @@ const (
 type fetchResponse struct {
 	Status string `json:"status"`
 	Error  string `json:"error"`
+	// LeafAuthorityKeyID is the hex key ID of the CA key that signed the
+	// leaf the gateway served, on a successful HTTPS fetch.
+	LeafAuthorityKeyID string `json:"leafAuthorityKeyId"`
 }
 
-// probeFetch asks the probe to fetch origin with the given roots mode;
-// extraParams are further query parameters, already encoded.
-// Router-level failures are retried for up to 30s (a resume can return
-// before the route reaches the router's xDS snapshot); probe-level TLS
-// failures are results, returned for the caller to assert on.
-func probeFetch(t *testing.T, ctx context.Context, rc *e2e.RouterClient, id, origin, roots string, extraParams ...string) fetchResponse {
+// probeFetch asks the probe to fetch origin with the given roots mode, failing
+// the test when the probe cannot be reached (see fetch).
+func probeFetch(t *testing.T, ctx context.Context, rc *e2e.RouterClient, atespace, id, origin, roots string, extraParams ...string) fetchResponse {
 	t.Helper()
+	out, err := fetch(ctx, rc, atespace, id, origin, roots, extraParams...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// fetch asks the probe to fetch origin with the given roots mode; extraParams
+// are further query parameters, already encoded. Router-level failures are
+// retried for up to 30s (a resume can return before the route reaches the
+// router's xDS snapshot); probe-level TLS failures are results, returned for
+// the caller to assert on.
+func fetch(ctx context.Context, rc *e2e.RouterClient, atespace, id, origin, roots string, extraParams ...string) (fetchResponse, error) {
 	path := "/fetch?roots=" + roots + "&url=" + url.QueryEscape(origin)
 	for _, p := range extraParams {
 		path += "&" + p
 	}
-	ref := resources.ActorRef{Atespace: probeNamespace, Name: id}
+	ref := resources.ActorRef{Atespace: atespace, Name: id}
 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
 		resp, err := rc.Get(ctx, ref, path)
 		if err != nil {
-			t.Fatalf("GET %s for %q: %v", path, id, err)
+			return fetchResponse{}, fmt.Errorf("GET %s for %q: %w", path, id, err)
 		}
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if readErr != nil {
-			t.Fatalf("reading %s response for %q: %v", path, id, readErr)
+			return fetchResponse{}, fmt.Errorf("reading %s response for %q: %w", path, id, readErr)
 		}
 		if resp.StatusCode == http.StatusOK {
 			var out fetchResponse
 			if err := json.Unmarshal(body, &out); err != nil {
-				t.Fatalf("decoding %s response for %q: %v (body %q)", path, id, err, body)
+				return fetchResponse{}, fmt.Errorf("decoding %s response for %q: %w (body %q)", path, id, err, body)
 			}
-			return out
+			return out, nil
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("GET %s for %q: status %d, body %q", path, id, resp.StatusCode, body)
+			return fetchResponse{}, fmt.Errorf("GET %s for %q: status %d, body %q", path, id, resp.StatusCode, body)
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -240,16 +254,17 @@ func probeFetch(t *testing.T, ctx context.Context, rc *e2e.RouterClient, id, ori
 
 // createAndResumeActor mirrors the identity suite's self-healing actor
 // lifecycle (actor records outlive the fixture namespace); DeployProbe has
-// already waited for the template's golden snapshot.
+// already waited for the template's golden snapshot. The actor is deleted when
+// the test ends, unless the test deleted it before.
 
-func createAndResumeActor(t *testing.T, ctx context.Context, clients *e2e.Clients, id string) {
+func createAndResumeActor(t *testing.T, ctx context.Context, clients *e2e.Clients, atespace, id string) {
 	t.Helper()
-	ref := &ateapipb.ObjectRef{Atespace: probeNamespace, Name: id}
+	ref := &ateapipb.ObjectRef{Atespace: atespace, Name: id}
 	_, _ = clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: ref})
 	_, _ = clients.SubstrateAPI.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref})
 	if _, err := clients.SubstrateAPI.CreateActor(ctx, &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
-		Metadata:      &ateapipb.ResourceMetadata{Atespace: probeNamespace, Name: id},
-		ActorTemplate: &ateapipb.ObjectRef{Atespace: probeNamespace, Name: probeTemplate},
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: atespace, Name: id},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: atespace, Name: probeTemplate},
 	}}); err != nil {
 		t.Fatalf("CreateActor %q: %v", id, err)
 	}
@@ -262,21 +277,21 @@ func createAndResumeActor(t *testing.T, ctx context.Context, clients *e2e.Client
 	)
 	t.Cleanup(func() {
 		_, _ = clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: ref})
-		if _, err := clients.SubstrateAPI.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref}); err != nil {
-			t.Logf("cleanup: DeleteActor %q failed, actor leaked (remove with: kubectl ate delete actor %s -a %s): %v", id, id, probeNamespace, err)
+		if _, err := clients.SubstrateAPI.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref}); err != nil && status.Code(err) != codes.NotFound {
+			t.Logf("cleanup: DeleteActor %q failed, actor leaked (remove with: kubectl ate delete actor %s -a %s): %v", id, id, atespace, err)
 		}
 	})
-	if _, err := clients.SubstrateAPI.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: ref}); err != nil {
+	if _, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: ref}); err != nil {
 		t.Fatalf("ResumeActor %q: %v", id, err)
 	}
 }
 
-func waitForActorState(t *testing.T, ctx context.Context, clients *e2e.Clients, actorName string, want ateapipb.ActorState) {
+func waitForActorState(t *testing.T, ctx context.Context, clients *e2e.Clients, atespace, actorName string, want ateapipb.ActorState) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		resp, err := clients.SubstrateAPI.GetActor(ctx, &ateapipb.GetActorRequest{
-			Actor: &ateapipb.ObjectRef{Atespace: probeNamespace, Name: actorName},
+			Actor: &ateapipb.ObjectRef{Atespace: atespace, Name: actorName},
 		})
 		if err == nil && resp.GetStatus().GetState() == want {
 			return
