@@ -266,4 +266,15 @@ kubectl ate admin make-jwt-pool \
   --name actor-id-jwt-pool \
   --secret-namespace ate-system \
   --key-id "1"
+
+# Rotate a CA pool from CA "1" to CA "2" without an outage: add the new CA
+# (trusted, cross-certified by the signing CA), make it sign, and retire the
+# old one once the new one has signed for --min-signing-age (20m by default).
+# The procedure for the egress MITM CA is in docs/egress-trust-bundle.md.
+kubectl ate admin add-ca --name egress-mitm-ca-pool --secret-namespace ate-system --ca-id "2"
+kubectl ate admin activate-ca --name egress-mitm-ca-pool --secret-namespace ate-system --ca-id "2"
+kubectl ate admin retire-ca --name egress-mitm-ca-pool --secret-namespace ate-system --ca-id "1"
+
+# Show a CA pool's CAs, which one signs, and since when
+kubectl ate admin get-ca-pool --name egress-mitm-ca-pool --secret-namespace ate-system
 ```

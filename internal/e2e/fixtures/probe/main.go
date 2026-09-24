@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -295,11 +297,14 @@ func memTotalBytes() (int64, error) {
 
 // fetch GETs ?url= over the actor's normal egress path and reports the
 // outcome, doing TLS with the trust anchors selected by ?roots=: "bundle"
-// (the default) loads the projected trust bundle at trustFile, "system" uses
-// the image's system roots. TestActorEgressMITMTrust documents why each mode
-// passes or fails. TLS failures land in the "error" field rather than the
-// HTTP status: a verification failure is a result for the suite to assert
-// on, not a broken probe.
+// (the default) loads the projected trust bundle at trustFile on every
+// request, "pinned" uses the bundle as this process first loaded it (see
+// pinnedRoots), "system" uses the image's system roots. TestActorEgressMITMTrust
+// documents why each mode passes or fails. TLS failures land in the "error"
+// field rather than the HTTP status: a verification failure is a result for
+// the suite to assert on, not a broken probe. A successful HTTPS fetch also
+// reports the served leaf's authority key ID ("leafAuthorityKeyId", hex): the
+// key that signed it, which tells a suite which CA the gateway mints from.
 func fetch(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]string{}
 	url := r.URL.Query().Get("url")
@@ -308,32 +313,32 @@ func fetch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, resp)
 		return
 	}
-	roots := r.URL.Query().Get("roots")
-	switch roots {
-	case "", "bundle", "system":
-	default:
-		// Fail closed on typos: silently treating an unknown value as
-		// "bundle" would flip a suite's negative control into a positive
-		// fetch with a misleading failure message.
-		resp["error"] = "unknown roots value " + strconv.Quote(roots) + " (want bundle or system)"
-		writeJSON(w, resp)
-		return
-	}
 	tlsCfg := &tls.Config{}
-	if roots != "system" {
-		b, err := os.ReadFile(trustFile)
+	switch roots := r.URL.Query().Get("roots"); roots {
+	case "", "bundle":
+		pool, err := loadTrustBundle()
 		if err != nil {
-			resp["error"] = "reading trust bundle: " + err.Error()
-			writeJSON(w, resp)
-			return
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(b) {
-			resp["error"] = "no certificates parsed from " + trustFile
+			resp["error"] = err.Error()
 			writeJSON(w, resp)
 			return
 		}
 		tlsCfg.RootCAs = pool
+	case "pinned":
+		pool, err := pinnedRoots()
+		if err != nil {
+			resp["error"] = err.Error()
+			writeJSON(w, resp)
+			return
+		}
+		tlsCfg.RootCAs = pool
+	case "system":
+	default:
+		// Fail closed on typos: silently treating an unknown value as
+		// "bundle" would flip a suite's negative control into a positive
+		// fetch with a misleading failure message.
+		resp["error"] = "unknown roots value " + strconv.Quote(roots) + " (want bundle, pinned or system)"
+		writeJSON(w, resp)
+		return
 	}
 	client := &http.Client{
 		Timeout:   20 * time.Second,
@@ -348,8 +353,33 @@ func fetch(w http.ResponseWriter, r *http.Request) {
 	defer res.Body.Close()
 	_, _ = io.Copy(io.Discard, res.Body)
 	resp["status"] = strconv.Itoa(res.StatusCode)
+	if res.TLS != nil && len(res.TLS.PeerCertificates) > 0 {
+		resp["leafAuthorityKeyId"] = hex.EncodeToString(res.TLS.PeerCertificates[0].AuthorityKeyId)
+	}
 	writeJSON(w, resp)
 }
+
+// loadTrustBundle reads the projected trust bundle.
+func loadTrustBundle() (*x509.CertPool, error) {
+	b, err := os.ReadFile(trustFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading trust bundle: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(b) {
+		return nil, fmt.Errorf("no certificates parsed from %s", trustFile)
+	}
+	return pool, nil
+}
+
+// pinnedRoots is the trust bundle as this process loaded it on its first
+// "pinned" fetch, kept for the life of the process — across suspend and
+// resume, since the process memory is what an actor's snapshot restores. That
+// is how most runtimes treat their trust store: Go loads its system pool
+// (SSL_CERT_FILE) once, a JVM its truststore at start. A rotation that only
+// works for a client that re-reads the bundle is not one these runtimes
+// survive.
+var pinnedRoots = sync.OnceValues(loadTrustBundle)
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

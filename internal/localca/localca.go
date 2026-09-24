@@ -25,7 +25,8 @@
 //
 // If you are writing an admin command, read the secret from the Kubernetes API,
 // use Unmarshal to parse it to a Pool, manipulate the Pool, and then use
-// Marshal to serialize the state and write it back to the secret.
+// Marshal to serialize the state and write it back to the secret. Package
+// poolsecret does that round trip for a pool kept in a Kubernetes Secret.
 //
 // For tests, generate an ephemeral ConcretePool.
 package localca
@@ -55,11 +56,15 @@ import (
 // The active/inactive designation allows a Pool to be seamlessly rotated.
 //
 //  1. (Steady State) The Pool has one CA, active for signing.
-//  2. (Publish New Root) Add a new CA, inactive.
-//  3. (Age In) Wait for trust in the new root to propagate throughout the system.
-//  3. (Switch) Switch the new CA to be active, and the old CA to be inactive.
+//  2. (Publish New Root) Add a new CA, inactive (AddCA). Its key is also
+//     certified by the active CA (CA.CrossCertificate), and the Pool's trust
+//     anchors now include the new root.
+//  3. (Switch) Switch the new CA to be active (Activate). Every certificate it
+//     signs carries the cross-certificate, so a relying party that still
+//     trusts only the old root verifies it as well as one that trusts the new
+//     root. No relying party has to reload its anchors before the switch.
 //  4. (Age Out) Wait for all certificates issued by the old CA to expire.
-//  5. (Cleanup) Remove the old CA from the Pool.
+//  5. (Cleanup) Remove the old CA from the Pool (Retire).
 //
 // Normally, we let callers define their own compatibility interfaces.  But in
 // most cases you'll want to either use a RefreshingPool (for controllers and
@@ -146,32 +151,18 @@ type ConcretePool struct {
 
 	// Which CA is active for signing operations?
 	ActiveForSigning string
+
+	// When did the CA active for signing become active? Zero for a pool
+	// written before the time was recorded.
+	ActivatedAt time.Time
 }
 
 var _ Pool = (*ConcretePool)(nil)
 
 func (p *ConcretePool) CreateCertificate(template *x509.Certificate, subjectPublicKey crypto.PublicKey) ([][]byte, error) {
-	if len(p.CAs) == 0 {
-		return nil, fmt.Errorf("pool has no CAs")
-	}
-
-	// For backwards compatibility, pick the first CA if none is designated.
-	//
-	// TODO(ahmedtd): Remove the fallback after a few weeks.  This is intended
-	// to keep people from having to mess with the CAs in their existing dev
-	// clusters.
-	var selectedCA *CA
-	if p.ActiveForSigning != "" {
-		for _, ca := range p.CAs {
-			if ca.ID == p.ActiveForSigning {
-				selectedCA = ca
-			}
-		}
-		if selectedCA == nil {
-			return nil, fmt.Errorf("selected CA %q not in CA list", p.ActiveForSigning)
-		}
-	} else {
-		selectedCA = p.CAs[0]
+	selectedCA, err := p.SigningCA()
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO: Trim notAfter of the template so it doesn't outlast the selected
@@ -186,8 +177,42 @@ func (p *ConcretePool) CreateCertificate(template *x509.Certificate, subjectPubl
 	}
 
 	chain := [][]byte{subjectCertDER}
+	if selectedCA.CrossCertificate != nil {
+		chain = append(chain, selectedCA.CrossCertificate.Raw)
+	}
 
 	return chain, nil
+}
+
+// SigningCA returns the CA that CreateCertificate signs with.
+func (p *ConcretePool) SigningCA() (*CA, error) {
+	if len(p.CAs) == 0 {
+		return nil, fmt.Errorf("pool has no CAs")
+	}
+
+	// For backwards compatibility, pick the first CA if none is designated.
+	//
+	// TODO(ahmedtd): Remove the fallback after a few weeks.  This is intended
+	// to keep people from having to mess with the CAs in their existing dev
+	// clusters.
+	if p.ActiveForSigning == "" {
+		return p.CAs[0], nil
+	}
+	ca := p.CA(p.ActiveForSigning)
+	if ca == nil {
+		return nil, fmt.Errorf("selected CA %q not in CA list", p.ActiveForSigning)
+	}
+	return ca, nil
+}
+
+// CA returns the pool's CA with the given ID, or nil.
+func (p *ConcretePool) CA(id string) *CA {
+	for _, ca := range p.CAs {
+		if ca.ID == id {
+			return ca
+		}
+	}
+	return nil
 }
 
 func (p *ConcretePool) TrustAnchors() ([]*x509.Certificate, error) {
@@ -212,15 +237,27 @@ type CA struct {
 
 	// The root certificate for this CA pool.
 	RootCertificate *x509.Certificate
+
+	// CrossCertificate, if set, certifies this CA's key under the root of the
+	// CA that was active for signing when this one was added to its pool
+	// (ConcretePool.AddCA). It has RootCertificate's subject, key and subject
+	// key ID, so every certificate this CA signs verifies against either root.
+	CrossCertificate *x509.Certificate
 }
 
 // TLSCertificateChainPEM returns the CA certificate in the PEM encoding used
-// by TLS servers.
+// by TLS servers: the cross-certificate when the CA has one, so that a server
+// minting leaves from the CA presents a chain that also verifies against the
+// root of the CA it replaced, and the root certificate otherwise.
 func (ca *CA) TLSCertificateChainPEM() ([]byte, error) {
-	if ca.RootCertificate == nil {
+	cert := ca.CrossCertificate
+	if cert == nil {
+		cert = ca.RootCertificate
+	}
+	if cert == nil {
 		return nil, fmt.Errorf("ca certificate: is nil")
 	}
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.RootCertificate.Raw}), nil
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}), nil
 }
 
 // TLSPrivateKeyPEM returns the CA signing key in the PKCS#8 PEM encoding used
@@ -240,16 +277,19 @@ func (ca *CA) TLSPrivateKeyPEM() ([]byte, error) {
 type serializedPool struct {
 	CAs              []*serializedCA
 	ActiveForSigning string
+	ActivatedAt      time.Time `json:",omitzero"`
 }
 type serializedCA struct {
-	ID                 string
-	SigningKeyPKCS8    []byte
-	RootCertificateDER []byte
+	ID                  string
+	SigningKeyPKCS8     []byte
+	RootCertificateDER  []byte
+	CrossCertificateDER []byte `json:",omitempty"`
 }
 
 func Marshal(pool *ConcretePool) ([]byte, error) {
 	wire := &serializedPool{
 		ActiveForSigning: pool.ActiveForSigning,
+		ActivatedAt:      pool.ActivatedAt,
 	}
 
 	for _, ca := range pool.CAs {
@@ -270,6 +310,9 @@ func Marshal(pool *ConcretePool) ([]byte, error) {
 
 		caWire.SigningKeyPKCS8 = signingKeyPKCS8
 		caWire.RootCertificateDER = ca.RootCertificate.Raw
+		if ca.CrossCertificate != nil {
+			caWire.CrossCertificateDER = ca.CrossCertificate.Raw
+		}
 
 		wire.CAs = append(wire.CAs, caWire)
 	}
@@ -307,10 +350,18 @@ func Unmarshal(wireBytes []byte) (*ConcretePool, error) {
 			return nil, fmt.Errorf("while parsing root certificate: %w", err)
 		}
 
+		if len(wireCA.CrossCertificateDER) > 0 {
+			ca.CrossCertificate, err = x509.ParseCertificate(wireCA.CrossCertificateDER)
+			if err != nil {
+				return nil, fmt.Errorf("while parsing cross-certificate of CA %q: %w", ca.ID, err)
+			}
+		}
+
 		pool.CAs = append(pool.CAs, ca)
 	}
 
 	pool.ActiveForSigning = wire.ActiveForSigning
+	pool.ActivatedAt = wire.ActivatedAt
 
 	return pool, nil
 }
