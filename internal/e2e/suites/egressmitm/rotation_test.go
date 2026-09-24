@@ -53,8 +53,11 @@ import (
 //
 // It rotates the cluster-wide pool, so it runs only where nothing else uses
 // the pool concurrently: CI runs it as its own step per sandbox class, after
-// the egressmitm suite (see pr-workflow.yaml). Locally, against an install
-// with the MITM egress gateway (see TestActorEgressMITMTrust):
+// the parallel suites of helm-e2e.yaml, against the chart's data plane. The
+// gateway must reload tls.crt and tls.key as one pair; one that reloads them
+// as two events mints leaves under a mismatched key in between, and fails
+// this test. Locally, against an install with the MITM egress gateway (see
+// TestActorEgressMITMTrust):
 //
 //	E2E_EGRESS_MITM=1 E2E_EGRESS_MITM_ROTATION=1 hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run TestEgressMITMCARotation -timeout 20m -v -args --no-color
 func TestEgressMITMCARotation(t *testing.T) {
