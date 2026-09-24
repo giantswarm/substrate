@@ -375,6 +375,13 @@ const (
 
 // GenerateCA creates a self-signed CA with its own freshly generated key.
 func GenerateCA(id string, keyType KeyType, validity time.Duration) (*CA, error) {
+	notBefore := time.Now()
+	return generateCA(id, keyType, notBefore, notBefore.Add(validity))
+}
+
+// generateCA creates a self-signed CA whose root is valid from notBefore to
+// notAfter.
+func generateCA(id string, keyType KeyType, notBefore, notAfter time.Time) (*CA, error) {
 	var rootPrivKey crypto.PrivateKey
 	var rootPubKey crypto.PublicKey
 	switch keyType {
@@ -395,9 +402,6 @@ func GenerateCA(id string, keyType KeyType, validity time.Duration) (*CA, error)
 	default:
 		return nil, fmt.Errorf("unsupported key type")
 	}
-
-	notBefore := time.Now()
-	notAfter := notBefore.Add(validity)
 
 	rootTemplate := &x509.Certificate{
 		// Some golang certificate handling code assumes that if the parent and

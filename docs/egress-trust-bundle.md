@@ -200,7 +200,10 @@ cross-certificate with every leaf. An actor that trusts only the old root —
 one that loaded its anchors before step 1 and never reloads them — verifies
 the new leaves through it, and so does an actor restored from a snapshot taken
 before the rotation. `activate-ca` refuses a CA that the signing CA did not
-certify this way. Steps 1 and 2 can therefore follow each other directly.
+certify this way. Steps 1 and 2 can therefore follow each other directly. The
+new root and its cross-certificate are dated from the old root's start, so an
+actor whose clock lags behind the rotation, such as a micro-VM that has just
+resumed from an older snapshot, accepts them whenever it accepts the old root.
 
 Step 3 waits for the gateway, not for actors. Until the gateway has loaded the
 new CA, and until every leaf the old CA signed has expired, a leaf that chains
