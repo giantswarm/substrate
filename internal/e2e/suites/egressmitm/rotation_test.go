@@ -127,7 +127,7 @@ func TestEgressMITMCARotation(t *testing.T) {
 	r.waitForSigner("", newCA)
 	r.phase.Store("gateway signs with the new CA")
 
-	if _, err := clients.SubstrateAPI.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: &ateapipb.ObjectRef{Atespace: atespace, Name: suspended}}); err != nil {
+	if _, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: &ateapipb.ObjectRef{Atespace: atespace, Name: suspended}}); err != nil {
 		t.Fatalf("ResumeActor %q: %v", suspended, err)
 	}
 	waitForActorState(t, ctx, clients, atespace, suspended, ateapipb.ActorState_ACTOR_STATE_RUNNING)
