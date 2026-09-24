@@ -144,17 +144,73 @@ wrote. The other failure modes differ only in the innermost clause:
 | Name not on the allowlist | `trust bundle "my-own-bundle" is not supported by this deployment (supported: egress-mitm.ate.dev)` |
 | Bundle present but empty or unparseable | `trust bundle "egress-mitm.ate.dev": unusable ClusterTrustBundle "egress-mitm.ate.dev:mitm:primary-bundle": …` |
 
-**Rotation is picked up on the next resume.** atelet re-resolves the bundle on
-both `Run` and `Restore`, so a suspended actor gets the current anchors when it
-comes back. A long-running actor that never suspends keeps the copy made when it
-started — and a process that has already loaded the file into memory (Go caches
-its system pool after first use) will not see a change on disk either way. Plan
-CA rotation around a resume, with an overlap window that covers the actors that
-do not suspend.
+**A change to the bundle reaches the file, not the process.** atelet resolves
+the bundle on `Run` and `Restore` and rewrites the projected file of a running
+actor when the bundle changes. A process that has already loaded the file keeps
+what it loaded: Go caches its system pool after first use, a JVM loads its
+truststore at start, and an actor restored from a snapshot — its template's
+golden snapshot included — restores the anchors its process held when the
+snapshot was taken. Rotate the CA as described below, which never depends on
+an actor reloading its anchors.
 
 **The bundle is not a substitute for authenticating the actor.** It lets the
 actor verify the *gateway*. It says nothing to an origin about which actor is
 calling; see `cmd/atenet/internal/router/README.md` for that direction.
+
+## Rotate the CA
+
+The gateway signs with the `egress-mitm-ca-pool` Secret in `ate-system`: the
+pool (`pool`), from which atecontroller derives the bundle, and the signing
+CA's certificate and key (`tls.crt`, `tls.key`), which agentgateway mints
+from. Never replace or recreate that Secret to rotate the CA. Deleting it
+deletes the bundle, and every actor that starts before it is back fails; and a
+replacement reaches actors within seconds but the gateway only after kubelet
+refreshes its Secret volume, about a minute later, so every TLS connection in
+between fails with `x509: certificate signed by unknown authority`.
+
+Rotate it in three steps instead, from CA `1` to CA `2`:
+
+```bash
+# 1. Add the new CA. Its root joins the bundle; the current CA keeps signing.
+kubectl ate admin add-ca --secret-namespace ate-system --name egress-mitm-ca-pool --ca-id 2
+
+# 2. Make it sign. The gateway switches once kubelet refreshes its volume.
+kubectl ate admin activate-ca --secret-namespace ate-system --name egress-mitm-ca-pool --ca-id 2
+
+# 3. After 20 minutes, retire the old CA. Its root leaves the bundle.
+kubectl ate admin retire-ca --secret-namespace ate-system --name egress-mitm-ca-pool --ca-id 1
+```
+
+`kubectl ate admin get-ca-pool --secret-namespace ate-system --name
+egress-mitm-ca-pool` shows the pool's CAs, which one signs and for how long.
+
+No step waits for actors. `add-ca` has the signing CA certify the new CA's
+key as well, and once the new CA signs, the gateway presents that
+cross-certificate with every leaf. An actor that trusts only the old root —
+one that loaded its anchors before step 1 and never reloads them — verifies
+the new leaves through it, and so does an actor restored from a snapshot taken
+before the rotation. `activate-ca` refuses a CA that the signing CA did not
+certify this way. Steps 1 and 2 can therefore follow each other directly. The
+new root and its cross-certificate are dated from the old root's start, so an
+actor whose clock lags behind the rotation, such as a micro-VM that has just
+resumed from an older snapshot, accepts them whenever it accepts the old root.
+
+Step 3 waits for the gateway, not for actors. Until the gateway has loaded the
+new CA, and until every leaf the old CA signed has expired, a leaf that chains
+only to the old root may still be served, while actors that start after step 3
+no longer trust it. `retire-ca` therefore refuses until the new CA has been
+signing for `--min-signing-age`, 20 minutes by default: the Secret volume
+refresh, agentgateway's 5-minute leaf cache and sdsmint's 15-minute leaves.
+
+The cross-certificate stays in the chain after step 3, so an actor that still
+holds only the old root keeps working until the old root expires or the next
+rotation replaces the cross-certificate. An actor process has to load its
+anchors anew within one rotation: restart long-lived actors, and let
+templates take a new golden snapshot, before the rotation after next.
+
+If the signing CA has already expired, nothing verifies against it and there
+is no trust to carry over: `add-ca` adds the new CA without cross-certificate,
+`activate-ca` accepts it, and actors recover as they load the new bundle.
 
 ## See also
 
