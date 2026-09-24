@@ -20,6 +20,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateclient"
 	"github.com/agent-substrate/substrate/internal/localca"
+	"github.com/agent-substrate/substrate/internal/localca/poolsecret"
 	"github.com/agent-substrate/substrate/internal/localjwtauthority"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -57,14 +58,9 @@ var makeCaPoolCmd = &cobra.Command{
 			return fmt.Errorf("while creating Kubernetes client: %w", err)
 		}
 
-		var keyType localca.KeyType
-		switch makeCaPoolKeyTypeFlag {
-		case "ED25519":
-			keyType = localca.KeyTypeED25519
-		case "ECDSAP256":
-			keyType = localca.KeyTypeECDSAP256
-		default:
-			return fmt.Errorf("unknown key type %q", makeCaPoolKeyTypeFlag)
+		keyType, err := parseKeyType(makeCaPoolKeyTypeFlag)
+		if err != nil {
+			return err
 		}
 
 		ca, err := localca.GenerateCA(
@@ -79,19 +75,12 @@ var makeCaPoolCmd = &cobra.Command{
 		pool := &localca.ConcretePool{
 			CAs:              []*localca.CA{ca},
 			ActiveForSigning: makeCaPoolIDFlag,
+			ActivatedAt:      time.Now(),
 		}
 
-		poolBytes, err := localca.Marshal(pool)
+		data, err := poolsecret.Data(pool)
 		if err != nil {
-			return fmt.Errorf("while marshaling pool: %w", err)
-		}
-		certificateChain, err := ca.TLSCertificateChainPEM()
-		if err != nil {
-			return fmt.Errorf("while encoding CA certificate chain: %w", err)
-		}
-		privateKey, err := ca.TLSPrivateKeyPEM()
-		if err != nil {
-			return fmt.Errorf("while encoding CA private key: %w", err)
+			return err
 		}
 
 		secret := &corev1.Secret{
@@ -100,11 +89,7 @@ var makeCaPoolCmd = &cobra.Command{
 				Name:      poolSecretNameFlag,
 			},
 			Type: corev1.SecretTypeTLS,
-			Data: map[string][]byte{
-				"pool":                  poolBytes,
-				corev1.TLSCertKey:       certificateChain,
-				corev1.TLSPrivateKeyKey: privateKey,
-			},
+			Data: data,
 		}
 
 		_, err = kc.CoreV1().Secrets(poolSecretNamespaceFlag).Create(ctx, secret, metav1.CreateOptions{})
