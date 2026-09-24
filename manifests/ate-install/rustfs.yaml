@@ -51,6 +51,11 @@ metadata:
   namespace: ate-system
 spec:
   replicas: 1
+  # The data volume is a ReadWriteOnce claim: a rolling update's new pod could
+  # never attach it while the old pod holds it, and the rollout would wait
+  # forever. Recreate stops the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: rustfs
