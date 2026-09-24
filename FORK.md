@@ -276,13 +276,16 @@ version is built from is documented here ("Pin") and carried by every image as t
   (the tag without `v`; `appVersion` the same). **`1.0.0`** is the first release of the scheme — the next major
   above the `0.0.30-gs.N` releases, which were coupled to upstream's next patch and are superseded. Consumers
   follow a Flux `OCIRepository` range, `semver: ">=1.0.0 <2.0.0"`.
-- Dev build, on every push to `giantswarm`: gitsemver's dev version, `<next patch>-dev.<branch>.<YYYY-MM-DD>.<HH-MM-SS>.h<sha7>`
-  as the orb's gitsemver emits it today (`0.0.0-dev.giantswarm.2026-09-19.13-38-12.h171b9e4` for the commit `1.0.0` was cut
-  from — the base is `0.0.0` until a stable tag exists — `1.0.1-dev.giantswarm.…` from `1.0.0` on): committer time in UTC,
-  so a rebuild of a commit yields the same version and dev builds sort chronologically within the branch and below the
-  release they anticipate. The dev channel is a Flux `OCIRepository` with `semver: ">=1.0.0-0 <2.0.0-0"` and
-  `semverFilter: ".*-dev\.giantswarm\..*"` (the filter follows gitsemver's shape when it moves to the RFC's
-  `-r<crc>t<time>h<sha>` form); exact pins name the full string.
+- Dev build, on every push to `giantswarm`: gitsemver 3's dev version, `<next patch>-r588f3d76t<YYYYMMDDHHMMSS>h<sha7>`
+  (architect-orb 10.10.0, since 2026-09-24; `r588f3d76` is the CRC32 of the branch name, `gitsemver branch-hash giantswarm`;
+  builds before it carry the superseded `<next patch>-dev.giantswarm.<YYYY-MM-DD>.<HH-MM-SS>.h<sha7>`, which the registry
+  keeps). The base is the newest stable tag reachable from the commit plus one patch — `0.0.0` while none is reachable (the
+  builds of a re-pinned branch, whose stable tags point at the pre-rebase history, start there again until the next release
+  tag) — then the committer time in UTC, so a rebuild of a commit yields the same version and dev builds sort
+  chronologically within the branch and below the release they anticipate; at one base a current tag sorts above a
+  superseded one. The dev channel is a Flux `OCIRepository` with `semver: ">=0.0.0-0 <2.0.0-0"` (the floor below the base a
+  re-pin restarts at) and `semverFilter: "^.*-r588f3d76t[0-9]{14}h[0-9a-f]{7}$"`, which no superseded build matches; exact
+  pins name the full string.
 - Image tags carry no `v`, as every Giant Swarm image tag does.
 
 **Signatures.** Every index and chart is signed keyless with cosign under the pipeline's CircleCI OIDC identity
