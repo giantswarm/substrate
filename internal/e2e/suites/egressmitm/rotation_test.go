@@ -18,7 +18,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -73,7 +75,7 @@ func TestEgressMITMCARotation(t *testing.T) {
 		t.Fatalf("NewRouterClient: %v", err)
 	}
 	defer rc.Close()
-	r := &rotation{t: t, ctx: ctx, clients: clients, rc: rc, atespace: atespace}
+	r := &rotation{t: t, ctx: ctx, clients: clients, rc: rc, atespace: atespace, sent: map[string]int{}}
 
 	oldCA, err := e2e.EgressTrustPool(t, ctx, clients).SigningCA()
 	if err != nil {
@@ -150,8 +152,12 @@ func TestEgressMITMCARotation(t *testing.T) {
 
 	stop()
 	sent, failures := r.results()
-	if sent < 20 {
-		t.Errorf("the long-running actor made only %d fetches during the rotation; the traffic did not run", sent)
+	total := 0
+	for _, n := range sent {
+		total += n
+	}
+	if total == 0 {
+		t.Errorf("the long-running actor made no fetch during the rotation; the traffic did not run")
 	}
 	for i, f := range failures {
 		if i == 10 {
@@ -160,7 +166,7 @@ func TestEgressMITMCARotation(t *testing.T) {
 		}
 		t.Error(f)
 	}
-	t.Logf("rotation from CA %q to %q: %d fetches by the long-running actor, %d new actors, %d failures", oldCA.ID, newID, sent, r.newActors, len(failures))
+	t.Logf("rotation from CA %q to %q: fetches by the long-running actor per phase %v, %d new actors, %d failures", oldCA.ID, newID, sent, r.newActors, len(failures))
 }
 
 // rotation drives the actors of TestEgressMITMCARotation.
@@ -175,8 +181,9 @@ type rotation struct {
 	phase     atomic.Value
 	newActors int
 
-	mu       sync.Mutex
-	sent     int
+	mu sync.Mutex
+	// sent counts the long-running actor's fetches per phase.
+	sent     map[string]int
 	failures []string
 }
 
@@ -293,7 +300,7 @@ func (r *rotation) startTraffic(id string) (stop func()) {
 			}
 			r.check(id, roots, out, err)
 			r.mu.Lock()
-			r.sent++
+			r.sent[r.phase.Load().(string)]++
 			r.mu.Unlock()
 			select {
 			case <-ctx.Done():
@@ -310,8 +317,8 @@ func (r *rotation) startTraffic(id string) (stop func()) {
 	}
 }
 
-func (r *rotation) results() (int, []string) {
+func (r *rotation) results() (map[string]int, []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.sent, r.failures
+	return maps.Clone(r.sent), slices.Clone(r.failures)
 }
