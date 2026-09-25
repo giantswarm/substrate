@@ -53,9 +53,15 @@ spec:
   replicas: 1
   # The data volume is a ReadWriteOnce claim, which attaches to one node: a
   # rolling update whose new pod lands on another node waits forever for the
-  # volume the old pod holds. Recreate stops the old pod first.
+  # volume the old pod holds. No surge and one unavailable stop the old pod
+  # first. Not Recreate: a Deployment installed with the default strategy
+  # keeps the defaulted rollingUpdate, which a server-side apply cannot drop,
+  # and the API server refuses rollingUpdate next to Recreate.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: rustfs
