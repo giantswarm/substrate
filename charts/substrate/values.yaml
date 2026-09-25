@@ -234,16 +234,9 @@ image:
 images:
   postgres: gsoci.azurecr.io/giantswarm/postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
   rustfs: gsoci.azurecr.io/giantswarm/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
-  # Still a short name: this is the image of the rustfs-bucket-init Job, and a
-  # Job's pod template is immutable. Any change of this value — this one, or
-  # a version bump — fails the upgrade of every existing installation with
-  # `Job.batch "rustfs-bucket-init" is invalid: spec.template: … field is
-  # immutable` until someone deletes the completed Job by hand. Qualify it
-  # together with a change that lets the Job be recreated (a hook Job with
-  # before-hook-creation, or a name that carries the template's hash — the
-  # platform's network policies select the Job by `job-name`). Its gsoci copy
-  # is gsoci.azurecr.io/giantswarm/aws-cli:2.17.0, the same digest.
-  awsCli: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+  # The image of the rustfs-bucket-init Job, a hook Job recreated on every
+  # install and upgrade (its pod template is immutable).
+  awsCli: gsoci.azurecr.io/giantswarm/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
   # The agentgateway build atenet-router and atenet-egress run: a release of the
   # Giant Swarm line of agentgateway, published by that line from CircleCI to
   # gsoci under its own path and versioned on its own (decoupled from upstream's
