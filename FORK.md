@@ -126,6 +126,7 @@ beside upstream's `RevertActor` tests (#1675) and the fake atelet carries upstre
 pause's `Prune*`, the make-ca-pool half of the CA rotation moved into `cmd/kubectl-ate/internal/cmd/admin.go`, where
 upstream #1733 consolidated the admin subcommands; protobuf and python stubs regenerated with `hack/update/codegen.sh`.
 The fork commits above are the replayed SHAs.
+| The Go components honor `OTEL_METRICS_EXPORTER=none` (the chart's `otel.metrics.enabled: false`): `serverboot` installs no OTLP periodic reader and keeps the Prometheus one; `atecontroller` then registers its OTel instruments on controller-runtime's registry, so its metrics endpoint serves `ate_workerpool_*` next to `controller_runtime_*` | with the PodMonitors on and an OTLP endpoint set, every `ateapi`, `atelet`, `atenet-router` and `atecontroller` series reached the backend twice, once scraped (`ate_actor_crashes_total`) and once pushed (`ate_actor_crashes`), about 6,300 series on gazelle; the chart's switch rendered the variable and nothing read it ([giantswarm/giantswarm#36711](https://github.com/giantswarm/giantswarm/issues/36711)). `ateom` keeps pushing: its environment comes from the WorkerPool, not this chart | `c1554983` (branch `fix/otel-metrics-exporter-none` of the personal fork QuentinBisson/substrate, pre-merge) | to open: kagent-dev/substrate pull request from that branch, DCO signed |
 
 ## Upstream items prepared without a carried patch
 
