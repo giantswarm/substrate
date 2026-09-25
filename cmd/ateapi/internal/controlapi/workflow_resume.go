@@ -207,18 +207,18 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 		if dataOnly {
 			ref := actorTemplate.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
 			if ref == nil {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
+				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
 			}
 			tag, err := w.store.GetTag(ctx, resources.TagRefFromObjectRef(ref))
 			if errors.Is(err, store.ErrNotFound) {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "ActorTemplate golden tag is not available")
+				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "ActorTemplate golden tag is not available")
 			}
 			if err != nil {
 				return nil, nil, src, fmt.Errorf("while getting golden tag: %w", err)
 			}
 			golden := tag.GetStatus().GetSnapshot()
 			if golden.GetSnapshotUri() == "" || tag.GetStatus().GetActorTemplateUid() != actorTemplate.GetMetadata().GetUid() {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "ActorTemplate golden tag is incomplete or belongs to another template")
+				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "ActorTemplate golden tag is incomplete or belongs to another template")
 			}
 			if err := validateGoldenSnapshotScope(golden); err != nil {
 				return nil, nil, src, err
