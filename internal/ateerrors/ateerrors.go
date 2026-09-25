@@ -63,8 +63,8 @@ const (
 	// ReasonGoldenSnapshotUnavailable marks a resume that restores an actor's
 	// data onto its ActorTemplate's golden snapshot when the template has no
 	// usable one: the golden tag is gone, incomplete, or another template's.
-	// Retrying the resume cannot bring it back, so the router answers at once
-	// instead of parking the request; the actor itself is left as it is.
+	// Retrying the resume cannot bring it back (NotResumableMetadata); the
+	// actor itself is left as it is.
 	ReasonGoldenSnapshotUnavailable Reason = "GOLDEN_SNAPSHOT_UNAVAILABLE"
 
 	// ReasonWorkloadNotReady marks a container that started but never passed its
@@ -112,6 +112,18 @@ var AllReasons = []Reason{
 // MetadataKeyActorCrashed marks (in ErrorInfo.Metadata) a failure that requires
 // the control plane to crash the actor.
 const MetadataKeyActorCrashed = "actorCrashed"
+
+// MetadataKeyResumable marks (in ErrorInfo.Metadata, value "false") a resume
+// refusal that no retry outlives: the actor cannot be resumed as it is, so a
+// router answers at once instead of parking the request, and a client starts
+// over instead of retrying. The actor is not crashed by it.
+const MetadataKeyResumable = "resumable"
+
+// NotResumableMetadata returns the AIP-193 metadata marking a resume refusal
+// as terminal for the actor as it is.
+func NotResumableMetadata() map[string]string {
+	return map[string]string{MetadataKeyResumable: "false"}
+}
 
 // ActorCrashedMetadata returns the AIP-193 metadata marking a failure as
 // requiring the actor to be crashed. The control plane reads it via
