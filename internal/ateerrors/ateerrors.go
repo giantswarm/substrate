@@ -19,6 +19,7 @@ import (
 	"slices"
 
 	epb "google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
 
 	"google.golang.org/grpc/status"
 )
@@ -50,6 +51,13 @@ const (
 	// its state is unrecoverable.
 	ReasonLocalSnapshotGone Reason = "LOCAL_SNAPSHOT_GONE"
 
+	// ReasonGoldenSnapshotUnavailable marks a resume that restores an actor's
+	// data onto its ActorTemplate's golden snapshot when the template has no
+	// usable one: the golden tag is gone, incomplete, or another template's.
+	// Retrying the resume cannot bring it back, so the router answers at once
+	// instead of parking the request; the actor itself is left as it is.
+	ReasonGoldenSnapshotUnavailable Reason = "GOLDEN_SNAPSHOT_UNAVAILABLE"
+
 	// ReasonWorkloadNotReady marks a container that started but never passed its
 	// wakeup probe before the probe's deadline. First reason in the workload
 	// fault domain (ateattr.FailureDomain); the operation it failed under is
@@ -77,6 +85,7 @@ var AllReasons = []Reason{
 	ReasonFailedGetExternalObject,
 	ReasonInvalidContainerConfig,
 	ReasonLocalSnapshotGone,
+	ReasonGoldenSnapshotUnavailable,
 	ReasonWorkloadNotReady,
 	ReasonCorruptedAssignment,
 	ReasonWorkerReassigned,
@@ -110,4 +119,23 @@ func ExtractReason(err error) string {
 		}
 	}
 	return ""
+}
+
+// errorDomain is the AIP-193 ErrorInfo.domain (https://google.aip.dev/193) of
+// the Reasons this package defines.
+const errorDomain = "substrate.dev"
+
+// StatusError returns a gRPC status error with the code and message whose
+// google.rpc.ErrorInfo detail carries reason, so a caller on the other side of
+// the wire can classify the failure (ExtractReason) where the code alone is
+// ambiguous.
+func StatusError(code codes.Code, reason Reason, msg string) error {
+	st := status.New(code, msg)
+	withInfo, err := st.WithDetails(&epb.ErrorInfo{Domain: errorDomain, Reason: string(reason)})
+	if err != nil {
+		// Marshalling an ErrorInfo does not fail; keep the reason in the
+		// message should it ever do.
+		return status.Errorf(code, "%s (reason %s)", msg, reason)
+	}
+	return withInfo.Err()
 }

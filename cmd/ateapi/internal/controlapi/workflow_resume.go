@@ -24,6 +24,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/scheduling"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/ateattr"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -135,6 +136,17 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	return actor, true, nil
 }
 
+// goldenSnapshotUnavailable refuses a resume that restores the actor's data onto
+// its ActorTemplate's golden snapshot when the template has no usable one. The
+// refusal carries ReasonGoldenSnapshotUnavailable so a caller can tell it from
+// the FailedPrecondition of an actor in transition, which a retry outlives:
+// this one no retry does, and the actor keeps its state for a later recovery.
+func goldenSnapshotUnavailable(actorTemplate *ateapipb.ActorTemplate, cause string) error {
+	meta := actorTemplate.GetMetadata()
+	return ateerrors.StatusError(codes.FailedPrecondition, ateerrors.ReasonGoldenSnapshotUnavailable,
+		fmt.Sprintf("%s for %s/%s: the actor cannot be resumed; start a new actor", cause, meta.GetAtespace(), meta.GetName()))
+}
+
 // validateGoldenSnapshotScope rejects a golden snapshot that does not carry
 // the guest state (memory + fs delta) a restore needs. Golden actors always
 // commit Full (commitSnapshotScope), so this only trips on golden snapshots
@@ -211,18 +223,18 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 		if dataOnly {
 			ref := actorTemplate.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
 			if ref == nil {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
+				return nil, nil, src, goldenSnapshotUnavailable(actorTemplate, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
 			}
 			tag, err := w.store.GetTag(ctx, resources.TagRefFromObjectRef(ref))
 			if errors.Is(err, store.ErrNotFound) {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "ActorTemplate golden tag is not available")
+				return nil, nil, src, goldenSnapshotUnavailable(actorTemplate, "ActorTemplate golden tag is not available")
 			}
 			if err != nil {
 				return nil, nil, src, fmt.Errorf("while getting golden tag: %w", err)
 			}
 			golden := tag.GetStatus().GetSnapshot()
 			if golden.GetSnapshotUri() == "" || tag.GetStatus().GetActorTemplateUid() != actorTemplate.GetMetadata().GetUid() {
-				return nil, nil, src, status.Error(codes.FailedPrecondition, "ActorTemplate golden tag is incomplete or belongs to another template")
+				return nil, nil, src, goldenSnapshotUnavailable(actorTemplate, "ActorTemplate golden tag is incomplete or belongs to another template")
 			}
 			if err := validateGoldenSnapshotScope(golden); err != nil {
 				return nil, nil, src, err
