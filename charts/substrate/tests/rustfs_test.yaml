@@ -14,21 +14,26 @@
 
 # The bundled RustFS runs one replica on a ReadWriteOnce claim, so a rolling
 # update's new pod could never attach the volume while the old pod holds it:
-# the Deployment recreates its pod instead.
+# the Deployment stops the old pod first (no surge, one unavailable), as a
+# rolling update an existing Deployment can be upgraded to in place.
 suite: bundled RustFS rollout
 templates:
 - rustfs.yaml
 tests:
-- it: recreates the pod instead of rolling it
+- it: stops the old pod before it starts the new one
   documentSelector:
     path: kind
     value: Deployment
   asserts:
   - equal:
       path: spec.strategy.type
-      value: Recreate
-  - notExists:
-      path: spec.strategy.rollingUpdate
+      value: RollingUpdate
+  - equal:
+      path: spec.strategy.rollingUpdate.maxSurge
+      value: 0
+  - equal:
+      path: spec.strategy.rollingUpdate.maxUnavailable
+      value: 1
   - equal:
       path: spec.replicas
       value: 1
