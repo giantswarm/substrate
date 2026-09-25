@@ -34,6 +34,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/resources"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	epb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -1095,6 +1096,9 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			if got := ateerrors.ExtractReason(err); got != string(tt.wantReason) {
 				t.Fatalf("reason = %q, want %q (err: %v)", got, tt.wantReason, err)
 			}
+			if got := notResumable(err); got != (tt.wantReason != "") {
+				t.Errorf("not-resumable directive = %v, want %v (err: %v)", got, tt.wantReason != "", err)
+			}
 			if tt.wantReason != "" && !strings.Contains(status.Convert(err).Message(), "start a new actor") {
 				t.Errorf("message %q does not tell the caller to start a new actor", status.Convert(err).Message())
 			}
@@ -1847,4 +1851,15 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// notResumable reports whether err carries the not-resumable directive in an
+// ErrorInfo, the way a router or a client reads it off the wire.
+func notResumable(err error) bool {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*epb.ErrorInfo); ok && info.GetMetadata()[ateerrors.MetadataKeyResumable] == "false" {
+			return true
+		}
+	}
+	return false
 }

@@ -125,13 +125,25 @@ func ExtractReason(err error) string {
 // the Reasons this package defines.
 const errorDomain = "substrate.dev"
 
+// MetadataKeyResumable marks (in ErrorInfo.Metadata, value "false") a resume
+// refusal that no retry outlives: the actor cannot be resumed as it is, so a
+// router answers at once instead of parking the request, and a client starts
+// over instead of retrying. The actor is not crashed by it.
+const MetadataKeyResumable = "resumable"
+
+// NotResumableMetadata returns the AIP-193 metadata marking a resume refusal
+// as terminal for the actor as it is.
+func NotResumableMetadata() map[string]string {
+	return map[string]string{MetadataKeyResumable: "false"}
+}
+
 // StatusError returns a gRPC status error with the code and message whose
-// google.rpc.ErrorInfo detail carries reason, so a caller on the other side of
-// the wire can classify the failure (ExtractReason) where the code alone is
-// ambiguous.
-func StatusError(code codes.Code, reason Reason, msg string) error {
+// google.rpc.ErrorInfo detail carries reason and metadata, so a caller on the
+// other side of the wire can classify the failure (ExtractReason) where the
+// code alone is ambiguous, and act on its directives.
+func StatusError(code codes.Code, reason Reason, metadata map[string]string, msg string) error {
 	st := status.New(code, msg)
-	withInfo, err := st.WithDetails(&epb.ErrorInfo{Domain: errorDomain, Reason: string(reason)})
+	withInfo, err := st.WithDetails(&epb.ErrorInfo{Domain: errorDomain, Reason: string(reason), Metadata: metadata})
 	if err != nil {
 		// Marshalling an ErrorInfo does not fail; keep the reason in the
 		// message should it ever do.

@@ -139,11 +139,12 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 // goldenSnapshotUnavailable refuses a resume that restores the actor's data onto
 // its ActorTemplate's golden snapshot when the template has no usable one. The
 // refusal carries ReasonGoldenSnapshotUnavailable so a caller can tell it from
-// the FailedPrecondition of an actor in transition, which a retry outlives:
-// this one no retry does, and the actor keeps its state for a later recovery.
+// the FailedPrecondition of an actor in transition, which a retry outlives, and
+// the not-resumable directive a router and a client act on: no retry outlives
+// this one. The actor keeps its state for a later recovery.
 func goldenSnapshotUnavailable(actorTemplate *ateapipb.ActorTemplate, cause string) error {
 	meta := actorTemplate.GetMetadata()
-	return ateerrors.StatusError(codes.FailedPrecondition, ateerrors.ReasonGoldenSnapshotUnavailable,
+	return ateerrors.StatusError(codes.FailedPrecondition, ateerrors.ReasonGoldenSnapshotUnavailable, ateerrors.NotResumableMetadata(),
 		fmt.Sprintf("%s for %s/%s: the actor cannot be resumed; start a new actor", cause, meta.GetAtespace(), meta.GetName()))
 }
 
