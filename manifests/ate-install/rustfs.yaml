@@ -109,6 +109,12 @@ kind: Job
 metadata:
   name: rustfs-bucket-init
   namespace: ate-system
+  # A hook, recreated on every install and upgrade: a Job's pod template is
+  # immutable, so a plain release resource could never take a new image. The
+  # name stays, which network policies select the pod by (`job-name`).
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   backoffLimit: 10
   template:
@@ -116,7 +122,7 @@ spec:
       restartPolicy: OnFailure
       containers:
       - name: create-bucket
-        image: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+        image: gsoci.azurecr.io/giantswarm/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
         env:
         - name: AWS_ACCESS_KEY_ID
           value: "rustfsadmin"
