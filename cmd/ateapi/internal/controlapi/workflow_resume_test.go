@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -27,11 +28,13 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/workercache"
+	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/installdefaults"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	epb "google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -914,9 +917,17 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 		// goldenURI and goldenScope are the template's recorded golden
 		// external snapshot; an empty URI means the template has none. A zero
 		// scope is treated as Full, the scope a golden snapshot must hold.
-		goldenURI     string
-		goldenScope   ateapipb.SnapshotContentScope
-		wantCode      codes.Code
+		goldenURI   string
+		goldenScope ateapipb.SnapshotContentScope
+		// goldenTagGone keeps the template's golden tag reference but stores no
+		// tag (the tag was deleted under it); goldenTagOtherTemplate stores the
+		// tag with another template's UID.
+		goldenTagGone          bool
+		goldenTagOtherTemplate bool
+		wantCode               codes.Code
+		// wantReason is the AIP-193 reason the refusal carries; a refusal
+		// without one is an ordinary FailedPrecondition.
+		wantReason    ateerrors.Reason
 		wantGoldenURI string
 	}{
 		{
@@ -963,6 +974,29 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
 			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
 			wantCode:     codes.FailedPrecondition,
+			wantReason:   ateerrors.ReasonGoldenSnapshotUnavailable,
+		},
+		{
+			// The template still names its golden tag, the store no longer has
+			// it: an actor created before its workers were upgraded.
+			name:          "fails when the template's golden tag is gone",
+			fromData:      ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope:  ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:     goldenSnapshotURI,
+			goldenScope:   ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			goldenTagGone: true,
+			wantCode:      codes.FailedPrecondition,
+			wantReason:    ateerrors.ReasonGoldenSnapshotUnavailable,
+		},
+		{
+			name:                   "fails when the golden tag belongs to another template",
+			fromData:               ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope:           ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenURI:              goldenSnapshotURI,
+			goldenScope:            ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+			goldenTagOtherTemplate: true,
+			wantCode:               codes.FailedPrecondition,
+			wantReason:             ateerrors.ReasonGoldenSnapshotUnavailable,
 		},
 		{
 			name:         "fails when the golden snapshot uri is malformed",
@@ -1035,13 +1069,17 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create template: %v", err)
 			}
-			if tt.goldenURI != "" {
+			if tt.goldenURI != "" && !tt.goldenTagGone {
+				templateUID := stored.GetMetadata().GetUid()
+				if tt.goldenTagOtherTemplate {
+					templateUID = "another-template-uid"
+				}
 				_, err := persistence.CreateTag(ctx, &ateapipb.Tag{
 					Metadata:    &ateapipb.ResourceMetadata{Atespace: "ns", Name: "golden"},
 					SourceActor: &ateapipb.ObjectRef{Atespace: "ns", Name: "golden"},
 					Scope:       ateapipb.TagScope_TAG_SCOPE_PUBLISHED,
 					Status: &ateapipb.TagStatus{
-						ActorTemplateUid: stored.GetMetadata().GetUid(),
+						ActorTemplateUid: templateUID,
 						Snapshot:         &ateapipb.ExternalSnapshot{SnapshotUri: tt.goldenURI, ContentScope: tt.goldenScope},
 					},
 				})
@@ -1054,6 +1092,15 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			_, _, src, err := w.loadActorForResume(ctx, actorRef)
 			if got := status.Code(err); got != tt.wantCode {
 				t.Fatalf("status.Code(err) = %v, want %v (err: %v)", got, tt.wantCode, err)
+			}
+			if got := ateerrors.ExtractReason(err); got != string(tt.wantReason) {
+				t.Fatalf("reason = %q, want %q (err: %v)", got, tt.wantReason, err)
+			}
+			if got := notResumable(err); got != (tt.wantReason != "") {
+				t.Errorf("not-resumable directive = %v, want %v (err: %v)", got, tt.wantReason != "", err)
+			}
+			if tt.wantReason != "" && !strings.Contains(status.Convert(err).Message(), "start a new actor") {
+				t.Errorf("message %q does not tell the caller to start a new actor", status.Convert(err).Message())
 			}
 			if err != nil {
 				return
@@ -1807,4 +1854,15 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 			}
 		})
 	}
+}
+
+// notResumable reports whether err carries the not-resumable directive in an
+// ErrorInfo, the way a router or a client reads it off the wire.
+func notResumable(err error) bool {
+	for _, d := range status.Convert(err).Details() {
+		if info, ok := d.(*epb.ErrorInfo); ok && info.GetMetadata()[ateerrors.MetadataKeyResumable] == "false" {
+			return true
+		}
+	}
+	return false
 }
