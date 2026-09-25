@@ -63,7 +63,7 @@ See `values.yaml` for the full set; the important keys:
 | `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
 | `otel.traces.endpoint` | `""` | OTLP endpoint for traces, overriding `otel.endpoint` |
 | `otel.traces.samplingRatio` | `0.01` | Fraction of parentless requests that start a trace, applied to the Go components and the router |
-| `otel.metrics.enabled` | `true` | Sets the OTLP metrics exporter to `none`; the Go components do not honor this yet |
+| `otel.metrics.enabled` | `true` | `false` sets the OTLP metrics exporter to `none`: the Go components stop pushing and keep their Prometheus endpoints |
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
 | `otel.logs.enabled` | `true` | Set to `false` to export no logs. Gates both OTLP log sources: ateapi's actor lifecycle events and the router access log |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
