@@ -60,6 +60,13 @@ const (
 	// its state is unrecoverable.
 	ReasonLocalSnapshotGone Reason = "LOCAL_SNAPSHOT_GONE"
 
+	// ReasonGoldenSnapshotUnavailable marks a resume that restores an actor's
+	// data onto its ActorTemplate's golden snapshot when the template has no
+	// usable one: the golden tag is gone, incomplete, or another template's.
+	// Retrying the resume cannot bring it back, so the router answers at once
+	// instead of parking the request; the actor itself is left as it is.
+	ReasonGoldenSnapshotUnavailable Reason = "GOLDEN_SNAPSHOT_UNAVAILABLE"
+
 	// ReasonWorkloadNotReady marks a container that started but never passed its
 	// readyz probe before the probe's deadline. First reason in the workload
 	// fault domain (ateattr.FailureDomain); the operation it failed under is
@@ -93,6 +100,7 @@ var AllReasons = []Reason{
 	ReasonFailedGetExternalObject,
 	ReasonInvalidContainerConfig,
 	ReasonLocalSnapshotGone,
+	ReasonGoldenSnapshotUnavailable,
 	ReasonWorkloadNotReady,
 	ReasonRestoreTimedOut,
 	ReasonCorruptedAssignment,
