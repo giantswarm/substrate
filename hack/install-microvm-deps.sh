@@ -174,7 +174,11 @@ fi
 # in-cluster rustfs (S3 API) on kind, or the GCS bucket on GKE.
 if [[ "${ATE_INSTALL_KIND}" == "true" ]]; then
   log "Staging assets to in-cluster rustfs bucket ${BUCKET_NAME} (kata-assets/)..."
-  run_kubectl wait --for=condition=complete job/rustfs-bucket-init -n ate-system --timeout=120s
+  # A Helm install ran the bucket-init Job as a hook and deleted it on
+  # success; a Kustomize install leaves it to be waited for.
+  if run_kubectl get job/rustfs-bucket-init -n ate-system >/dev/null 2>&1; then
+    run_kubectl wait --for=condition=complete job/rustfs-bucket-init -n ate-system --timeout=120s
+  fi
   OUT="${OUT}" BUCKET="${BUCKET_NAME}" KUBECTL_CONTEXT="${KUBECTL_CONTEXT}" hack/microvm-assets/stage-to-rustfs.sh
 else
   log "Uploading assets to gs://${BUCKET_NAME}/kata-assets/ ..."

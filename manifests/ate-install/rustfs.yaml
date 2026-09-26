@@ -111,10 +111,12 @@ metadata:
   namespace: ate-system
   # A hook, recreated on every install and upgrade: a Job's pod template is
   # immutable, so a plain release resource could never take a new image. The
-  # name stays, which network policies select the pod by (`job-name`).
+  # name stays, which network policies select the pod by (`job-name`). A
+  # completed Job is deleted: left behind, it would block a rollback to a
+  # release whose Job is a plain resource of the same name.
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 10
   template:
