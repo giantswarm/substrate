@@ -16,9 +16,7 @@
 # bundled database, the bundled store and its bucket-init Job, the agentgateway
 # of the atenet router and egress — are the `images:` defaults: each names its
 # registry (a short name is the node runtime's call, and CRI-O refuses it),
-# and each is the gsoci copy of upstream's pin, the same digest. The bucket-init
-# Job is the one short name kept: its pod template is immutable, so the value
-# cannot move without a Job that can be recreated (values.yaml says so).
+# and each is the gsoci copy of upstream's pin, the same digest.
 suite: third-party image defaults
 templates:
 - postgres.yaml
@@ -56,7 +54,7 @@ tests:
       path: spec.template.spec.containers[0].image
       value: gsoci.azurecr.io/giantswarm/rustfs:1.0.0-beta.3@sha256:378642b05b7dcb4849fb77ebe6aca4ced1c3f66e7e504247df95a5c9018d3358
 
-- it: keeps the bucket-init Job's image at upstream's short name (an immutable pod template)
+- it: runs the bucket-init Job from the gsoci copy of upstream's aws-cli pin, by digest
   template: rustfs.yaml
   set:
     rustfs.enabled: true
@@ -66,7 +64,7 @@ tests:
   asserts:
   - equal:
       path: spec.template.spec.containers[0].image
-      value: amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
+      value: gsoci.azurecr.io/giantswarm/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
 
 # A release of the agentgateway line, or its dev build between a re-pin and the
 # release that follows it (FORK.md, "Re-pin"): the two deployments name the same
