@@ -46,7 +46,7 @@ KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-kind}"
 
 # Keep in sync with the rustfs-bucket-init Job in
 # manifests/ate-install/kind/rustfs.yaml, which creates the bucket we upload into.
-AWS_CLI_IMAGE="amazon/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73"
+AWS_CLI_IMAGE="gsoci.azurecr.io/giantswarm/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73"
 
 ASSETS=(cloud-hypervisor virtiofsd vmlinux rootfs.img configuration-clh.toml)
 
@@ -69,7 +69,11 @@ done
 # rustfs must be serving and the bucket must exist before anything is uploaded.
 echo ">> Waiting for rustfs in namespace ${NAMESPACE}..."
 run_kubectl rollout status deploy/rustfs --timeout=300s
-run_kubectl wait --for=condition=Complete job/rustfs-bucket-init --timeout=300s
+# A Helm install ran the bucket-init Job as a hook and deleted it on success;
+# a Kustomize install leaves it to be waited for.
+if run_kubectl get job/rustfs-bucket-init >/dev/null 2>&1; then
+  run_kubectl wait --for=condition=Complete job/rustfs-bucket-init --timeout=300s
+fi
 
 NODE="$("${ROOT}/hack/kind.sh" get nodes --name "${KIND_CLUSTER_NAME}" | head -n1)"
 if [[ -z "${NODE}" ]]; then
