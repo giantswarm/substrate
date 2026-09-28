@@ -89,3 +89,49 @@ tests:
         name: kubelet-plugins
         mountPath: /var/lib/kubelet/plugins
         mountPropagation: HostToContainer
+
+- it: lets atelet preempt lower-priority pods by default
+  documentSelector:
+    path: kind
+    value: PriorityClass
+  asserts:
+  - equal:
+      path: preemptionPolicy
+      value: PreemptLowerPriority
+  - matchRegex:
+      path: metadata.name
+      pattern: -ate-node-critical$
+
+- it: renders a non-preempting class of its own name when preemption is off
+  set:
+    atelet:
+      priorityClass:
+        preemptionPolicy: Never
+  asserts:
+  - equal:
+      path: preemptionPolicy
+      value: Never
+    documentSelector:
+      path: kind
+      value: PriorityClass
+  - matchRegex:
+      path: metadata.name
+      pattern: -ate-node-critical-non-preempting$
+    documentSelector:
+      path: kind
+      value: PriorityClass
+  - matchRegex:
+      path: spec.template.spec.priorityClassName
+      pattern: -ate-node-critical-non-preempting$
+    documentSelector:
+      path: kind
+      value: DaemonSet
+
+- it: refuses an unknown preemption policy
+  set:
+    atelet:
+      priorityClass:
+        preemptionPolicy: Sometimes
+  asserts:
+  - failedTemplate:
+      errorPattern: "must be PreemptLowerPriority or Never"
