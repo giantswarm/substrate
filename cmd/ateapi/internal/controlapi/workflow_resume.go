@@ -193,11 +193,18 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 	if err != nil {
 		return nil, nil, src, err
 	}
-	if uri := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(); uri != "" {
+	// A paused actor restores its pause: from the local snapshot on its node,
+	// from the snapshot's durable copy anywhere else. The external snapshot
+	// is the last suspend's.
+	snapshot := actor.GetStatus().GetExternalSnapshot()
+	if durable := durablePauseCopy(actor); durable != nil {
+		snapshot = durable
+	}
+	if uri := snapshot.GetSnapshotUri(); uri != "" {
 		if src.SnapshotURI, err = resources.ParseSnapshotURI(uri); err != nil {
-			return nil, nil, src, status.Errorf(codes.DataLoss, "Actor %s external snapshot: %v", actorRef, err)
+			return nil, nil, src, status.Errorf(codes.DataLoss, "Actor %s snapshot: %v", actorRef, err)
 		}
-		src.Scope = actor.GetStatus().GetExternalSnapshot().GetContentScope()
+		src.Scope = snapshot.GetContentScope()
 		// The Actor records the template its guest state was built on; a
 		// different UID on its current template means it was repointed since
 		// the capture.
@@ -766,7 +773,7 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		// Mirrors loadActorForResume's source resolution: the durable URI is
 		// the actor's own snapshot when one exists, the golden otherwise.
 		tele.SnapshotKind = ateattr.SnapshotKindGolden
-		if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() != "" {
+		if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() != "" || durablePauseCopy(actor) != nil {
 			tele.SnapshotKind = ateattr.SnapshotKindLatest
 		}
 		var scope ateletpb.SnapshotScope

@@ -256,8 +256,8 @@ class ControlServicer:
         on its worker; a paused actor's node-local snapshot is uploaded, narrowed
         to the template's commit scope where required (Full capture, Data commit).
         A paused actor whose pause snapshot already has a durable copy (see
-        ExternalSnapshot.source_local_snapshot_name) commits that copy as it was
-        captured, without involving the node.
+        LocalSnapshotInfo.durable_copy) commits that copy as it was captured,
+        without involving the node.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -266,8 +266,9 @@ class ControlServicer:
     def PauseActor(self, request, context):
         """Pause a given actor and keep its snapshots on node VM. The control plane
         then uploads the pause snapshot to durable storage in the background and
-        records the copy as the actor's external_snapshot; until that completes
-        the actor can resume only on its node.
+        records the copy as LocalSnapshotInfo.durable_copy; until that completes
+        the actor can resume only on its node. The external_snapshot stays the
+        last suspend's, so a revert still returns to it.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
