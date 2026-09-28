@@ -297,6 +297,11 @@ func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef reso
 		if err == nil && storedActor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_PAUSED {
 			logActorStateChanged(ctx, storedActor, ateattr.OperationPause)
 		}
+		if err == nil {
+			// The new local snapshot replaced the previous pause's, and its
+			// durable copy with it.
+			w.releaseDurablePauseCopy(ctx, latestActor, storedActor)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrVersionConflict) {
 				return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
