@@ -263,5 +263,8 @@ func (w *ActorWorkflow) ensureRevertedFinalized(ctx context.Context, actorRef re
 		return nil, err
 	}
 	logActorStateChanged(ctx, storedActor, ateattr.OperationRevert)
+	// The discarded pause takes its durable copy along; the external snapshot
+	// the actor returns to is a suspend's and stays.
+	w.releaseDurablePauseCopy(ctx, latestActor, storedActor)
 	return storedActor, nil
 }

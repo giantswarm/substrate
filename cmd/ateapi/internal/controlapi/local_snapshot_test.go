@@ -258,7 +258,7 @@ func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 					st.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "durable")}
 				}
 				if tc.durableCopy {
-					st.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "snap"), SourceLocalSnapshotName: "snap"}
+					st.LocalSnapshot.DurableCopy = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "snap"), SourceLocalSnapshotName: "snap"}
 				}
 			})
 			wc := startedWorkerCache(t, ctx, persistence, tc.fleet, tc.busy...)
@@ -409,9 +409,12 @@ func TestEnsurePausedSnapshotUploaded_NodeGone(t *testing.T) {
 		created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 			Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
 			Status: &ateapipb.ActorStatus{
-				State:            ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
-				LocalSnapshot:    &ateapipb.LocalSnapshot{SnapshotName: "snap", NodeVmsWithLocalSnapshots: []string{"node1"}},
-				ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: copyURI, ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL, SourceLocalSnapshotName: "snap"},
+				State: ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+				LocalSnapshot: &ateapipb.LocalSnapshot{
+					SnapshotName:              "snap",
+					NodeVmsWithLocalSnapshots: []string{"node1"},
+					DurableCopy:               &ateapipb.ExternalSnapshot{SnapshotUri: copyURI, ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL, SourceLocalSnapshotName: "snap"},
+				},
 			},
 		})
 

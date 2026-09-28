@@ -175,12 +175,19 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 	if err != nil {
 		return nil, nil, src, err
 	}
-	if uri := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(); uri != "" {
+	// A paused actor restores its pause: from the local snapshot on its node,
+	// from the snapshot's durable copy anywhere else. The external snapshot
+	// is the last suspend's.
+	snapshot := actor.GetStatus().GetExternalSnapshot()
+	if durable := durablePauseCopy(actor); durable != nil {
+		snapshot = durable
+	}
+	if uri := snapshot.GetSnapshotUri(); uri != "" {
 		if src.SnapshotURI, err = resources.ParseSnapshotURI(uri); err != nil {
-			return nil, nil, src, status.Errorf(codes.DataLoss, "Actor %s external snapshot: %v", actorRef, err)
+			return nil, nil, src, status.Errorf(codes.DataLoss, "Actor %s snapshot: %v", actorRef, err)
 		}
-		src.Scope = actor.GetStatus().GetExternalSnapshot().GetContentScope()
-		capturedUnder := actor.GetStatus().GetExternalSnapshot().GetActorTemplateUid()
+		src.Scope = snapshot.GetContentScope()
+		capturedUnder := snapshot.GetActorTemplateUid()
 		src.TemplateReplaced = capturedUnder != "" && capturedUnder != actorTemplate.GetMetadata().GetUid()
 	}
 

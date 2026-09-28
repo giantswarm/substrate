@@ -423,19 +423,20 @@ func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef r
 			ContentScope:     commitSnapshotScope(actorRef.Atespace, actorTemplate),
 			ActorTemplateUid: actorTemplate.GetMetadata().GetUid(),
 		}
+	} else if durable := durablePauseCopyForCommit(latestActor, actorRef.Atespace, actorTemplate); durable != nil {
+		// Nothing was uploaded: the pause snapshot's durable copy is the commit.
+		externalSnapshot = durable
 	}
 
 	// 3. Commit the actor.
 	t = time.Now()
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDED
-		if inProgressSnapshotURI != "" {
-			// The recorded URI is under the actor's own prefix, so the actor now
-			// owns its external snapshot rather than borrowing the tag's it may
-			// have been created from.
-			toUpdate.Status.ExternalSnapshot = proto.CloneOf(externalSnapshot)
-			toUpdate.Status.InProgressSnapshotUri = ""
-		}
+		// The recorded URI is under the actor's own prefix, so the actor now
+		// owns its external snapshot rather than borrowing the tag's it may
+		// have been created from.
+		toUpdate.Status.ExternalSnapshot = proto.CloneOf(externalSnapshot)
+		toUpdate.Status.InProgressSnapshotUri = ""
 		toUpdate.Status.WorkerAssignment = nil
 		toUpdate.Status.LocalSnapshot = nil
 		return nil
@@ -463,6 +464,10 @@ func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef r
 			slog.String("snapshot_uri", latestActor.GetStatus().GetExternalSnapshot().GetSnapshotUri()),
 			slog.String("err", releaseErr.Error()))
 	}
+
+	// A suspend that uploaded a snapshot of its own no longer needs the
+	// durable copy of the pause it left.
+	w.releaseDurablePauseCopy(ctx, latestActor, storedActor)
 	return storedActor, nil
 }
 
