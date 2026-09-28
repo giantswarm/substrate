@@ -44,8 +44,8 @@ func pausedOn(node string) *ateapipb.ActorStatus {
 	}
 }
 
-// durableCopyOf is the external snapshot the background upload of the pause
-// snapshot records.
+// durableCopyOf is the durable copy the background upload of the pause
+// snapshot records beside it.
 func durableCopyOf(uri string) *ateapipb.ExternalSnapshot {
 	return &ateapipb.ExternalSnapshot{
 		SnapshotUri:             uri,
@@ -55,9 +55,10 @@ func durableCopyOf(uri string) *ateapipb.ExternalSnapshot {
 }
 
 // TestDurablePauseCopy pins what counts as the durable copy of a pause: only
-// an external snapshot uploaded from the very local snapshot the actor holds.
-// Anything else — the snapshot of an earlier suspend, one uploaded from a
-// previous pause — is older state and must never stand in for the pause.
+// the copy recorded beside the local snapshot and uploaded from it. Anything
+// else — the external snapshot, even one a suspend committed from an earlier
+// pause's copy, or a copy of a previous pause — is older state and must never
+// stand in for the pause.
 func TestDurablePauseCopy(t *testing.T) {
 	uri := someActorSnapshotURI(t, testStorageLocation, "team-a", pauseSnapshot)
 	tests := []struct {
@@ -66,21 +67,26 @@ func TestDurablePauseCopy(t *testing.T) {
 		want   bool
 	}{
 		{"no local snapshot", &ateapipb.ActorStatus{ExternalSnapshot: durableCopyOf(uri)}, false},
-		{"no external snapshot", pausedOn("node1"), false},
+		{"no durable copy", pausedOn("node1"), false},
 		{"external snapshot from an earlier suspend", func() *ateapipb.ActorStatus {
 			st := pausedOn("node1")
 			st.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: uri}
 			return st
 		}(), false},
-		{"external snapshot uploaded from an earlier pause", func() *ateapipb.ActorStatus {
+		{"external snapshot naming the local snapshot", func() *ateapipb.ActorStatus {
 			st := pausedOn("node1")
 			st.ExternalSnapshot = durableCopyOf(uri)
-			st.ExternalSnapshot.SourceLocalSnapshotName = "pause-snap-0"
+			return st
+		}(), false},
+		{"copy of an earlier pause", func() *ateapipb.ActorStatus {
+			st := pausedOn("node1")
+			st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
+			st.LocalSnapshotInfo.DurableCopy.SourceLocalSnapshotName = "pause-snap-0"
 			return st
 		}(), false},
 		{"the upload of the pause snapshot", func() *ateapipb.ActorStatus {
 			st := pausedOn("node1")
-			st.ExternalSnapshot = durableCopyOf(uri)
+			st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 			return st
 		}(), true},
 	}
@@ -111,7 +117,7 @@ func TestPauseAwaitsResync(t *testing.T) {
 		{"paused without a copy, within the grace", &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{UpdateTime: fresh}, Status: pausedOn("node1")}, false},
 		{"paused with a copy", &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{UpdateTime: old}, Status: func() *ateapipb.ActorStatus {
 			st := pausedOn("node1")
-			st.ExternalSnapshot = durableCopyOf(uri)
+			st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 			return st
 		}()}, false},
 		{"paused with no node recorded", &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{UpdateTime: old}, Status: &ateapipb.ActorStatus{
@@ -158,7 +164,7 @@ func TestSchedulingConstraints_PauseNodes(t *testing.T) {
 	})
 	t.Run("durable copy exists", func(t *testing.T) {
 		st := pausedOn("node1")
-		st.ExternalSnapshot = durableCopyOf(uri)
+		st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 		c, err := schedulingConstraints(&ateapipb.Actor{Status: st}, tmpl)
 		if err != nil {
 			t.Fatalf("schedulingConstraints: %v", err)
@@ -184,8 +190,8 @@ func TestSchedulingConstraints_PauseNodes(t *testing.T) {
 }
 
 // TestRecordDurablePauseCopy covers how an uploaded pause snapshot lands on
-// the record: recorded and the snapshot it replaces released while the actor
-// is still paused on that snapshot; discarded when the actor moved on before
+// the record: recorded beside the local snapshot, the external snapshot of the
+// last suspend untouched, while the actor is still paused on that snapshot; discarded when the actor moved on before
 // the upload finished; left alone when another replica already recorded it;
 // deferred while a lifecycle workflow holds the actor's lease, so a resume
 // that read the record never meets a version it did not see.
@@ -211,7 +217,7 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		return w, persistence, objects, actor, uploaded
 	}
 
-	t.Run("records the copy and releases the replaced snapshot", func(t *testing.T) {
+	t.Run("records the copy and keeps the suspend's snapshot", func(t *testing.T) {
 		ctx := context.Background()
 		w, _, objects, actor, uploaded := seed(t)
 		previous := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri()
@@ -223,8 +229,11 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetActor: %v", err)
 		}
-		if got := stored.GetStatus().GetExternalSnapshot(); got.GetSnapshotUri() != uploaded.GetSnapshotUri() || got.GetSourceLocalSnapshotName() != pauseSnapshot {
-			t.Errorf("ExternalSnapshot = %v, want the uploaded copy %v", got, uploaded)
+		if got := stored.GetStatus().GetLocalSnapshotInfo().GetDurableCopy(); got.GetSnapshotUri() != uploaded.GetSnapshotUri() || got.GetSourceLocalSnapshotName() != pauseSnapshot {
+			t.Errorf("DurableCopy = %v, want the uploaded copy %v", got, uploaded)
+		}
+		if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != previous {
+			t.Errorf("ExternalSnapshot = %q, want the suspend's %q untouched", got, previous)
 		}
 		if stored.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED || stored.GetStatus().GetLocalSnapshotInfo().GetSnapshotName() != pauseSnapshot {
 			t.Errorf("actor = %v, want still PAUSED on its local snapshot", stored.GetStatus())
@@ -232,8 +241,8 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		if durablePauseCopy(stored) == nil {
 			t.Error("durablePauseCopy = nil after recording the upload")
 		}
-		if got := objects.Prefix(t, mustParsePrefix(t, previous)); len(got) != 0 {
-			t.Errorf("replaced snapshot still holds %v, want released", got)
+		if got := objects.Prefix(t, mustParsePrefix(t, previous)); len(got) == 0 {
+			t.Error("the suspend's snapshot was released, want kept for a revert")
 		}
 		if got := objects.Prefix(t, mustParsePrefix(t, uploaded.GetSnapshotUri())); len(got) == 0 {
 			t.Error("the uploaded copy was released, want kept")
@@ -308,7 +317,7 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		ctx := context.Background()
 		w, persistence, objects, actor, uploaded := seed(t)
 		recorded := mustUpdateActorStatus(t, ctx, persistence, actor, func(st *ateapipb.ActorStatus) {
-			st.ExternalSnapshot = uploaded
+			st.LocalSnapshotInfo.DurableCopy = uploaded
 		})
 
 		if err := w.recordDurablePauseCopy(ctx, actorRef, uploaded); err != nil {
@@ -341,7 +350,7 @@ func TestEnsureMarkedSuspending_AdoptsDurablePauseCopy(t *testing.T) {
 		persistence := newTestPersistence(t)
 		w := &ActorWorkflow{store: persistence}
 		st := pausedOn("node1")
-		st.ExternalSnapshot = durableCopyOf(uri)
+		st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 		actor := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 			Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
 			Status:   st,
@@ -373,8 +382,8 @@ func TestEnsureMarkedSuspending_AdoptsDurablePauseCopy(t *testing.T) {
 		}}
 		st := pausedOn("node1")
 		st.LocalSnapshotInfo.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL
-		st.ExternalSnapshot = durableCopyOf(uri)
-		st.ExternalSnapshot.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL
+		st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
+		st.LocalSnapshotInfo.DurableCopy.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL
 		actor := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 			Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
 			Status:   st,
@@ -395,7 +404,7 @@ func TestEnsureMarkedSuspending_AdoptsDurablePauseCopy(t *testing.T) {
 		w := &ActorWorkflow{store: persistence}
 		st := pausedOn("node1")
 		st.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
-		st.ExternalSnapshot = durableCopyOf(uri)
+		st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 		st.WorkerAssignment = &ateapipb.WorkerAssignment{WorkerNamespace: "ns", WorkerPool: "pool", WorkerPod: "pod-1"}
 		actor := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 			Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
@@ -425,7 +434,7 @@ func TestEnsurePausedSnapshotUploaded_AdoptsDurablePauseCopy(t *testing.T) {
 
 	st := pausedOn("node1")
 	st.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDING
-	st.ExternalSnapshot = durableCopyOf(uri)
+	st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
 	actor := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
 		Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
 		Status:   st,
@@ -449,7 +458,8 @@ func TestEnsurePausedSnapshotUploaded_AdoptsDurablePauseCopy(t *testing.T) {
 
 // TestSuspendActor_PausedWithDurableCopyCommitsIt runs the whole suspend of a
 // paused actor whose pause snapshot has a durable copy: no atelet is
-// involved, the copy stays the external snapshot, the node pinning ends.
+// involved, the copy becomes the external snapshot and the one it replaces is
+// released, the node pinning ends.
 func TestSuspendActor_PausedWithDurableCopyCommitsIt(t *testing.T) {
 	ctx := context.Background()
 	st, cleanup := storetest.SetupTestStore(t)
@@ -471,8 +481,11 @@ func TestSuspendActor_PausedWithDurableCopyCommitsIt(t *testing.T) {
 	copyURI := mustActorSnapshotURI(t, tmpl, created, pauseSnapshot)
 	objects := w.objectStore.(*objectstoretest.Fake)
 	objects.PutSnapshot(t, copyURI, "manifest.json", "memory.zst")
+	previousURI := mustActorSnapshotURI(t, tmpl, created, "suspend-snap-0")
+	objects.PutSnapshot(t, previousURI, "manifest.json", "memory.zst")
 	mustUpdateActorStatus(t, ctx, st, created, func(status *ateapipb.ActorStatus) {
-		status.ExternalSnapshot = durableCopyOf(copyURI.String())
+		status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: previousURI.String()}
+		status.LocalSnapshotInfo.DurableCopy = durableCopyOf(copyURI.String())
 	})
 
 	suspended, err := w.SuspendActor(ctx, actorRef)
@@ -483,7 +496,10 @@ func TestSuspendActor_PausedWithDurableCopyCommitsIt(t *testing.T) {
 		t.Errorf("state = %v, want SUSPENDED", suspended.GetStatus().GetState())
 	}
 	if got := suspended.GetStatus().GetExternalSnapshot(); got.GetSnapshotUri() != copyURI.String() || got.GetSourceLocalSnapshotName() != pauseSnapshot {
-		t.Errorf("ExternalSnapshot = %v, want the durable copy %s kept", got, copyURI)
+		t.Errorf("ExternalSnapshot = %v, want the durable copy %s committed", got, copyURI)
+	}
+	if got := objects.Snapshot(t, previousURI); len(got) != 0 {
+		t.Errorf("the snapshot the commit replaced still holds %v, want released", got)
 	}
 	if suspended.GetStatus().GetLocalSnapshotInfo() != nil {
 		t.Errorf("LocalSnapshotInfo = %v, want cleared", suspended.GetStatus().GetLocalSnapshotInfo())
@@ -491,6 +507,96 @@ func TestSuspendActor_PausedWithDurableCopyCommitsIt(t *testing.T) {
 	if got := objects.Snapshot(t, copyURI); len(got) == 0 {
 		t.Error("the durable copy was released by the suspend that committed it")
 	}
+}
+
+// TestRevertActor_PausedWithDurableCopy runs a revert of a paused actor whose
+// pause snapshot has a durable copy: the actor returns to the last suspend's
+// external snapshot, which stays in storage, and the copy of the discarded
+// pause is released.
+func TestRevertActor_PausedWithDurableCopy(t *testing.T) {
+	ctx := context.Background()
+	st, cleanup := storetest.SetupTestStore(t)
+	defer cleanup()
+	w := newTestActorWorkflow(t, st, "ns", "tmpl1")
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
+
+	seedWorkflowActor(t, ctx, st, actorRef, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_PAUSED, func(a *ateapipb.Actor) {
+		a.Status = pausedOn("node1")
+	})
+	created, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	tmpl, err := st.GetActorTemplate(ctx, resources.ActorTemplateRef{Atespace: "ns", Name: "tmpl1"})
+	if err != nil {
+		t.Fatalf("GetActorTemplate: %v", err)
+	}
+	suspendURI := mustActorSnapshotURI(t, tmpl, created, "suspend-snap-0")
+	copyURI := mustActorSnapshotURI(t, tmpl, created, pauseSnapshot)
+	objects := w.objectStore.(*objectstoretest.Fake)
+	objects.PutSnapshot(t, suspendURI, "manifest.json", "memory.zst")
+	objects.PutSnapshot(t, copyURI, "manifest.json", "memory.zst")
+	mustUpdateActorStatus(t, ctx, st, created, func(status *ateapipb.ActorStatus) {
+		status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: suspendURI.String()}
+		status.LocalSnapshotInfo.DurableCopy = durableCopyOf(copyURI.String())
+	})
+
+	reverted, err := w.RevertActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("RevertActor: %v", err)
+	}
+	if got := reverted.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("state = %v, want SUSPENDED", got)
+	}
+	if got := reverted.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != suspendURI.String() {
+		t.Errorf("ExternalSnapshot = %q, want the suspend's %q", got, suspendURI)
+	}
+	if got := objects.Snapshot(t, suspendURI); len(got) == 0 {
+		t.Error("the suspend's snapshot was released, want kept")
+	}
+	if got := objects.Snapshot(t, copyURI); len(got) != 0 {
+		t.Errorf("the discarded pause's copy still holds %v, want released", got)
+	}
+}
+
+// TestReleaseDurablePauseCopy pins when a dropped copy is deleted: never
+// while the stored record still names it, as its external snapshot or as the
+// copy of the pause it kept.
+func TestReleaseDurablePauseCopy(t *testing.T) {
+	ctx := context.Background()
+	tmpl := &ateapipb.ActorTemplate{SnapshotsConfig: &ateapipb.SnapshotsConfig{StorageLocation: testStorageLocation}}
+	actor := &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1", Uid: "168e8c8b-4a1b-45a5-b1ac-d6597bd6f1ae"}, Status: pausedOn("node1")}
+	copyURI := mustActorSnapshotURI(t, tmpl, actor, pauseSnapshot)
+	actor.Status.LocalSnapshotInfo.DurableCopy = durableCopyOf(copyURI.String())
+
+	tests := []struct {
+		name     string
+		stored   *ateapipb.ActorStatus
+		released bool
+	}{
+		{"the next pause replaced it", &ateapipb.ActorStatus{LocalSnapshotInfo: &ateapipb.LocalSnapshotInfo{SnapshotName: "pause-snap-2"}}, true},
+		{"the record dropped the pause", &ateapipb.ActorStatus{}, true},
+		{"a suspend committed it", &ateapipb.ActorStatus{ExternalSnapshot: durableCopyOf(copyURI.String())}, false},
+		{"the record kept it", pausedOnWithCopy(copyURI.String()), false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			persistence := newTestPersistence(t)
+			w, objects := newFinalizeWorkflow(persistence)
+			objects.PutSnapshot(t, copyURI, "manifest.json", "memory.zst")
+			w.releaseDurablePauseCopy(ctx, actor, &ateapipb.Actor{Status: tc.stored})
+			if gone := len(objects.Snapshot(t, copyURI)) == 0; gone != tc.released {
+				t.Errorf("copy released = %t, want %t", gone, tc.released)
+			}
+		})
+	}
+}
+
+// pausedOnWithCopy is pausedOn("node1") with the pause snapshot's durable copy.
+func pausedOnWithCopy(uri string) *ateapipb.ActorStatus {
+	st := pausedOn("node1")
+	st.LocalSnapshotInfo.DurableCopy = durableCopyOf(uri)
+	return st
 }
 
 // TestEnsureAteletRestored_RefusesPlacementOffSnapshotNodeWithoutCopy pins

@@ -39,10 +39,11 @@ import (
 // still says PAUSED there. The uploader below makes every pause durable
 // shortly after it completes: the local checkpoint is copied to the actor's
 // snapshot storage the way a suspend of a paused actor copies it, and the
-// copy is recorded as the actor's external snapshot, marked with the local
-// snapshot it came from. The actor stays PAUSED; its local copy stays the
-// fast resume path on its node, the uploaded one lets it resume on any other
-// worker and be suspended without the node.
+// copy is recorded beside the local snapshot it came from
+// (LocalSnapshotInfo.durable_copy). The actor stays PAUSED; its local copy
+// stays the fast resume path on its node, the uploaded one lets it resume on
+// any other worker and be suspended without the node. The external snapshot
+// is left alone: it stays the last suspend's, the state a revert returns to.
 
 const (
 	// pauseUploadResyncInterval is how often stored actors are listed for
@@ -67,17 +68,17 @@ const (
 	localCheckpointPruneTimeout = 10 * time.Second
 )
 
-// durablePauseCopy returns the actor's external snapshot when it is the
-// uploaded copy of the local snapshot the actor holds, nil otherwise — no
-// local snapshot, no external snapshot, or an external snapshot from an
-// earlier suspend. The two hold the same state, so the actor may restore from
-// either; anything older must never stand in for the pause.
+// durablePauseCopy returns the uploaded copy of the local snapshot the actor
+// holds, nil when it has none. The two hold the same state, so the actor may
+// restore from either; the external snapshot, an earlier suspend's, must
+// never stand in for the pause.
 func durablePauseCopy(actor *ateapipb.Actor) *ateapipb.ExternalSnapshot {
-	local, external := actor.GetStatus().GetLocalSnapshotInfo(), actor.GetStatus().GetExternalSnapshot()
-	if local.GetSnapshotName() == "" || external.GetSnapshotUri() == "" || external.GetSourceLocalSnapshotName() != local.GetSnapshotName() {
+	local := actor.GetStatus().GetLocalSnapshotInfo()
+	durable := local.GetDurableCopy()
+	if local.GetSnapshotName() == "" || durable.GetSnapshotUri() == "" || durable.GetSourceLocalSnapshotName() != local.GetSnapshotName() {
 		return nil
 	}
-	return external
+	return durable
 }
 
 // durablePauseCopyForCommit is the durable pause copy a suspend may commit as
@@ -209,7 +210,7 @@ func (u *pauseUploader) processNextWorkItem(ctx context.Context) bool {
 
 // uploadPauseSnapshot makes one paused actor's snapshot durable: it asks the
 // atelet on the snapshot's node to upload the local checkpoint, keeping the
-// local copy, then records the upload as the actor's external snapshot. The
+// local copy, then records the upload as the local snapshot's durable copy. The
 // actor is not leased and stays PAUSED throughout — a resume that arrives
 // meanwhile is not held up — so the record is committed under a version
 // precondition and an upload the actor has outrun is discarded. The
@@ -290,67 +291,87 @@ func (w *ActorWorkflow) uploadPauseSnapshot(ctx context.Context, actorRef resour
 	})
 }
 
-// recordDurablePauseCopy commits an uploaded pause snapshot as the actor's
-// external snapshot, if the actor is still paused on the local snapshot it
-// was uploaded from, and then releases the external snapshot it replaces —
-// committed first, so a release that fails leaves an orphan the actor's
-// deletion collects rather than an actor with no snapshot. The commit runs
-// under the actor's lease, held for the two store round trips only: the
-// lifecycle workflows read the record when they take the lease and update it
-// under a version precondition, so a write that slipped in between would fail
-// their update with a conflict the caller sees as Aborted. A lease another
-// operation holds is a retry, not an error to act on. An upload the actor has
-// outrun (resumed, suspended, deleted meanwhile) is deleted again: nothing
-// references it.
+// recordDurablePauseCopy commits an uploaded pause snapshot as the durable
+// copy of the local snapshot it was uploaded from, if the actor is still
+// paused on it. The commit runs under the actor's lease, held for the two
+// store round trips only: the lifecycle workflows read the record when they
+// take the lease and update it under a version precondition, so a write that
+// slipped in between would fail their update with a conflict the caller sees
+// as Aborted. A lease another operation holds is a retry, not an error to act
+// on. An upload the actor has outrun (resumed, suspended, deleted meanwhile)
+// is deleted again: nothing references it.
 func (w *ActorWorkflow) recordDurablePauseCopy(ctx context.Context, actorRef resources.ActorRef, uploaded *ateapipb.ExternalSnapshot) error {
-	replaced, err := w.commitDurablePauseCopy(ctx, actorRef, uploaded)
-	if err != nil || replaced == nil {
+	committed, err := w.commitDurablePauseCopy(ctx, actorRef, uploaded)
+	if err != nil || !committed {
 		return err
 	}
 	slog.LogAttrs(ctx, slog.LevelInfo, "Pause snapshot is durable",
 		append(ateattr.ActorRefLogAttrs(actorRef),
 			slog.String("local_snapshot", uploaded.GetSourceLocalSnapshotName()),
 			slog.String("snapshot_uri", uploaded.GetSnapshotUri()))...)
-	if err := w.releaseReplacedSnapshot(ctx, replaced, uploaded); err != nil {
-		slog.LogAttrs(ctx, slog.LevelWarn, "Failed to release the external snapshot the pause copy replaces; the actor's deletion collects it",
-			append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", err))...)
-	}
 	return nil
 }
 
 // commitDurablePauseCopy is the leased part of recordDurablePauseCopy. It
-// returns the record as it was before the commit — whose external snapshot
-// the copy replaces — or nil when nothing was committed because the actor
-// moved on (the upload is then discarded) or another replica recorded the
-// same copy.
-func (w *ActorWorkflow) commitDurablePauseCopy(ctx context.Context, actorRef resources.ActorRef, uploaded *ateapipb.ExternalSnapshot) (replaced *ateapipb.Actor, err error) {
+// reports false when nothing was committed because the actor moved on (the
+// upload is then discarded) or another replica recorded the same copy.
+func (w *ActorWorkflow) commitDurablePauseCopy(ctx context.Context, actorRef resources.ActorRef, uploaded *ateapipb.ExternalSnapshot) (committed bool, err error) {
 	leaseCtx, lease, err := acquireLease(ctx, w.store, actorLeaseKey(actorRef), "actor")
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	defer lease.Close()
 
 	actor, err := w.store.GetActor(leaseCtx, actorRef)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, w.discardStaleUpload(ctx, actorRef, uploaded)
+			return false, w.discardStaleUpload(ctx, actorRef, uploaded)
 		}
-		return nil, err
+		return false, err
 	}
 	if !needsDurablePauseCopy(actor) || actor.GetStatus().GetLocalSnapshotInfo().GetSnapshotName() != uploaded.GetSourceLocalSnapshotName() {
-		if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() == uploaded.GetSnapshotUri() {
+		if durablePauseCopy(actor).GetSnapshotUri() == uploaded.GetSnapshotUri() {
 			// Another replica recorded the same upload.
-			return nil, nil
+			return false, nil
 		}
-		return nil, w.discardStaleUpload(ctx, actorRef, uploaded)
+		return false, w.discardStaleUpload(ctx, actorRef, uploaded)
 	}
 	if _, err := w.store.UpdateActor(leaseCtx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
-		toUpdate.Status.ExternalSnapshot = proto.CloneOf(uploaded)
+		toUpdate.Status.LocalSnapshotInfo.DurableCopy = proto.CloneOf(uploaded)
 		return nil
 	}); err != nil {
-		return nil, err
+		return false, err
 	}
-	return actor, nil
+	return true, nil
+}
+
+// releaseDurablePauseCopy deletes the durable copy of a pause snapshot the
+// caller has just dropped from the actor's record: the next pause replaced
+// it, a revert discarded the pause, or a suspend committed a snapshot of its
+// own. A copy the stored record still names — as the external snapshot a
+// suspend committed, or as the copy of a pause it kept — stays. Best-effort,
+// after the commit: a copy left
+// behind is an orphan under the actor's prefix, which its deletion collects.
+func (w *ActorWorkflow) releaseDurablePauseCopy(ctx context.Context, dropped, stored *ateapipb.Actor) {
+	durable := dropped.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri()
+	if w.objectStore == nil || durable == "" ||
+		durable == stored.GetStatus().GetExternalSnapshot().GetSnapshotUri() ||
+		durable == stored.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri() {
+		return
+	}
+	actorRef := resources.ActorRefFromActor(dropped)
+	attrs := append(ateattr.ActorRefLogAttrs(actorRef), slog.String("snapshot_uri", durable))
+	uri, err := resources.ParseSnapshotURI(durable)
+	if err == nil && !uri.OwnedBy(actorSnapshotOwner(dropped)) {
+		return
+	}
+	if err == nil {
+		err = objectstore.DeletePrefix(ctx, w.objectStore, uri.Prefix())
+	}
+	if err != nil {
+		slog.LogAttrs(ctx, slog.LevelWarn, "Failed to release the durable copy of a pause snapshot; the actor's deletion collects it",
+			append(attrs, slog.Any("err", err))...)
+	}
 }
 
 // discardStaleUpload deletes an uploaded pause snapshot the actor moved on

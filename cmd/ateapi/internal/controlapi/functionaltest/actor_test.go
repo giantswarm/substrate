@@ -3905,8 +3905,9 @@ func waitForDurablePause(t *testing.T, tc *testContext, name string) *ateapipb.A
 			return false, err
 		}
 		st := got.GetStatus()
-		if st.GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED || st.GetExternalSnapshot().GetSourceLocalSnapshotName() == "" ||
-			st.GetExternalSnapshot().GetSourceLocalSnapshotName() != st.GetLocalSnapshotInfo().GetSnapshotName() {
+		durableCopy := st.GetLocalSnapshotInfo().GetDurableCopy()
+		if st.GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED || durableCopy.GetSnapshotUri() == "" ||
+			durableCopy.GetSourceLocalSnapshotName() != st.GetLocalSnapshotInfo().GetSnapshotName() {
 			return false, nil
 		}
 		actor = got
@@ -3981,17 +3982,22 @@ func TestPauseActor_MakesPauseDurable(t *testing.T) {
 		t.Errorf("upload desired_scope = %v, want FULL (what the pause captured)", got)
 	}
 
-	external := durable.GetStatus().GetExternalSnapshot()
-	if got, want := external.GetSnapshotUri(), upload.GetDestinationSnapshotUri(); got != want {
-		t.Errorf("external snapshot URI = %q, want the upload destination %q", got, want)
+	durableCopy := durable.GetStatus().GetLocalSnapshotInfo().GetDurableCopy()
+	if got, want := durableCopy.GetSnapshotUri(), upload.GetDestinationSnapshotUri(); got != want {
+		t.Errorf("durable copy URI = %q, want the upload destination %q", got, want)
 	}
-	if got := external.GetContentScope(); got != ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL {
-		t.Errorf("external snapshot ContentScope = %v, want FULL", got)
+	if got := durableCopy.GetContentScope(); got != ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL {
+		t.Errorf("durable copy ContentScope = %v, want FULL", got)
 	}
-	assertSnapshotOwnedByActor(t, durable, external.GetSnapshotUri())
-	assertSnapshotPresent(t, tc, external.GetSnapshotUri())
-	if diff := cmp.Diff(paused.GetStatus().GetLocalSnapshotInfo(), durable.GetStatus().GetLocalSnapshotInfo(), protocmp.Transform()); diff != "" {
-		t.Errorf("LocalSnapshotInfo changed by the upload (-paused +durable):\n%s", diff)
+	assertSnapshotOwnedByActor(t, durable, durableCopy.GetSnapshotUri())
+	assertSnapshotPresent(t, tc, durableCopy.GetSnapshotUri())
+	if diff := cmp.Diff(paused.GetStatus().GetExternalSnapshot(), durable.GetStatus().GetExternalSnapshot(), protocmp.Transform()); diff != "" {
+		t.Errorf("ExternalSnapshot changed by the upload (-paused +durable):\n%s", diff)
+	}
+	withoutCopy := proto.CloneOf(durable.GetStatus().GetLocalSnapshotInfo())
+	withoutCopy.DurableCopy = nil
+	if diff := cmp.Diff(paused.GetStatus().GetLocalSnapshotInfo(), withoutCopy, protocmp.Transform()); diff != "" {
+		t.Errorf("LocalSnapshotInfo changed by the upload beyond its durable copy (-paused +durable):\n%s", diff)
 	}
 }
 
@@ -4037,7 +4043,7 @@ func TestResumeActor_PausedRestoresDurableCopyOffItsNode(t *testing.T) {
 	if got := restore.GetType(); got != ateletpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL {
 		t.Errorf("restore type = %v, want EXTERNAL (the durable copy)", got)
 	}
-	if got, want := restore.GetExternalConfig().GetSnapshotUri(), durable.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != want {
+	if got, want := restore.GetExternalConfig().GetSnapshotUri(), durable.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri(); got != want {
 		t.Errorf("restore snapshot URI = %q, want the pause's durable copy %q", got, want)
 	}
 	if got := restore.GetScope(); got != ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL {
@@ -4101,7 +4107,7 @@ func TestSuspendActor_PausedWithDurableCopy_CommitsItWithoutTheNode(t *testing.T
 
 	pauseOnNode1(t, tc, "id1")
 	durable := waitForDurablePause(t, tc, "id1")
-	copyURI := durable.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	copyURI := durable.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri()
 	tc.fakeAtelet.Reset()
 
 	suspended, err := tc.client.SuspendActor(context.Background(), &ateapipb.SuspendActorRequest{
@@ -4125,7 +4131,7 @@ func TestSuspendActor_PausedWithDurableCopy_CommitsItWithoutTheNode(t *testing.T
 		t.Errorf("state = %v, want SUSPENDED", actor.GetStatus().GetState())
 	}
 	if got := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != copyURI {
-		t.Errorf("snapshot URI = %q, want the durable copy %q kept", got, copyURI)
+		t.Errorf("snapshot URI = %q, want the durable copy %q committed", got, copyURI)
 	}
 	if actor.GetStatus().GetLocalSnapshotInfo() != nil {
 		t.Errorf("LocalSnapshotInfo = %v, want cleared", actor.GetStatus().GetLocalSnapshotInfo())
@@ -4147,7 +4153,7 @@ func TestDeleteActor_PausedWithDurableCopy_ReleasesBothCopies(t *testing.T) {
 
 	pauseOnNode1(t, tc, "id1")
 	durable := waitForDurablePause(t, tc, "id1")
-	copyURI := durable.GetStatus().GetExternalSnapshot().GetSnapshotUri()
+	copyURI := durable.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri()
 	tc.fakeAtelet.Reset()
 
 	if _, err := tc.client.DeleteActor(context.Background(), &ateapipb.DeleteActorRequest{

@@ -405,10 +405,18 @@ func (w *ActorWorkflow) ensureExternalSnapshotsReleased(ctx context.Context, act
 // wrote anything.
 func actorSnapshotStoragePrefix(actor *ateapipb.Actor) (resources.StoragePrefix, error) {
 	actorOwner := actorSnapshotOwner(actor)
-	if snapshotURI := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(); snapshotURI != "" {
+	// The durable copy of a pause is the actor's own upload even when its
+	// external snapshot is still a tag's.
+	for _, snapshotURI := range []string{
+		actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(),
+		actor.GetStatus().GetLocalSnapshotInfo().GetDurableCopy().GetSnapshotUri(),
+	} {
+		if snapshotURI == "" {
+			continue
+		}
 		uri, err := resources.ParseSnapshotURI(snapshotURI)
 		if err != nil {
-			return resources.StoragePrefix{}, fmt.Errorf("while parsing the external snapshot %q: %w", snapshotURI, err)
+			return resources.StoragePrefix{}, fmt.Errorf("while parsing the snapshot %q: %w", snapshotURI, err)
 		}
 		// A URI the actor does not own is a tag's snapshot, borrowed until the actor's
 		// first suspend completes, which means it has written nothing of its
