@@ -90,9 +90,10 @@ for etcd.
   on the node VM, and the following Resume is prioritized onto the node VM
   where the snapshots are persisted. Shortly after the pause the control plane
   also uploads the snapshot to external storage and records the copy as the
-  Actor's external snapshot, marked with the local snapshot it came from; a
-  Resume then restores the pause on any Worker when the node is full or gone,
-  and Suspend needs nothing from the node.
+  local snapshot's durable copy, leaving the Actor's external snapshot
+  untouched; a Resume then restores the pause on any Worker when the node is
+  full or gone, a Suspend commits the copy as the external snapshot without
+  involving the node, and a Revert still returns to the external snapshot.
 
 - **Resume**: activate a suspended/paused Actor by restoring it onto a Worker. The
   common path restores from a snapshot rather than cold-booting.
