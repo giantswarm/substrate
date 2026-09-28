@@ -89,6 +89,13 @@ atelet:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  # atelet's PriorityClass. PreemptLowerPriority (the default) lets an atelet
+  # pod evict lower-priority pods from a node without room for it: on a fresh
+  # install over full nodes, that is whatever the cluster already runs. Never
+  # keeps the priority, so atelet schedules ahead of every other pending pod
+  # once room appears, but it evicts nothing and stays Pending until then.
+  priorityClass:
+    preemptionPolicy: PreemptLowerPriority
   # atelet's node-local image cache: the eviction pass and what it keeps.
   # null leaves atelet's built-in default: a pass every 5m that evicts,
   # least recently used first, while the cache volume is above 85 % until

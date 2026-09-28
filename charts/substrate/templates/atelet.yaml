@@ -89,12 +89,21 @@ roleRef:
   name: {{ include "substrate.fullname" (list "atelet-endpointslices" .) }}
   apiGroup: rbac.authorization.k8s.io
 ---
+{{- $preemption := .Values.atelet.priorityClass.preemptionPolicy | default "PreemptLowerPriority" }}
+{{- if not (has $preemption (list "PreemptLowerPriority" "Never")) }}
+{{- fail (printf "atelet.priorityClass.preemptionPolicy must be PreemptLowerPriority or Never, not %q" $preemption) }}
+{{- end }}
+{{- /* A PriorityClass's preemptionPolicy is immutable: the non-preempting
+  class has a name of its own, so switching the policy replaces the class
+  instead of failing the upgrade. */}}
+{{- $priorityClass := include "substrate.fullname" (list (ternary "ate-node-critical-non-preempting" "ate-node-critical" (eq $preemption "Never")) .) }}
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
-  name: {{ include "substrate.fullname" (list "ate-node-critical" .) }}
+  name: {{ $priorityClass }}
 value: 1000000000
 globalDefault: false
+preemptionPolicy: {{ $preemption }}
 description: "Node-local ate components that every actor activation depends on."
 ---
 apiVersion: apps/v1
@@ -118,7 +127,7 @@ spec:
         prometheus.io/port: "9090"
     spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atelet" .) }}
-      priorityClassName: {{ include "substrate.fullname" (list "ate-node-critical" .) }}
+      priorityClassName: {{ $priorityClass }}
       # Run on nodes reserved for any WorkerPool sandbox class, and on the
       # nodes atelet.tolerations admits.
       tolerations:
