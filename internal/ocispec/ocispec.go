@@ -33,8 +33,8 @@ const specFile = "config.json"
 // hostname is the UTS hostname for actor containers.
 const hostname = "actor"
 
-// Options describes one actor container. Args, Env and Capabilities arrive
-// already resolved.
+// Options describes one actor container. Args, Env, Capabilities and User
+// arrive already resolved.
 type Options struct {
 	ActorUID      string
 	ContainerName string
@@ -47,6 +47,10 @@ type Options struct {
 	Capabilities []string
 	// Resources are the container's own declared limits, or nil for none.
 	Resources *ateletpb.ResourceLimits
+
+	// User is the process identity atelet resolved from the image's USER.
+	// The zero value is root.
+	User specs.User
 }
 
 const (
@@ -83,10 +87,7 @@ func ociResources(r *ateletpb.ResourceLimits) *specs.LinuxResources {
 func Build(o Options) *specs.Spec {
 	spec := &specs.Spec{
 		Process: &specs.Process{
-			User: specs.User{
-				UID: 0,
-				GID: 0,
-			},
+			User: o.User,
 			Args: o.Args,
 			Env:  o.Env,
 			Cwd:  "/",
