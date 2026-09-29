@@ -189,7 +189,7 @@ func TestPrepareOCIDirectory_RegistryRejectionIsTerminal(t *testing.T) {
 	host := imageVolumeTestRegistry(t)
 	ref := host + "/agent:does-not-exist"
 
-	err := prepareOCIDirectory(t.Context(), newImageVolumeStore(t), "actor-uid", "app", ref, nil, nil, nil, "", nil, nil, nil, nil)
+	err := prepareOCIDirectory(t.Context(), newImageVolumeStore(t), ateompath.OCIBundlePath("actor-uid", "app"), "actor-uid", "app", ref, nil, nil, nil, "", nil, nil, nil, nil)
 	if !errors.Is(err, ateerrors.ReasonFailedGetExternalObject) {
 		t.Fatalf("prepareOCIDirectory(%q) = %v, want it tagged ReasonFailedGetExternalObject", ref, err)
 	}
