@@ -115,6 +115,17 @@ data:
         - backends:
           - dynamic:
               target: source.connectHeaders["host"]
+{{- with .Values.atenetEgress.upstreamTrust.caBundle }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "substrate.fullname" (list "atenet-egress-upstream-trust" $) }}
+  namespace: {{ $.Release.Namespace }}
+data:
+  ca.crt: |
+    {{- . | nindent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -133,6 +144,10 @@ spec:
       labels:
         app: atenet-egress
         {{- with include "substrate.podLabels" $ }}{{- . | nindent 8 }}{{- end }}
+      {{- with .Values.atenetEgress.upstreamTrust.caBundle }}
+      annotations:
+        checksum/upstream-trust: {{ . | sha256sum }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atenet-egress" .) }}
       securityContext:
@@ -150,6 +165,14 @@ spec:
         env:
         - name: RUST_LOG
           value: debug
+        {{- if .Values.atenetEgress.upstreamTrust.caBundle }}
+        # Both set: the upstream roots are the image's public bundle plus
+        # upstreamTrust (rustls-native-certs reads the two and nothing else).
+        - name: SSL_CERT_FILE
+          value: /etc/ssl/certs/ca-certificates.crt
+        - name: SSL_CERT_DIR
+          value: /run/egress-upstream-trust
+        {{- end }}
         ports:
         - name: https
           containerPort: 8443
@@ -184,6 +207,11 @@ spec:
         - name: actor-id-ca-certs
           mountPath: /run/actor-id-ca-certs
           readOnly: true
+        {{- if .Values.atenetEgress.upstreamTrust.caBundle }}
+        - name: upstream-trust
+          mountPath: /run/egress-upstream-trust
+          readOnly: true
+        {{- end }}
       - name: ext-proc
         image: {{ include "substrate.componentImage" (list "atenet" .) }}
         args:
@@ -233,6 +261,11 @@ spec:
         - name: drain-signal
           mountPath: /var/run/atenet
       volumes:
+      {{- if .Values.atenetEgress.upstreamTrust.caBundle }}
+      - name: upstream-trust
+        configMap:
+          name: {{ include "substrate.fullname" (list "atenet-egress-upstream-trust" .) }}
+      {{- end }}
       - name: egress-mitm
         secret:
           secretName: egress-mitm-ca-pool

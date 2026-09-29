@@ -138,6 +138,16 @@ atenetRouter:
     retryInterval: 100ms
     retryFactor: 1.1
 
+atenetEgress:
+  # Extra CAs the egress gateway trusts on the actors' upstream HTTPS, next to
+  # the public roots of its image: a PEM bundle for model or tool endpoints
+  # behind a private CA (an in-cluster Gateway, a corporate proxy). Empty
+  # trusts the public roots only. The egress gateway terminates the actors' TLS
+  # and dials the upstream itself, so a CA the runtime trusts counts for
+  # nothing here. A change rolls the gateway: the roots are read at start.
+  upstreamTrust:
+    caBundle: ""
+
 # ate-api-server deployment overrides. Its snapshot-store client reaches the
 # same object store as atelet's: the ServiceAccount annotations carry the pod
 # identity the store trusts (see atelet.serviceAccount.annotations), extraEnv
