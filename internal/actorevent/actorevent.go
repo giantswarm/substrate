@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/global"
 
@@ -101,34 +102,34 @@ func BuildRecord(ev Event, t time.Time, attrs []slog.Attr) log.Record {
 	rec.SetEventName(ev.Name)
 	rec.SetTimestamp(t)
 	rec.SetSeverity(ev.Severity)
-	rec.SetBody(log.StringValue(ev.Body))
+	rec.SetBody(attribute.StringValue(ev.Body))
 
-	kvs := make([]log.KeyValue, 0, len(attrs))
+	kvs := make([]attribute.KeyValue, 0, len(attrs))
 	for _, a := range attrs {
-		kvs = append(kvs, log.KeyValue{Key: a.Key, Value: logValue(a.Value)})
+		kvs = append(kvs, attribute.KeyValue{Key: attribute.Key(a.Key), Value: logValue(a.Value)})
 	}
 	rec.AddAttributes(kvs...)
 	return rec
 }
 
 // logValue keeps the kind slog's JSON handler writes, so the two copies match.
-func logValue(v slog.Value) log.Value {
+func logValue(v slog.Value) attribute.Value {
 	switch v.Kind() {
 	case slog.KindString:
-		return log.StringValue(v.String())
+		return attribute.StringValue(v.String())
 	case slog.KindInt64:
-		return log.Int64Value(v.Int64())
+		return attribute.Int64Value(v.Int64())
 	case slog.KindUint64:
-		return log.Int64Value(int64(v.Uint64()))
+		return attribute.Int64Value(int64(v.Uint64()))
 	case slog.KindFloat64:
-		return log.Float64Value(v.Float64())
+		return attribute.Float64Value(v.Float64())
 	case slog.KindBool:
-		return log.BoolValue(v.Bool())
+		return attribute.BoolValue(v.Bool())
 	case slog.KindDuration:
 		// nanoseconds, not "1.5s"
-		return log.Int64Value(int64(v.Duration()))
+		return attribute.Int64Value(int64(v.Duration()))
 	default:
-		return log.StringValue(v.String())
+		return attribute.StringValue(v.String())
 	}
 }
 
