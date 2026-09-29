@@ -17,6 +17,7 @@
 package ocispec
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -51,6 +52,9 @@ type Options struct {
 	// User is the process identity atelet resolved from the image's USER.
 	// The zero value is root.
 	User specs.User
+	// Cwd is the working directory atelet resolved from the image's WORKDIR.
+	// Empty means "/".
+	Cwd string
 }
 
 const (
@@ -90,7 +94,7 @@ func Build(o Options) *specs.Spec {
 			User: o.User,
 			Args: o.Args,
 			Env:  o.Env,
-			Cwd:  "/",
+			Cwd:  cmp.Or(o.Cwd, "/"),
 			Capabilities: &specs.LinuxCapabilities{
 				Bounding:  o.Capabilities,
 				Effective: o.Capabilities,
