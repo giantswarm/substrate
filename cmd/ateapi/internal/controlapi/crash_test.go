@@ -31,7 +31,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/ateerrors"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
-	otellog "go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -639,8 +639,8 @@ func (otlpSinkExporter) Export(_ context.Context, records []sdklog.Record) error
 	defer otlpSinkMu.Unlock()
 	for _, r := range records {
 		e := otlpEvent{name: r.EventName(), attrs: map[string]string{}}
-		r.WalkAttributes(func(kv otellog.KeyValue) bool {
-			e.attrs[kv.Key] = kv.Value.String()
+		r.WalkAttributes(func(kv attribute.KeyValue) bool {
+			e.attrs[string(kv.Key)] = kv.Value.String()
 			return true
 		})
 		otlpSink = append(otlpSink, e)
