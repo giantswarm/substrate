@@ -303,6 +303,13 @@ func TestWorkerPoolSchedulingTemplateRoundTrip(t *testing.T) {
 				}},
 			},
 		},
+		PodAffinity: &corev1.PodAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "atelet"}},
+				Namespaces:    []string{"ate-system"},
+				TopologyKey:   "kubernetes.io/hostname",
+			}},
+		},
 		PodAntiAffinity: &corev1.PodAntiAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
 				LabelSelector: poolSelector,

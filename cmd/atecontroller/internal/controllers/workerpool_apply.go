@@ -538,12 +538,16 @@ func applyWorkerPoolPodTemplate(
 	podSpecAC.TopologySpreadConstraints = topologySpreadConstraintApplyValues(topologySpreadConstraintsToApply(tmpl.TopologySpreadConstraints))
 	podSpecAC.WithPriorityClassName(tmpl.PriorityClassName)
 
-	// The affinity is declared whole: node affinity and pod anti-affinity side
-	// by side, so the controller owns both fields under server-side apply and
-	// a template that drops one of them clears it on the pod.
+	// The affinity is declared whole: node affinity, pod affinity and pod
+	// anti-affinity side by side, so the controller owns all three fields
+	// under server-side apply and a template that drops one of them clears it
+	// on the pod.
 	affinityAC := corev1ac.Affinity()
 	if tmpl.NodeAffinity != nil {
 		affinityAC.WithNodeAffinity(nodeAffinityToApply(tmpl.NodeAffinity))
+	}
+	if tmpl.PodAffinity != nil {
+		affinityAC.WithPodAffinity(podAffinityToApply(tmpl.PodAffinity))
 	}
 	if tmpl.PodAntiAffinity != nil {
 		affinityAC.WithPodAntiAffinity(podAntiAffinityToApply(tmpl.PodAntiAffinity))
@@ -634,6 +638,20 @@ func nodeSelectorRequirementToApply(req *corev1.NodeSelectorRequirement) *corev1
 	ac := corev1ac.NodeSelectorRequirement().WithKey(req.Key).WithOperator(req.Operator)
 	if len(req.Values) > 0 {
 		ac.WithValues(req.Values...)
+	}
+	return ac
+}
+
+func podAffinityToApply(pa *corev1.PodAffinity) *corev1ac.PodAffinityApplyConfiguration {
+	ac := corev1ac.PodAffinity()
+	for i := range pa.RequiredDuringSchedulingIgnoredDuringExecution {
+		ac.WithRequiredDuringSchedulingIgnoredDuringExecution(podAffinityTermToApply(&pa.RequiredDuringSchedulingIgnoredDuringExecution[i]))
+	}
+	for i := range pa.PreferredDuringSchedulingIgnoredDuringExecution {
+		term := &pa.PreferredDuringSchedulingIgnoredDuringExecution[i]
+		ac.WithPreferredDuringSchedulingIgnoredDuringExecution(corev1ac.WeightedPodAffinityTerm().
+			WithWeight(term.Weight).
+			WithPodAffinityTerm(podAffinityTermToApply(&term.PodAffinityTerm)))
 	}
 	return ac
 }
