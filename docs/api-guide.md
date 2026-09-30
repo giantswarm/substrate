@@ -25,6 +25,7 @@ The `WorkerPool` defines the pool of physical "warm" compute capacity. It manage
 | `tolerations` | `[]Toleration` | `spec.tolerations` (max 16) |
 | `priorityClassName` | `string` | `spec.priorityClassName` |
 | `nodeAffinity` | `NodeAffinity` | `spec.affinity.nodeAffinity` |
+| `podAffinity` | `PodAffinity` | `spec.affinity.podAffinity` |
 | `podAntiAffinity` | `PodAntiAffinity` | `spec.affinity.podAntiAffinity` |
 | `topologySpreadConstraints` | `[]TopologySpreadConstraint` | `spec.topologySpreadConstraints` (max 8) |
 | `resources` | `ResourceRequirements` | `spec.containers[].resources` |
@@ -100,6 +101,36 @@ spec:
 No spread is applied by default; a pool without these fields is placed as
 before. As with every other `spec.template` change, adding or changing them
 rolls the pool's Deployment once.
+
+#### Keep workers on nodes whose atelet runs (`template.podAffinity`)
+
+A worker runs sandboxes only through the atelet on its node, and atelet is a
+DaemonSet: while it rolls, a node has no atelet pod for a moment, and the CPU
+the old pod freed is up for grabs. On a node without spare capacity, a worker
+pod scheduled in that moment takes atelet's place: the new atelet pod stays
+Pending (a non-preempting PriorityClass evicts nothing), the DaemonSet rollout
+stops at that node, and the worker there cannot run a sandbox either. The same
+race exists on a fresh node, where the worker and the atelet pod arrive
+together.
+
+`podAffinity` is forwarded to the worker pods as written. A required term
+selecting the atelet pods on the same node keeps a worker off any node where
+no atelet pod is bound:
+
+```yaml
+spec:
+  template:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - topologyKey: kubernetes.io/hostname
+        namespaces: [ate-system]
+        labelSelector:
+          matchLabels:
+            app: atelet
+```
+
+No affinity is applied by default. The term is only evaluated at scheduling
+time: a running worker is not evicted when its node's atelet goes away.
 
 #### Worker Capacity (`spec.template.resources`)
 
