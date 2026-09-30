@@ -72,6 +72,15 @@ type WorkerPoolPodTemplate struct {
 	// +optional
 	NodeAffinity *corev1.NodeAffinity `json:"nodeAffinity,omitempty"`
 
+	// PodAffinity scheduling rules for the worker pods. Mapped to
+	// spec.affinity.podAffinity on the pod. A worker runs sandboxes only
+	// through the atelet on its node: a required term selecting the atelet
+	// pods with topologyKey kubernetes.io/hostname keeps a worker off a node
+	// whose atelet is missing, for example while the atelet DaemonSet rolls.
+	//
+	// +optional
+	PodAffinity *corev1.PodAffinity `json:"podAffinity,omitempty"`
+
 	// PodAntiAffinity scheduling rules for the worker pods. Mapped to
 	// spec.affinity.podAntiAffinity on the pod. A term that keeps this pool's
 	// workers apart selects them by the label the controller puts on every

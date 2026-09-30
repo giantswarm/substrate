@@ -317,6 +317,11 @@ func (in *WorkerPoolPodTemplate) DeepCopyInto(out *WorkerPoolPodTemplate) {
 		*out = new(v1.NodeAffinity)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.PodAffinity != nil {
+		in, out := &in.PodAffinity, &out.PodAffinity
+		*out = new(v1.PodAffinity)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.PodAntiAffinity != nil {
 		in, out := &in.PodAntiAffinity, &out.PodAntiAffinity
 		*out = new(v1.PodAntiAffinity)
