@@ -16,6 +16,7 @@ package controlapi
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -274,6 +275,35 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		}
 		if got := objects.Prefix(t, mustParsePrefix(t, previous)); len(got) == 0 {
 			t.Error("the previous snapshot was released although the upload was discarded")
+		}
+	})
+
+	t.Run("discards a stale upload without holding the actor's lease", func(t *testing.T) {
+		ctx := context.Background()
+		w, persistence, objects, actor, uploaded := seed(t)
+		mustUpdateActorStatus(t, ctx, persistence, actor, func(st *ateapipb.ActorStatus) {
+			st.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
+		})
+		slow := &blockingDeletes{Fake: objects, deleting: make(chan struct{}), unblock: make(chan struct{})}
+		w.objectStore = slow
+
+		recorded := make(chan error, 1)
+		go func() { recorded <- w.recordDurablePauseCopy(ctx, actorRef, uploaded) }()
+		<-slow.deleting
+
+		// The client's next operation on the actor: it must not wait for the
+		// object store, and must not turn into Aborted because of it.
+		_, lease, err := w.acquireActorLease(ctx, actorRef)
+		close(slow.unblock)
+		if err != nil {
+			t.Fatalf("acquireActorLease while the stale upload is deleted = %v, want the lease", err)
+		}
+		lease.Close()
+		if err := <-recorded; err != nil {
+			t.Fatalf("recordDurablePauseCopy: %v", err)
+		}
+		if got := objects.Prefix(t, mustParsePrefix(t, uploaded.GetSnapshotUri())); len(got) != 0 {
+			t.Errorf("stale upload still holds %v, want discarded", got)
 		}
 	})
 
@@ -626,4 +656,24 @@ func mustParsePrefix(t *testing.T, uri string) resources.StoragePrefix {
 		t.Fatalf("ParseSnapshotURI(%q): %v", uri, err)
 	}
 	return parsed.Prefix()
+}
+
+// blockingDeletes is an object store whose deletes wait for unblock, the way
+// deleting a large snapshot's objects takes as long as the object store does.
+// deleting is closed when the first delete starts.
+type blockingDeletes struct {
+	*objectstoretest.Fake
+	deleting chan struct{}
+	unblock  chan struct{}
+	once     sync.Once
+}
+
+func (b *blockingDeletes) Delete(ctx context.Context, bucket, object string) error {
+	b.once.Do(func() { close(b.deleting) })
+	select {
+	case <-b.unblock:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return b.Fake.Delete(ctx, bucket, object)
 }
