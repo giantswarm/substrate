@@ -442,3 +442,49 @@ func TestSetLogLevel(t *testing.T) {
 		t.Errorf("SetLogLevel(\"\") changed the level to %v", got)
 	}
 }
+
+func TestTracesExportDisabled(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "otlp": false, "none": true, " None ": true, "console": false} {
+		t.Setenv(tracesExporterEnv, value)
+		if got := TracesExportDisabled(); got != want {
+			t.Errorf("%s=%q: TracesExportDisabled() = %t, want %t", tracesExporterEnv, value, got, want)
+		}
+	}
+}
+
+// exportOneSpan starts and ends a sampled span, then flushes and shuts the
+// provider down, so a span exporter, if there is one, has dialed.
+func exportOneSpan(t *testing.T, serviceName string) {
+	t.Helper()
+	ctx := context.Background()
+	tp, err := InitTracing(ctx, TracingOptions{ServiceName: serviceName, Sampling: ParentRatioSampling(1)})
+	if err != nil {
+		t.Fatalf("InitTracing: %v", err)
+	}
+	_, span := tp.Tracer("test").Start(ctx, "test")
+	span.End()
+	flushCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_ = tp.ForceFlush(flushCtx)
+	_ = tp.Shutdown(flushCtx)
+}
+
+func TestInitTracingExportsOverOTLPByDefault(t *testing.T) {
+	accepted := otlpTarget(t)
+	t.Setenv(tracesExporterEnv, "")
+	exportOneSpan(t, "test-traces-default")
+	if accepted.Load() == 0 {
+		t.Error("the span exporter never dialed OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+}
+
+// With OTEL_TRACES_EXPORTER=none nothing is exported, so a component on a
+// cluster without a collector logs no export error.
+func TestInitTracingExporterNoneExportsNothing(t *testing.T) {
+	accepted := otlpTarget(t)
+	t.Setenv(tracesExporterEnv, "none")
+	exportOneSpan(t, "test-traces-none")
+	if n := accepted.Load(); n != 0 {
+		t.Errorf("OTEL_TRACES_EXPORTER=none still dialed the OTLP endpoint %d time(s)", n)
+	}
+}

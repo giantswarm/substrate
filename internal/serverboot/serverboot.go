@@ -178,25 +178,30 @@ func InitTracing(ctx context.Context, opts TracingOptions) (*sdktrace.TracerProv
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(opts.Sampling.Sampler()),
 	}
-	expOpts := []otlptracegrpc.Option{
-		// GKE managed traces doesn't support validating the TLS certs of the collector.
-		otlptracegrpc.WithInsecure(),
+	// With OTEL_TRACES_EXPORTER=none the provider keeps sampling and
+	// propagating trace context but exports nothing, so a cluster without a
+	// collector gets no export to localhost:4317.
+	if !TracesExportDisabled() {
+		expOpts := []otlptracegrpc.Option{
+			// GKE managed traces doesn't support validating the TLS certs of the collector.
+			otlptracegrpc.WithInsecure(),
+		}
+		if opts.ExporterConn != nil {
+			// WithGRPCConn takes precedence over endpoint/credential options, so
+			// WithInsecure above is inert on this path.
+			expOpts = append(expOpts, otlptracegrpc.WithGRPCConn(opts.ExporterConn))
+		}
+		exporter, err := otlptracegrpc.New(ctx, expOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP exporter: %w", err)
+		}
+		tpOpts = append(tpOpts, sdktrace.WithBatcher(exporter))
 	}
-	if opts.ExporterConn != nil {
-		// WithGRPCConn takes precedence over endpoint/credential options, so
-		// WithInsecure above is inert on this path.
-		expOpts = append(expOpts, otlptracegrpc.WithGRPCConn(opts.ExporterConn))
-	}
-	exporter, err := otlptracegrpc.New(ctx, expOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP exporter: %w", err)
-	}
-	tpOpts = append(tpOpts, sdktrace.WithBatcher(exporter))
 
 	tp := sdktrace.NewTracerProvider(tpOpts...)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
-	slog.InfoContext(ctx, "Tracing initialized", slog.String("sampler", opts.Sampling.Sampler().Description()))
+	slog.InfoContext(ctx, "Tracing initialized", slog.String("sampler", opts.Sampling.Sampler().Description()), slog.Bool("export", !TracesExportDisabled()))
 	return tp, nil
 }
 
@@ -206,9 +211,22 @@ func InitTracing(ctx context.Context, opts TracingOptions) (*sdktrace.TracerProv
 // value, or none at all, keeps the OTLP export.
 const metricsExporterEnv = "OTEL_METRICS_EXPORTER"
 
+// tracesExporterEnv follows the same spec: only "none" is acted on, and it
+// drops the OTLP span exporter.
+const tracesExporterEnv = "OTEL_TRACES_EXPORTER"
+
 // MetricsExportDisabled reports whether OTEL_METRICS_EXPORTER is "none".
 func MetricsExportDisabled() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv(metricsExporterEnv)), "none")
+	return exporterDisabled(metricsExporterEnv)
+}
+
+// TracesExportDisabled reports whether OTEL_TRACES_EXPORTER is "none".
+func TracesExportDisabled() bool {
+	return exporterDisabled(tracesExporterEnv)
+}
+
+func exporterDisabled(env string) bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(env)), "none")
 }
 
 // InitMetrics registers a global MeterProvider with both a Prometheus
