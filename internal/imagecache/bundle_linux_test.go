@@ -250,6 +250,63 @@ func TestSetupBundleRootfs_RootIsSearchableByNonRoot(t *testing.T) {
 	})
 }
 
+// A restore composes a bundle whose rootfs and upper already exist; MkdirAll
+// leaves their mode alone, so the root must still come out searchable.
+func TestSetupBundleRootfs_ExistingRootDirsBecomeSearchable(t *testing.T) {
+	precreate := func(t *testing.T, bundle string) {
+		t.Helper()
+		for _, d := range []string{"rootfs", "upper", "work"} {
+			p := filepath.Join(bundle, d)
+			if err := os.Mkdir(p, 0o700); err != nil {
+				t.Fatalf("mkdir %s: %v", d, err)
+			}
+			if err := os.Chmod(p, 0o700); err != nil {
+				t.Fatalf("chmod %s: %v", d, err)
+			}
+		}
+	}
+	assertMode := func(t *testing.T, path string) {
+		t.Helper()
+		fi, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat %s: %v", path, err)
+		}
+		if perm := fi.Mode().Perm(); perm != 0o755 {
+			t.Errorf("%s mode = %04o, want 0755", path, perm)
+		}
+	}
+
+	t.Run("zero layers", func(t *testing.T) {
+		bundle := t.TempDir()
+		precreate(t, bundle)
+		if err := WriteSpec(bundle, &OverlaySpec{Layers: nil}); err != nil {
+			t.Fatalf("WriteSpec: %v", err)
+		}
+		if err := SetupBundleRootfs(bundle); err != nil {
+			t.Fatalf("SetupBundleRootfs: %v", err)
+		}
+		assertMode(t, filepath.Join(bundle, "rootfs"))
+		assertMode(t, filepath.Join(bundle, "upper"))
+	})
+
+	t.Run("overlay", func(t *testing.T) {
+		roottest.Require(t, "mount/unmount")
+		layer := t.TempDir()
+		writeLayer(t, layer, map[string]string{"bin/app": "x"}, nil)
+
+		bundle := t.TempDir()
+		precreate(t, bundle)
+		if err := WriteSpec(bundle, &OverlaySpec{Layers: []string{layer}}); err != nil {
+			t.Fatalf("WriteSpec: %v", err)
+		}
+		if err := SetupBundleRootfs(bundle); err != nil {
+			t.Fatalf("SetupBundleRootfs: %v", err)
+		}
+		t.Cleanup(func() { _ = UnmountAllUnder(bundle) })
+		assertMode(t, filepath.Join(bundle, "rootfs"))
+	})
+}
+
 // Full overlay mount + UnmountAllUnder round trip; needs CAP_SYS_ADMIN.
 func TestSetupBundleRootfs_MountAndUnmount(t *testing.T) {
 	roottest.Require(t, "mount/unmount")
