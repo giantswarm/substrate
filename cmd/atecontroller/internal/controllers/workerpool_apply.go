@@ -40,10 +40,11 @@ const ateomOTelResourceAttributes = "k8s.namespace.name=$(POD_NAMESPACE),k8s.pod
 const workerTerminationGracePeriodSeconds int64 = 3600
 
 // ateomOTelSettings is the telemetry configuration propagated to ateom worker
-// pods. A zero value leaves the pods without telemetry env.
+// pods. A zero value turns the pods' telemetry off.
 type ateomOTelSettings struct {
 	// Endpoint is the OTLP collector address. Empty disables ateom telemetry
-	// entirely, so the other fields are ignored.
+	// entirely (OTEL_TRACES_EXPORTER and OTEL_METRICS_EXPORTER none), so the
+	// other fields are ignored.
 	Endpoint string
 	// MetricExportInterval overrides the SDK's 60s PeriodicReader interval. It is
 	// the raw OTEL_METRIC_EXPORT_INTERVAL value, i.e. whole milliseconds; the SDK
@@ -214,13 +215,17 @@ func buildDeploymentApplyConfig(wp *atev1alpha1.WorkerPool, otel ateomOTelSettin
 
 // ateomContainerEnv adds the OTLP endpoint and resource identity only when
 // telemetry is configured. Every ref precedes OTEL_RESOURCE_ATTRIBUTES so its
-// $(...) substitutions resolve.
+// $(...) substitutions resolve. Without an endpoint it turns ateom's trace and
+// metric exporters off: unset, the SDK would export to localhost:4317.
 func ateomContainerEnv(otel ateomOTelSettings) []*corev1ac.EnvVarApplyConfiguration {
 	envs := []*corev1ac.EnvVarApplyConfiguration{
 		fieldRefEnv("POD_UID", "metadata.uid"),
 	}
 	if otel.Endpoint == "" {
-		return envs
+		return append(envs,
+			corev1ac.EnvVar().WithName("OTEL_TRACES_EXPORTER").WithValue("none"),
+			corev1ac.EnvVar().WithName("OTEL_METRICS_EXPORTER").WithValue("none"),
+		)
 	}
 	envs = append(envs,
 		fieldRefEnv("POD_NAME", "metadata.name"),
