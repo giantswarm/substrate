@@ -132,6 +132,13 @@ credentialProvider:
   namespacePolicies: []
   # - atespace: team-a
   #   allowedNamespaces: [team-a-secrets]
+  # Further providers the egress gateway resolves ate-secret:// URIs through,
+  # by URI authority, beside the bundled k8s.io one. The gateway dials
+  # each with its pod identity and verifies a servicedns.podcert.ate.dev serving
+  # certificate, which the provider's pod requests through a Service.
+  additionalProviders: []
+  # - uriAuthority: kagent.dev
+  #   host: kagent-credentials.kagent.svc:50051
 
 atenetRouter:
   # Request parking on the actor routes (agentgateway's substrateIngress
