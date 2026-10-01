@@ -268,3 +268,36 @@ caps them all; unset, kubelet's default applies and nothing is rendered.
 maxExpirationSeconds: {{ int . }}
 {{- end }}
 {{- end }}
+
+{{/*
+The egress gateway's credential providers: the bundled k8s.io one and
+credentialProvider.additionalProviders, each dialed with the gateway's pod
+identity and verified against the servicedns.podcert.ate.dev trust bundle.
+*/}}
+{{- define "substrate.egressCredentialProviders" -}}
+{{- $providers := list (dict "uriAuthority" "k8s.io" "host" (printf "%s.%s.svc:50051" (include "substrate.fullname" (list "k8s-credential-provider" .)) .Release.Namespace)) -}}
+{{- range .Values.credentialProvider.additionalProviders -}}
+{{- if or (not .uriAuthority) (not .host) -}}
+{{- fail "credentialProvider.additionalProviders entries need uriAuthority and host" -}}
+{{- end -}}
+{{- if eq .uriAuthority "k8s.io" -}}
+{{- fail "credentialProvider.additionalProviders cannot replace the bundled k8s.io provider" -}}
+{{- end -}}
+{{- $providers = append $providers (dict "uriAuthority" .uriAuthority "host" .host) -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $providers }}
+{{- if hasKey $seen .uriAuthority -}}
+{{- fail (printf "credentialProvider.additionalProviders names %s twice" .uriAuthority) -}}
+{{- end -}}
+{{- $_ := set $seen .uriAuthority true }}
+- uriAuthority: {{ .uriAuthority }}
+  target:
+    host: {{ .host }}
+    policies:
+      backendTLS:
+        cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+        key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
+        root: /run/servicedns.podcert.ate.dev/trust-bundle.pem
+{{- end }}
+{{- end -}}
