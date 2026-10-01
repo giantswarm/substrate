@@ -3954,7 +3954,7 @@ func pauseOnNode1(t *testing.T, tc *testContext, name string) *ateapipb.Actor {
 // TestPauseActor_MakesPauseDurable verifies a pause is followed by a
 // background upload of its node-local snapshot: the atelet on the node is
 // asked to upload the checkpoint and keep the local copy, and the actor —
-// still PAUSED on its node — records the copy as its external snapshot,
+// still PAUSED on its node — records the copy as its local snapshot's durable copy,
 // marked with the local snapshot it came from.
 func TestPauseActor_MakesPauseDurable(t *testing.T) {
 	ns := namespaceForTest("ns-pause-durable")
@@ -3994,9 +3994,13 @@ func TestPauseActor_MakesPauseDurable(t *testing.T) {
 	if diff := cmp.Diff(paused.GetStatus().GetExternalSnapshot(), durable.GetStatus().GetExternalSnapshot(), protocmp.Transform()); diff != "" {
 		t.Errorf("ExternalSnapshot changed by the upload (-paused +durable):\n%s", diff)
 	}
+	// The upload runs in the background and may have recorded the copy before
+	// pauseOnNode1 read the actor back: compare both records without it.
+	pausedWithoutCopy := proto.CloneOf(paused.GetStatus().GetLocalSnapshotInfo())
+	pausedWithoutCopy.DurableCopy = nil
 	withoutCopy := proto.CloneOf(durable.GetStatus().GetLocalSnapshotInfo())
 	withoutCopy.DurableCopy = nil
-	if diff := cmp.Diff(paused.GetStatus().GetLocalSnapshotInfo(), withoutCopy, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(pausedWithoutCopy, withoutCopy, protocmp.Transform()); diff != "" {
 		t.Errorf("LocalSnapshotInfo changed by the upload beyond its durable copy (-paused +durable):\n%s", diff)
 	}
 }

@@ -132,6 +132,31 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 				WithLabelSelector(poolSelectorAC).
 				WithNamespaces("default").
 				WithMismatchLabelKeys("pod-template-hash")))
+	ateletSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"app": "atelet"}}
+	podAffinity := &corev1.PodAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+			LabelSelector: ateletSelector,
+			Namespaces:    []string{"ate-system"},
+			TopologyKey:   "kubernetes.io/hostname",
+		}},
+		PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+			Weight: 10,
+			PodAffinityTerm: corev1.PodAffinityTerm{
+				LabelSelector: poolSelector,
+				TopologyKey:   "topology.kubernetes.io/zone",
+			},
+		}},
+	}
+	podAffinityAC := corev1ac.PodAffinity().
+		WithRequiredDuringSchedulingIgnoredDuringExecution(corev1ac.PodAffinityTerm().
+			WithTopologyKey("kubernetes.io/hostname").
+			WithLabelSelector(metav1ac.LabelSelector().WithMatchLabels(map[string]string{"app": "atelet"})).
+			WithNamespaces("ate-system")).
+		WithPreferredDuringSchedulingIgnoredDuringExecution(corev1ac.WeightedPodAffinityTerm().
+			WithWeight(10).
+			WithPodAffinityTerm(corev1ac.PodAffinityTerm().
+				WithTopologyKey("topology.kubernetes.io/zone").
+				WithLabelSelector(poolSelectorAC)))
 
 	tests := []struct {
 		name string
@@ -216,6 +241,29 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 			}),
 		},
 		{
+			name: "with pod affinity",
+			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
+				PodAffinity: podAffinity,
+			}),
+			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
+				podSpecAC.WithAffinity(corev1ac.Affinity().WithPodAffinity(podAffinityAC))
+			}),
+		},
+		{
+			// The pod affinity and anti-affinity are declared side by side:
+			// neither replaces the other.
+			name: "with pod affinity and pod anti-affinity",
+			wp: testWorkerPoolApplyConfig(&atev1alpha1.WorkerPoolPodTemplate{
+				PodAffinity:     podAffinity,
+				PodAntiAffinity: podAntiAffinity,
+			}),
+			want: expectedDeploymentApplyConfig(func(podSpecAC *corev1ac.PodSpecApplyConfiguration) {
+				podSpecAC.WithAffinity(corev1ac.Affinity().
+					WithPodAffinity(podAffinityAC).
+					WithPodAntiAffinity(podAntiAffinityAC))
+			}),
+		},
+		{
 			// Both halves of the affinity are declared side by side: neither
 			// replaces the other.
 			name: "with node affinity and pod anti-affinity",
@@ -283,6 +331,7 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 				Tolerations:               []corev1.Toleration{toleration},
 				PriorityClassName:         "interactive-workerpool",
 				NodeAffinity:              preferredNodeAffinity,
+				PodAffinity:               podAffinity,
 				PodAntiAffinity:           podAntiAffinity,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{hostnameSpread},
 			}),
@@ -311,6 +360,7 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 									WithValues("ssd"),
 							)),
 					)).
+					WithPodAffinity(podAffinityAC).
 					WithPodAntiAffinity(podAntiAffinityAC))
 				podSpecAC.TopologySpreadConstraints = []corev1ac.TopologySpreadConstraintApplyConfiguration{*hostnameSpreadAC}
 			}),
