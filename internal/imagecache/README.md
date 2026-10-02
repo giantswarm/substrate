@@ -61,8 +61,9 @@ anywhere.
   version                            layout version marker ("1")
   layers/sha256/<diffid-hex>/
       fs/                            the unpacked layer tree (an overlay lowerdir)
-      whiteouts.json                 whiteout state recorded at unpack time
+      whiteouts.json                 whiteout state and non-root owners recorded at unpack time
       finalized                      marker written by FinalizeLayer (consumer side)
+      owners-applied                 marker written by FinalizeLayer once the owners are applied
       size                           byte count recorded at unpack (lazily
                                      backfilled for older layers), so sizing
                                      the pool never walks trees
@@ -102,7 +103,12 @@ layer diffIDs in order — layers shared by N images exist once.
    layer tar omits (they may exist only in lower layers). Whiteout entries
    (`.wh.*`) are **not** written into the tree — overlayfs whiteouts are
    char devices atelet cannot create — they are recorded in
-   `whiteouts.json` for the consumer to materialize.
+   `whiteouts.json` for the consumer to materialize. So are the entries the
+   tar gives a non-root owner (`owners`, with the setuid/setgid mode a chown
+   clears): atelet holds no `CAP_CHOWN`, so everything it writes is root's.
+   A layer pooled before owners were recorded (metadata `version` 1) is
+   backfilled from its tar headers when a pull reuses it; its tree is not
+   touched.
 5. **Record**: the image config + diffID list is written under the
    requested digest (and the per-platform child digest for multi-arch refs).
 
@@ -119,10 +125,15 @@ staging the virtio-fs lower (micro-VM):
 
 1. **`FinalizeLayer`** for each referenced layer — materializes the recorded
    whiteouts as 0:0 char devices (`mknod`) and opaque dirs as
-   `trusted.overlay.opaque=y` xattrs. Once per layer node-wide; idempotent
-   and safe under concurrent ateom pods (`EEXIST` tolerated, marker written
-   last). Paths from `whiteouts.json` are re-validated, so a crafted file
-   cannot escape the layer tree.
+   `trusted.overlay.opaque=y` xattrs, and gives the recorded entries their
+   non-root owners in the layer tree (`lchown`, then the setuid/setgid mode
+   back), so the merged rootfs presents them with no copy-up. Once per layer
+   node-wide, each half under its own marker (`finalized`,
+   `owners-applied`), so a layer finalized before owners were recorded gets
+   them once its metadata is backfilled; idempotent and safe under
+   concurrent ateom pods (`EEXIST` tolerated, markers written last). Paths
+   from `whiteouts.json` are re-validated, so a crafted file cannot escape
+   the layer tree.
 2. **Mount** an overlay at `<bundle>/rootfs`: `lowerdir` is the layer chain
    reversed into overlayfs's top-first order (duplicate layers — images can
    legitimately list the same diffID twice — are collapsed to the topmost
