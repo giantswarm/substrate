@@ -81,6 +81,23 @@ Create the Secret and set an actor's egress policy header injection to use crede
 `authorization`, and prefix `Bearer `. Namespace grants alone do not create an
 egress policy. No ext_proc injector is needed.
 
+## Errors the actor sees
+
+A credential the gateway cannot fetch fails the request closed with a
+`text/plain` body, as the
+[FetchSecret contract](../pkg/proto/credproviderpb/credprovider.proto) specifies:
+
+| Provider answer | Status | Body |
+|---|---|---|
+| `NotFound`, `PermissionDenied`, `FailedPrecondition`, `Unauthenticated` | 403 | `credential provider <name> denied: <message>` |
+| `Unavailable`, `DeadlineExceeded`, `ResourceExhausted` | 503 | `credential provider <name> unavailable` |
+| any other code, or an empty or unusable secret | 502 | `credential provider <name> failed` |
+
+Only a denial's message reaches the actor, with control characters escaped and
+cut to 512 bytes. This provider's denials name the Secret and namespace, which
+the actor's own egress policy already names. The full error is in the gateway's
+log.
+
 ## Tests
 
 The Helm PR workflow installs the provider and MITM gateway from the start and
