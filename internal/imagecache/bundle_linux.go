@@ -237,18 +237,22 @@ func fsContextLog(fsfd int) string {
 	return " (kernel: " + strings.Join(msgs, "; ") + ")"
 }
 
-// FinalizeLayer materializes the whiteout state recorded at unpack time:
-// 0:0 char devices for whiteouts and trusted.overlay.opaque=y on opaque
-// dirs. This runs in ateom rather than atelet because mknod needs CAP_MKNOD
-// and trusted.* xattrs need CAP_SYS_ADMIN, both of which atelet deliberately
+// FinalizeLayer materializes the state recorded at unpack time: 0:0 char
+// devices for whiteouts, trusted.overlay.opaque=y on opaque dirs, and the
+// tar's non-root owners on the layer's entries. This runs in ateom rather
+// than atelet because mknod needs CAP_MKNOD, trusted.* xattrs need
+// CAP_SYS_ADMIN and chown needs CAP_CHOWN, all of which atelet deliberately
 // drops.
 //
 // Idempotent and safe under concurrent callers (multiple ateom pods share
-// the node's pool): EEXIST from mknod is success, setxattr is naturally
-// idempotent, and the marker is written last.
+// the node's pool): EEXIST from mknod is success, setxattr and chown are
+// naturally idempotent, and each marker is written last.
 func FinalizeLayer(layerDir string) error {
 	marker := filepath.Join(layerDir, layerFinalizedMarkerName)
-	if _, err := os.Stat(marker); err == nil {
+	ownersMarker := filepath.Join(layerDir, layerOwnersMarkerName)
+	_, finalizedErr := os.Stat(marker)
+	_, ownersErr := os.Stat(ownersMarker)
+	if finalizedErr == nil && ownersErr == nil {
 		return nil
 	}
 
@@ -264,6 +268,63 @@ func FinalizeLayer(layerDir string) error {
 	}
 	defer root.Close()
 
+	if finalizedErr != nil {
+		if err := materializeWhiteouts(root, wh, marker); err != nil {
+			return err
+		}
+	}
+	// Metadata from before owners were recorded says nothing about them;
+	// atelet backfills it on the layer's next pull, and a later call
+	// applies them then.
+	if ownersErr != nil && wh.Version >= layerMetadataOwnersVersion {
+		if err := applyLayerOwners(root, wh.Owners); err != nil {
+			return err
+		}
+		if err := os.WriteFile(ownersMarker, nil, 0o600); err != nil {
+			return fmt.Errorf("while writing owners-applied marker: %w", err)
+		}
+	}
+	return nil
+}
+
+// applyLayerOwners gives each recorded entry its owner, without following
+// symlinks, then restores the setuid and setgid bits the chown cleared.
+// Entries the tree no longer holds are skipped.
+func applyLayerOwners(root *os.Root, owners []layerOwner) error {
+	for _, owner := range owners {
+		rel, skip, err := validateTarName(owner.Path)
+		if err != nil {
+			return fmt.Errorf("invalid owner path: %w", err)
+		}
+		if skip {
+			continue
+		}
+		if err := root.Lchown(rel, owner.UID, owner.GID); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("while restoring owner of %q: %w", rel, err)
+		}
+		if owner.Mode == 0 {
+			continue
+		}
+		fi, err := root.Lstat(rel)
+		if err != nil {
+			return fmt.Errorf("while checking %q: %w", rel, err)
+		}
+		if !fi.Mode().IsRegular() {
+			continue
+		}
+		if err := root.Chmod(rel, owner.Mode); err != nil {
+			return fmt.Errorf("while restoring mode of %q: %w", rel, err)
+		}
+	}
+	return nil
+}
+
+// materializeWhiteouts creates the recorded whiteouts and opaque markers,
+// then writes marker.
+func materializeWhiteouts(root *os.Root, wh *whiteoutSet, marker string) error {
 	for _, p := range wh.Whiteouts {
 		rel, skip, err := validateTarName(p)
 		if err != nil {

@@ -426,3 +426,115 @@ func TestSetupBundleRootfs_ImageVolumes(t *testing.T) {
 		})
 	}
 }
+
+// ownedLayer is a layer tree whose metadata records non-root owners.
+func ownedLayer(t *testing.T, version int) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeLayer(t, dir, map[string]string{"home/agent/.bashrc": "export A=1\n", "home/agent/tool": "#!/bin/sh\n"}, nil)
+	fs := filepath.Join(dir, layerFSDirName)
+	if err := os.Chmod(filepath.Join(fs, "home/agent/tool"), 0o4755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".bashrc", filepath.Join(fs, "home/agent/.profile")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeWhiteouts(dir, &whiteoutSet{Version: version, Owners: []layerOwner{
+		{Path: "home/agent", UID: 1000, GID: 1000},
+		{Path: "home/agent/.bashrc", UID: 1000, GID: 1000},
+		{Path: "home/agent/.profile", UID: 1000, GID: 1000},
+		{Path: "home/agent/tool", UID: 1000, GID: 100, Mode: os.ModeSetuid | 0o755},
+		{Path: "home/agent/gone", UID: 1000, GID: 1000},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func requireOwner(t *testing.T, path string, uid, gid uint32) {
+	t.Helper()
+	var st unix.Stat_t
+	if err := unix.Lstat(path, &st); err != nil {
+		t.Fatalf("lstat %s: %v", path, err)
+	}
+	if st.Uid != uid || st.Gid != gid {
+		t.Errorf("%s owner = %d:%d, want %d:%d", path, st.Uid, st.Gid, uid, gid)
+	}
+}
+
+// chown needs CAP_CHOWN, and restoring setuid on a file root no longer owns
+// needs CAP_FOWNER.
+func TestFinalizeLayer_AppliesRecordedOwners(t *testing.T) {
+	roottest.Require(t, "CAP_CHOWN + CAP_FOWNER")
+	dir := ownedLayer(t, layerMetadataOwnersVersion)
+
+	if err := FinalizeLayer(dir); err != nil {
+		t.Fatalf("FinalizeLayer: %v", err)
+	}
+
+	fs := filepath.Join(dir, layerFSDirName)
+	requireOwner(t, filepath.Join(fs, "home/agent"), 1000, 1000)
+	requireOwner(t, filepath.Join(fs, "home/agent/.bashrc"), 1000, 1000)
+	requireOwner(t, filepath.Join(fs, "home/agent/.profile"), 1000, 1000)
+	requireOwner(t, filepath.Join(fs, "home/agent/tool"), 1000, 100)
+	requireOwner(t, filepath.Join(fs, "home"), 0, 0)
+	if fi, err := os.Lstat(filepath.Join(fs, "home/agent/tool")); err != nil || fi.Mode() != os.ModeSetuid|0o755 {
+		t.Errorf("tool mode = %v (err=%v), want setuid 0755", fi.Mode(), err)
+	}
+	for _, m := range []string{layerFinalizedMarkerName, layerOwnersMarkerName} {
+		if _, err := os.Stat(filepath.Join(dir, m)); err != nil {
+			t.Errorf("marker %s missing: %v", m, err)
+		}
+	}
+}
+
+// A layer finalized before owners were recorded gets them once its metadata
+// is backfilled, on the next FinalizeLayer.
+func TestFinalizeLayer_AppliesOwnersOnceBackfilled(t *testing.T) {
+	roottest.Require(t, "CAP_CHOWN + CAP_FOWNER")
+	dir := ownedLayer(t, 1)
+	if err := FinalizeLayer(dir); err != nil {
+		t.Fatalf("FinalizeLayer: %v", err)
+	}
+	fs := filepath.Join(dir, layerFSDirName)
+	requireOwner(t, filepath.Join(fs, "home/agent/.bashrc"), 0, 0)
+	if _, err := os.Stat(filepath.Join(dir, layerOwnersMarkerName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("owners marker written for metadata without owners: %v", err)
+	}
+
+	wh, err := readWhiteouts(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wh.Version = layerMetadataOwnersVersion
+	if err := writeWhiteouts(dir, wh); err != nil {
+		t.Fatal(err)
+	}
+	if err := FinalizeLayer(dir); err != nil {
+		t.Fatalf("FinalizeLayer after backfill: %v", err)
+	}
+	requireOwner(t, filepath.Join(fs, "home/agent/.bashrc"), 1000, 1000)
+}
+
+// The merged rootfs presents the layer's owners, with no copy-up.
+func TestSetupBundleRootfs_PresentsLayerOwners(t *testing.T) {
+	roottest.Require(t, "overlay mount + CAP_CHOWN")
+	layer := ownedLayer(t, layerMetadataOwnersVersion)
+	bundle := t.TempDir()
+	if err := WriteSpec(bundle, &OverlaySpec{Layers: []string{layer}}); err != nil {
+		t.Fatalf("WriteSpec: %v", err)
+	}
+	if err := SetupBundleRootfs(bundle); err != nil {
+		t.Fatalf("SetupBundleRootfs: %v", err)
+	}
+	t.Cleanup(func() { _ = UnmountAllUnder(bundle) })
+
+	requireOwner(t, filepath.Join(bundle, "rootfs", "home/agent/.bashrc"), 1000, 1000)
+	entries, err := os.ReadDir(filepath.Join(bundle, "upper"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("upper holds %d entries, want none: owners come from the layer", len(entries))
+	}
+}
