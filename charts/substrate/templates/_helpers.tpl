@@ -280,10 +280,18 @@ identity and verified against the servicedns.podcert.ate.dev trust bundle.
 {{- if or (not .uriAuthority) (not .host) -}}
 {{- fail "credentialProvider.additionalProviders entries need uriAuthority and host" -}}
 {{- end -}}
-{{- if eq .uriAuthority "k8s.io" -}}
+{{- $authority := toString .uriAuthority -}}
+{{- $host := toString .host -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" $authority) -}}
+{{- fail (printf "credentialProvider.additionalProviders: uriAuthority %q must be a lowercase DNS name" $authority) -}}
+{{- end -}}
+{{- if eq $authority "k8s.io" -}}
 {{- fail "credentialProvider.additionalProviders cannot replace the bundled k8s.io provider" -}}
 {{- end -}}
-{{- $providers = append $providers (dict "uriAuthority" .uriAuthority "host" .host) -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.svc:[0-9]{1,5}$" $host) -}}
+{{- fail (printf "credentialProvider.additionalProviders: host %q must be <service>.<namespace>.svc:<port>" $host) -}}
+{{- end -}}
+{{- $providers = append $providers (dict "uriAuthority" $authority "host" $host) -}}
 {{- end -}}
 {{- $seen := dict -}}
 {{- range $providers }}
