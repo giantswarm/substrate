@@ -36,8 +36,9 @@
 //	version                          layout version marker
 //	layers/sha256/<diffid-hex>/
 //	    fs/                          the unpacked layer tree (overlay lowerdir)
-//	    whiteouts.json               whiteout state recorded at unpack time
+//	    whiteouts.json               whiteout state and non-root owners recorded at unpack time
 //	    finalized                    marker written by FinalizeLayer (ateom)
+//	    owners-applied               marker written by FinalizeLayer once the owners are applied
 //	manifests/sha256/<digest-hex>.json
 //	                                 image config + ordered diffID list
 //
@@ -82,6 +83,10 @@ const (
 	layerFSDirName           = "fs"
 	layerWhiteoutsFileName   = "whiteouts.json"
 	layerFinalizedMarkerName = "finalized"
+	// layerOwnersMarkerName marks a layer whose recorded owners FinalizeLayer
+	// has applied to its tree. Separate from the finalized marker, so layers
+	// finalized before owners were recorded get them on their next use.
+	layerOwnersMarkerName = "owners-applied"
 	// layerSizeFileName holds the layer's byte count, recorded at unpack so
 	// sizing the pool never walks a tree. Absent for layers unpacked by
 	// older atelets (backfilled lazily, see layerSize). An estimate: the
@@ -705,6 +710,9 @@ func (s *Store) ensureLayer(ctx context.Context, diffID v1.Hash, layer v1.Layer)
 				now := time.Now()
 				if err := os.Chtimes(dir, now, now); err != nil {
 					slog.WarnContext(ctx, "Failed to refresh layer mtime on reuse", slog.String("diffid", diffID.String()), slog.Any("err", err))
+				}
+				if err := backfillLayerOwners(ctx, dir, layer); err != nil {
+					return nil, fmt.Errorf("while backfilling owners of layer %s: %w", diffID, err)
 				}
 				return dir, nil
 			}
