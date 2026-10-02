@@ -560,3 +560,74 @@ func TestSetLogLevel(t *testing.T) {
 		t.Errorf("SetLogLevel(\"\") changed the level to %v", got)
 	}
 }
+
+func TestTracesPushEnabled(t *testing.T) {
+	for value, want := range map[string]bool{"": true, "otlp": true, "none": false, " None ": false, "console": true} {
+		t.Setenv(tracesExporterEnv, value)
+		if got := tracesPushEnabled(t.Context()); got != want {
+			t.Errorf("%s=%q: tracesPushEnabled() = %t, want %t", tracesExporterEnv, value, got, want)
+		}
+	}
+}
+
+// otlpTarget points OTEL_EXPORTER_OTLP_ENDPOINT at a listener that counts the
+// connections it accepts, so a test tells an exporter that dialed from one that
+// never existed.
+func otlpTarget(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	var accepted atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			_ = c.Close()
+		}
+	}()
+	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://"+ln.Addr().String())
+	return &accepted
+}
+
+// exportOneSpan starts and ends a sampled span, then flushes and shuts the
+// provider down, so a span exporter, if there is one, has dialed.
+func exportOneSpan(t *testing.T, serviceName string) {
+	t.Helper()
+	ctx := context.Background()
+	tp, err := InitTracing(ctx, TracingOptions{ServiceName: serviceName, Sampling: ParentRatioSampling(1)})
+	if err != nil {
+		t.Fatalf("InitTracing: %v", err)
+	}
+	_, span := tp.Tracer("test").Start(ctx, "test")
+	span.End()
+	flushCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_ = tp.ForceFlush(flushCtx)
+	_ = tp.Shutdown(flushCtx)
+}
+
+func TestInitTracingExportsOverOTLPByDefault(t *testing.T) {
+	accepted := otlpTarget(t)
+	t.Setenv(tracesExporterEnv, "")
+	exportOneSpan(t, "test-traces-default")
+	if accepted.Load() == 0 {
+		t.Error("the span exporter never dialed OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+}
+
+// With OTEL_TRACES_EXPORTER=none nothing is exported, so a component on a
+// cluster without a collector logs no export error.
+func TestInitTracingExporterNoneExportsNothing(t *testing.T) {
+	accepted := otlpTarget(t)
+	t.Setenv(tracesExporterEnv, "none")
+	exportOneSpan(t, "test-traces-none")
+	if n := accepted.Load(); n != 0 {
+		t.Errorf("OTEL_TRACES_EXPORTER=none still dialed the OTLP endpoint %d time(s)", n)
+	}
+}

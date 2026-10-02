@@ -179,25 +179,31 @@ func InitTracing(ctx context.Context, opts TracingOptions) (*sdktrace.TracerProv
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(opts.Sampling.Sampler()),
 	}
-	expOpts := []otlptracegrpc.Option{
-		// GKE managed traces doesn't support validating the TLS certs of the collector.
-		otlptracegrpc.WithInsecure(),
+	// With OTEL_TRACES_EXPORTER=none the provider keeps sampling and
+	// propagating trace context but exports nothing, so a cluster without a
+	// collector gets no export to localhost:4317.
+	push := tracesPushEnabled(ctx)
+	if push {
+		expOpts := []otlptracegrpc.Option{
+			// GKE managed traces doesn't support validating the TLS certs of the collector.
+			otlptracegrpc.WithInsecure(),
+		}
+		if opts.ExporterConn != nil {
+			// WithGRPCConn takes precedence over endpoint/credential options, so
+			// WithInsecure above is inert on this path.
+			expOpts = append(expOpts, otlptracegrpc.WithGRPCConn(opts.ExporterConn))
+		}
+		exporter, err := otlptracegrpc.New(ctx, expOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("create OTLP exporter: %w", err)
+		}
+		tpOpts = append(tpOpts, sdktrace.WithBatcher(exporter))
 	}
-	if opts.ExporterConn != nil {
-		// WithGRPCConn takes precedence over endpoint/credential options, so
-		// WithInsecure above is inert on this path.
-		expOpts = append(expOpts, otlptracegrpc.WithGRPCConn(opts.ExporterConn))
-	}
-	exporter, err := otlptracegrpc.New(ctx, expOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("create OTLP exporter: %w", err)
-	}
-	tpOpts = append(tpOpts, sdktrace.WithBatcher(exporter))
 
 	tp := sdktrace.NewTracerProvider(tpOpts...)
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
-	slog.InfoContext(ctx, "Tracing initialized", slog.String("sampler", opts.Sampling.Sampler().Description()))
+	slog.InfoContext(ctx, "Tracing initialized", slog.String("sampler", opts.Sampling.Sampler().Description()), slog.Bool("export", push))
 	return tp, nil
 }
 
@@ -216,6 +222,25 @@ func metricsPushEnabled(ctx context.Context) bool {
 	default:
 		slog.WarnContext(ctx, "Unsupported metrics exporter, keeping the OTLP export",
 			slog.String("env", metricsExporterEnv),
+			slog.String("exporter", value))
+		return true
+	}
+}
+
+const tracesExporterEnv = "OTEL_TRACES_EXPORTER"
+
+// tracesPushEnabled applies OTEL_TRACES_EXPORTER the way metricsPushEnabled
+// applies OTEL_METRICS_EXPORTER: otlp, the default, or none, which drops the
+// OTLP span exporter. An unrecognized value keeps the OTLP export and logs.
+func tracesPushEnabled(ctx context.Context) bool {
+	switch value := strings.ToLower(strings.TrimSpace(os.Getenv(tracesExporterEnv))); value {
+	case "", "otlp":
+		return true
+	case "none":
+		return false
+	default:
+		slog.WarnContext(ctx, "Unsupported traces exporter, keeping the OTLP export",
+			slog.String("env", tracesExporterEnv),
 			slog.String("exporter", value))
 		return true
 	}
