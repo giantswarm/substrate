@@ -112,6 +112,15 @@ atelet:
     # cold pull and unpack.
     pinnedImages: []
 
+ateController:
+  gvisorWorker:
+    # Run every gVisor WorkerPool on this release's ateom-gvisor image
+    # (image.registry, image.repository, image.tag or the chart's appVersion)
+    # instead of the pool's own spec.workerImage. atelet and ateom share a
+    # node-local protocol with no cross-version guarantee, so the release that
+    # runs atelet picks the worker build. false runs each pool's workerImage.
+    followRelease: true
+
 # Additional arguments appended to the ateapi defaults.
 ateApi:
   extraArgs: []
