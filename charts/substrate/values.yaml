@@ -260,11 +260,14 @@ metrics:
 # endpoint applies to every signal; a signal's own endpoint overrides it.
 # A signal exports only when it is enabled and resolves to an endpoint.
 #
-# metrics.enabled disables OTLP metrics push from the Go components and router.
-# traces.enabled takes effect on the router; Go components do not read it yet.
-# logs.enabled gates OTLP actor events from ateapi and the ateoms, plus the
-# router's access log. Actor events go to stdout when OTLP logs are disabled
-# or no endpoint resolves.
+# traces.enabled and metrics.enabled set OTEL_<SIGNAL>_EXPORTER=none.
+# metrics.enabled false stops the Go components' OTLP metrics push and keeps
+# their Prometheus endpoints (ate-controller serves its instruments on the
+# controller-runtime endpoint instead), for a cluster that scrapes them.
+# traces.enabled false stops the Go components' span export (they keep
+# propagating trace context) and the router's agentgateway tracing.
+# logs.enabled works in full, and gates both OTLP log sources: ateapi's actor
+# lifecycle events and the router's agentgateway access log.
 otel:
   endpoint: ""
   traces:

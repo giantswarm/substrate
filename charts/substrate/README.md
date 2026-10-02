@@ -78,10 +78,10 @@ See `values.yaml` for the full set; the important keys:
 | `ateApiServer.extraEnv` | `[]` | Environment appended verbatim to the ate-api-server container (an S3-compatible endpoint's `AWS_ENDPOINT_URL`, `AWS_REGION`, ...); the counterpart of `atelet.extraEnv` |
 | `podLabels` | `{}` | Labels added to every long-running pod, next to the chart's own `app` label |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics, the actor lifecycle events and the router access log |
-| `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
+| `otel.traces.enabled` | `true` | Set to `false` to export no traces: the Go components (`OTEL_TRACES_EXPORTER=none`) and the router's agentgateway |
 | `otel.traces.endpoint` | `""` | OTLP endpoint for traces, overriding `otel.endpoint` |
 | `otel.traces.samplingRatio` | `0.01` | Fraction of parentless requests that start a trace, applied to the Go components and the router |
-| `otel.metrics.enabled` | `true` | Set to `false` to disable OTLP metrics push; Prometheus scraping remains available |
+| `otel.metrics.enabled` | `true` | Set to `false` to stop the Go components' OTLP metrics push (`OTEL_METRICS_EXPORTER=none`); their Prometheus endpoints stay |
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
 | `otel.logs.enabled` | `true` | Enable OTLP actor events from ateapi and the ateoms, plus the router access log. Actor events go to stdout when OTLP logs are disabled |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
