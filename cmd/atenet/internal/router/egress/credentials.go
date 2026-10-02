@@ -15,9 +15,13 @@
 package egress
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
+	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	envoy_type "github.com/envoyproxy/go-control-plane/envoy/type/v3"
@@ -31,22 +35,55 @@ import (
 	"github.com/agent-substrate/substrate/pkg/proto/credproviderpb"
 )
 
-// mapCredentialProviderError converts a FetchSecret failure into a
-// client-facing ext_proc denial, mirroring mapEgressIdentityError: a credential
-// the provider does not hold or will not release (NotFound, PermissionDenied)
-// denies as 403 — retrying cannot succeed — while a transient provider failure
-// (Unavailable, DeadlineExceeded) fails closed as a retryable 503. Anything
-// unexpected denies rather than inviting retries of a request that cannot be
-// completed as the policy promised.
-func mapCredentialProviderError(err error) error {
+// maxProviderMessageBytes bounds the part of a provider's denial that reaches
+// the actor.
+const maxProviderMessageBytes = 512
+
+// mapCredentialProviderError converts a FetchSecret failure into the denial the
+// credprovider contract specifies: a credential the provider will not release
+// denies as 403 with the provider's own message, the only text of the provider
+// that reaches the actor; a transient provider failure fails closed as a
+// retryable 503; any other failure is the provider's or the gateway's fault, a
+// 502. The cause stays reachable through Unwrap for the caller's log.
+func mapCredentialProviderError(provider string, err error) error {
 	switch status.Code(err) {
-	case codes.NotFound, codes.PermissionDenied:
-		return extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, deniedBody)
-	case codes.Unavailable, codes.DeadlineExceeded:
-		return extproc.WrapReqError(envoy_type.StatusCode_ServiceUnavailable, err, deniedBody)
+	case codes.NotFound, codes.PermissionDenied, codes.FailedPrecondition, codes.Unauthenticated:
+		message := providerMessage(status.Convert(err).Message())
+		if message == "" {
+			return extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, "credential provider %s denied the request", provider)
+		}
+		return extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, "credential provider %s denied: %s", provider, message)
+	case codes.Unavailable, codes.DeadlineExceeded, codes.ResourceExhausted:
+		return extproc.WrapReqError(envoy_type.StatusCode_ServiceUnavailable, err, "credential provider %s unavailable", provider)
 	default:
-		return extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, deniedBody)
+		return credentialProviderFailed(provider, err)
 	}
+}
+
+// credentialProviderFailed is the 502 of a provider that answered with
+// something the gateway cannot use.
+func credentialProviderFailed(provider string, err error) error {
+	return extproc.WrapReqError(envoy_type.StatusCode_BadGateway, err, "credential provider %s failed", provider)
+}
+
+// providerMessage makes a provider's status message safe for a response body:
+// control characters are escaped, invalid UTF-8 is replaced, and the result is
+// cut to maxProviderMessageBytes on a rune boundary.
+func providerMessage(message string) string {
+	var b strings.Builder
+	for _, r := range strings.ToValidUTF8(message, string(utf8.RuneError)) {
+		var piece string
+		if unicode.IsControl(r) {
+			piece = strings.Trim(strconv.QuoteRune(r), "'")
+		} else {
+			piece = string(r)
+		}
+		if b.Len()+len(piece) > maxProviderMessageBytes {
+			break
+		}
+		b.WriteString(piece)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // applyEffects resolves a matched rule's credential injections and returns the
@@ -123,6 +160,12 @@ func (h *Handler) applyEffects(ctx context.Context, ref resources.ActorRef, dest
 			}
 		}
 
+		// The provider's name in the actor's denial.
+		provider, err := providerNameFromURI(inj.GetCredentialUri())
+		if err != nil {
+			provider = cmp.Or(h.providerName, "unknown")
+		}
+
 		resp, err := h.provider.FetchSecret(ctx, &credproviderpb.FetchSecretRequest{
 			Uri:           inj.GetCredentialUri(),
 			ActorSpiffeId: actorSpiffeID,
@@ -132,13 +175,13 @@ func (h *Handler) applyEffects(ctx context.Context, ref resources.ActorRef, dest
 			// must not let the request out without it.
 			slog.ErrorContext(ctx, "egress denied: credential fetch failed",
 				slog.Any("actor", ref), slog.String("host", dest.Hostname), slog.String("uri", inj.GetCredentialUri()), slog.Any("err", err))
-			return nil, mapCredentialProviderError(err)
+			return nil, mapCredentialProviderError(provider, err)
 		}
 		secret, err := sanitizeSecret(resp.GetOpaqueBytes())
 		if err != nil {
 			slog.ErrorContext(ctx, "egress denied: unusable credential",
 				slog.Any("actor", ref), slog.String("host", dest.Hostname), slog.String("uri", inj.GetCredentialUri()), slog.Any("err", err))
-			return nil, extproc.WrapReqError(envoy_type.StatusCode_ServiceUnavailable, err, deniedBody)
+			return nil, credentialProviderFailed(provider, err)
 		}
 
 		// Overwrite any header the actor set itself, so a client cannot pre-seed a
