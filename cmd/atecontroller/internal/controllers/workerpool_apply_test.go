@@ -698,7 +698,8 @@ func TestRolloutStrategy(t *testing.T) {
 
 // TestBuildDeploymentApplyConfigOTelEndpoint asserts the OTLP endpoint and the
 // resource identity are set on the ateom container only when an endpoint is
-// configured, and that every ref the value substitutes is declared ahead of it.
+// configured, its exporters turned off otherwise, and that every ref the value
+// substitutes is declared ahead of it.
 func TestBuildDeploymentApplyConfigOTelEndpoint(t *testing.T) {
 	const endpoint = "http://collector.otel-system.svc:4317"
 	tests := []struct {
@@ -718,6 +719,16 @@ func TestBuildDeploymentApplyConfigOTelEndpoint(t *testing.T) {
 			for _, k := range []string{"POD_UID", "POD_NAMESPACE", "WORKER_POOL_NAME"} {
 				if _, ok := env[k]; !ok {
 					t.Errorf("%s must always be set", k)
+				}
+			}
+
+			for _, k := range []string{"OTEL_TRACES_EXPORTER", "OTEL_METRICS_EXPORTER"} {
+				got, ok := env[k]
+				if tt.wantTelemetry && ok {
+					t.Errorf("%s = %q must be absent with an OTLP endpoint", k, got.value)
+				}
+				if !tt.wantTelemetry && got.value != "none" {
+					t.Errorf("%s = %q without an OTLP endpoint, want none (else the SDK exports to localhost:4317)", k, got.value)
 				}
 			}
 
@@ -1040,6 +1051,8 @@ func expectedDeploymentApplyConfig(mutatePodSpec func(*corev1ac.PodSpecApplyConf
 					WithValueFrom(corev1ac.EnvVarSource().
 						WithFieldRef(corev1ac.ObjectFieldSelector().
 							WithFieldPath("metadata.labels['ate.dev/worker-pool']"))),
+				corev1ac.EnvVar().WithName("OTEL_TRACES_EXPORTER").WithValue("none"),
+				corev1ac.EnvVar().WithName("OTEL_METRICS_EXPORTER").WithValue("none"),
 			).
 			WithVolumeMounts(
 				corev1ac.VolumeMount().
