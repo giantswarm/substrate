@@ -81,6 +81,8 @@ var (
 	ateapiCAFile     = pflag.String("ateapi-ca-file", ateapiauth.DefaultServiceAccountCAFile, "PEM file with CAs trusted to verify the ateapi server cert.")
 	ateapiServerName = pflag.String("ateapi-server-name", "", "SNI / hostname expected on the ateapi server cert. Optional.")
 	ateapiClientCert = pflag.String("ateapi-client-cert", "", "Credential bundle presented as the client certificate when dialing ateapi. Required.")
+
+	gvisorWorkerImage = pflag.String("gvisor-worker-image", "", "ateom image every gVisor WorkerPool runs in place of its spec.workerImage. Empty runs each pool's own workerImage.")
 )
 
 func init() {
@@ -214,6 +216,7 @@ func main() {
 		SystemNamespace:          systemNamespace,
 		AteletServiceAccount:     *ateletServiceAccount,
 		RouterServiceAccount:     *routerServiceAccount,
+		GVisorWorkerImage:        *gvisorWorkerImage,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkerPool")
 		os.Exit(1)

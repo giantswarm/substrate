@@ -51,6 +51,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCache.pinnedImages` | `[]` | Image references every pass pulls and never evicts (`--image-cache-pinned-images`): the pool's ActorTemplate images on nodes whose cache volume stays above the watermark |
 | `atelet.gcpAuthForImagePulls` | `false` | Enable only when using GCP registry auth |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
+| `ateController.gvisorWorker.followRelease` | `true` | Every gVisor WorkerPool runs this release's `ateom-gvisor` image (`--gvisor-worker-image`), composed like the other component images, instead of its own `spec.workerImage`; `false` runs each pool's `workerImage` |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added to the `ate.dev/sandboxClass` toleration the chart always sets |

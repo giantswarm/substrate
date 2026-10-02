@@ -71,7 +71,7 @@ jobs:
         # the chart composes {registry}/{repository}/{component}, so the local
         # registry serves each image where the default repository expects it --
         # the same path-preserving rule a production mirror follows.
-        for component in ateapi atecontroller atelet podcertcontroller atenet credential-provider/kubernetes-secrets; do
+        for component in ateapi atecontroller atelet ateom-gvisor podcertcontroller atenet credential-provider/kubernetes-secrets; do
           KO_DOCKER_REPO="localhost:5001/kagent-dev/substrate/${component##*/}" \
             ./hack/run-tool.sh ko build --bare --tags helm-e2e \
               --platform linux/amd64 "./cmd/${component}"
@@ -118,6 +118,22 @@ jobs:
       run: hack/install-ate-kind.sh --deploy-demo-counter
     - name: Deploy egress demo
       run: hack/install-ate-kind.sh --deploy-demo-egress-mitm
+    - name: Keep a gVisor pool that names an older worker on this release's
+      # The shape of an installation whose WorkerPool names the worker of the
+      # Substrate release it was rendered for while a newer release runs
+      # atelet: the pool must still run this build, or the actors the gVisor
+      # suites below start on it meet an ateom of another protocol version.
+      run: |
+        want=localhost:5001/kagent-dev/substrate/ateom-gvisor:${VERSION}
+        kubectl -n ate-demo-counter patch workerpool counter --type merge \
+          -p '{"spec":{"workerImage":"gsoci.azurecr.io/giantswarm/substrate/ateom-gvisor:1.3.0"}}'
+        kubectl -n ate-demo-counter rollout status deployment/counter --timeout=5m
+        got=$(kubectl -n ate-demo-counter get deployment counter \
+          -o jsonpath='{.spec.template.spec.containers[?(@.name=="ateom")].image}')
+        if [[ "${got}" != "${want}" ]]; then
+          echo "counter workers run ${got}, want ${want}" >&2
+          exit 1
+        fi
     - name: Run E2E tests (gVisor)
       # Identity rotates the cluster-wide egress CA. Run it last so HTTPS
       # tests keep a stable trust bundle and gateway signing certificate.
