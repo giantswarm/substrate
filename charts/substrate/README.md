@@ -51,6 +51,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCache.pinnedImages` | `[]` | Image references every pass pulls and never evicts (`--image-cache-pinned-images`): the pool's ActorTemplate images on nodes whose cache volume stays above the watermark |
 | `atelet.gcpAuthForImagePulls` | `false` | Enable only when using GCP registry auth |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
+| `credentialProvider.additionalProviders` | `[]` | Further credential providers for the egress gateway, each `uriAuthority` (a lowercase DNS name) and `host` (`<service>.<namespace>.svc:<port>`); the gateway verifies the provider's `servicedns.podcert.ate.dev` serving certificate and presents its own pod identity, which the provider must require |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods |
