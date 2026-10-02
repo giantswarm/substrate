@@ -55,6 +55,10 @@ type whiteoutSet struct {
 	// attrs a lower layer declared (e.g. /tmp's 1777). SetupBundleRootfs
 	// repairs the merged view from these records (see resolveImplicitDirFixups).
 	ImplicitDirs []string `json:"implicitDirs,omitempty"`
+	// Owners are the entries the layer tar gives a non-root owner, which the
+	// unpacked tree does not carry (see owners.go). Recorded from version
+	// layerMetadataOwnersVersion on.
+	Owners []layerOwner `json:"owners,omitempty"`
 }
 
 func readWhiteouts(layerDir string) (*whiteoutSet, error) {
@@ -98,7 +102,8 @@ func validateTarName(name string) (cleaned string, skip bool, err error) {
 // duplicate entries within a single layer (real ko images repeat directory
 // entries).
 func unpackLayer(ctx context.Context, tarData io.Reader, root *os.Root) (*whiteoutSet, error) {
-	wh := &whiteoutSet{Version: 1}
+	wh := &whiteoutSet{Version: layerMetadataOwnersVersion}
+	owners := newOwnerTracker()
 
 	// Directories are created owner-writable during extraction (so their children
 	// can be written even when the image marks them read-only, e.g. ko ships
@@ -224,6 +229,7 @@ func unpackLayer(ctx context.Context, tarData io.Reader, root *os.Root) (*whiteo
 				// If it's already the same symlink, skip the unlink+symlink pair.
 				if existing.Mode()&os.ModeSymlink != 0 {
 					if cur, rerr := root.Readlink(name); rerr == nil && cur == hdr.Linkname {
+						owners.observe(name, hdr)
 						continue
 					}
 				}
@@ -266,7 +272,9 @@ func unpackLayer(ctx context.Context, tarData io.Reader, root *os.Root) (*whiteo
 			slog.ErrorContext(ctx, "Unhandled tar entry typeflag", slog.String("typeflag", tfStr), slog.Any("hdr", hdr))
 			return nil, fmt.Errorf("unhandled tar entry typeflag %q", tfStr)
 		}
+		owners.observe(name, hdr)
 	}
+	wh.Owners = owners.sorted()
 
 	// Restore the image's intended directory modes now that every child exists.
 	// Deepest paths first: a child's path is always longer than its parent's, so
