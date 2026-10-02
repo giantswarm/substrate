@@ -52,6 +52,9 @@ type WorkerPoolReconciler struct {
 	// OTelTracesSamplerArg is the OTEL_TRACES_SAMPLER_ARG propagated to ateom
 	// pods. Ignored unless OTelTracesSampler is set.
 	OTelTracesSamplerArg string
+	// GVisorWorkerImage, when set, is the ateom image every gVisor pool runs
+	// in place of its spec.workerImage. Empty runs each pool's own image.
+	GVisorWorkerImage string
 
 	desiredWorkers metric.Int64ObservableUpDownCounter
 	readyWorkers   metric.Int64ObservableUpDownCounter
@@ -110,7 +113,7 @@ func (r *WorkerPoolReconciler) reconcileWorkerPool(ctx context.Context, wp *atev
 }
 
 func (r *WorkerPoolReconciler) applyDeployment(ctx context.Context, wp *atev1alpha1.WorkerPool) error {
-	depAC := buildDeploymentApplyConfig(wp, ateomOTelSettings{
+	depAC := buildDeploymentApplyConfig(wp, workerImage(wp, r.GVisorWorkerImage), ateomOTelSettings{
 		Endpoint:             r.OTelEndpoint,
 		MetricExportInterval: r.OTelMetricExportInterval,
 		MetricExportTimeout:  r.OTelMetricExportTimeout,
