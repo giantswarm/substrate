@@ -47,6 +47,28 @@ const (
 type CredentialProviderClient interface {
 	// FetchSecret resolves a credential URI to its secret material, subject to
 	// whatever authorization the provider applies to the request context.
+	//
+	// A failed fetch fails the actor's request closed. The egress gateway answers
+	// the actor with a text/plain body and a status that describes the gateway's
+	// own outcome:
+	//
+	//   NOT_FOUND, PERMISSION_DENIED, FAILED_PRECONDITION, UNAUTHENTICATED:
+	//     403, "credential provider <name> denied: <status message>"
+	//   UNAVAILABLE, DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED:
+	//     503, "credential provider <name> unavailable"
+	//   any other code, or an empty or unusable secret:
+	//     502, "credential provider <name> failed"
+	//
+	// The status message of a denial reaches the actor, which may show it to a
+	// person or a model (git prints a text/plain error body as "remote:" lines),
+	// so it must say what the actor can do and carry nothing it must not see.
+	// The gateway escapes control characters and truncates it to 512 bytes. No
+	// other message, and no status detail or metadata, leaves the gateway.
+	//
+	// No answer becomes 404 or 400: 404 claims the destination does not exist
+	// (git reports "repository not found"), and 400 blames the actor's request,
+	// while an INVALID_ARGUMENT from the provider means the gateway sent it a URI
+	// or actor identity it cannot use.
 	FetchSecret(ctx context.Context, in *FetchSecretRequest, opts ...grpc.CallOption) (*FetchSecretResponse, error)
 }
 
@@ -79,6 +101,28 @@ func (c *credentialProviderClient) FetchSecret(ctx context.Context, in *FetchSec
 type CredentialProviderServer interface {
 	// FetchSecret resolves a credential URI to its secret material, subject to
 	// whatever authorization the provider applies to the request context.
+	//
+	// A failed fetch fails the actor's request closed. The egress gateway answers
+	// the actor with a text/plain body and a status that describes the gateway's
+	// own outcome:
+	//
+	//   NOT_FOUND, PERMISSION_DENIED, FAILED_PRECONDITION, UNAUTHENTICATED:
+	//     403, "credential provider <name> denied: <status message>"
+	//   UNAVAILABLE, DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED:
+	//     503, "credential provider <name> unavailable"
+	//   any other code, or an empty or unusable secret:
+	//     502, "credential provider <name> failed"
+	//
+	// The status message of a denial reaches the actor, which may show it to a
+	// person or a model (git prints a text/plain error body as "remote:" lines),
+	// so it must say what the actor can do and carry nothing it must not see.
+	// The gateway escapes control characters and truncates it to 512 bytes. No
+	// other message, and no status detail or metadata, leaves the gateway.
+	//
+	// No answer becomes 404 or 400: 404 claims the destination does not exist
+	// (git reports "repository not found"), and 400 blames the actor's request,
+	// while an INVALID_ARGUMENT from the provider means the gateway sent it a URI
+	// or actor identity it cannot use.
 	FetchSecret(context.Context, *FetchSecretRequest) (*FetchSecretResponse, error)
 	mustEmbedUnimplementedCredentialProviderServer()
 }
