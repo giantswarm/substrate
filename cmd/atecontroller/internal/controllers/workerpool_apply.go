@@ -74,11 +74,28 @@ const (
 	ateomCapacityVolume         = "ateom-capacity"
 )
 
+// workerImage is the ateom image a pool's workers run. A non-empty gvisorImage
+// replaces the workerImage of every gVisor pool: atelet and ateom share a
+// node-local protocol with no cross-version guarantee, so the release that
+// runs atelet decides the gVisor worker build. Micro-VM pools keep their own.
+func workerImage(wp *atev1alpha1.WorkerPool, gvisorImage string) string {
+	if gvisorImage == "" {
+		return wp.Spec.WorkerImage
+	}
+	switch wp.Spec.SandboxClass {
+	case "", atev1alpha1.SandboxClassGvisor:
+		return gvisorImage
+	default:
+		return wp.Spec.WorkerImage
+	}
+}
+
 // buildDeploymentApplyConfig constructs the SSA apply configuration for the
 // Deployment managed by a WorkerPool. Only fields owned by this controller
-// are declared here. otel, when it carries an endpoint, is propagated to the
-// ateom container so it pushes telemetry to that collector.
-func buildDeploymentApplyConfig(wp *atev1alpha1.WorkerPool, otel ateomOTelSettings) *appsv1ac.DeploymentApplyConfiguration {
+// are declared here. image is the ateom image the workers run. otel, when it
+// carries an endpoint, is propagated to the ateom container so it pushes
+// telemetry to that collector.
+func buildDeploymentApplyConfig(wp *atev1alpha1.WorkerPool, image string, otel ateomOTelSettings) *appsv1ac.DeploymentApplyConfiguration {
 	labels := map[string]string{}
 	annotations := map[string]string{}
 	if wp.Spec.Template != nil {
@@ -93,7 +110,7 @@ func buildDeploymentApplyConfig(wp *atev1alpha1.WorkerPool, otel ateomOTelSettin
 
 	containerAC := corev1ac.Container().
 		WithName("ateom").
-		WithImage(wp.Spec.WorkerImage).
+		WithImage(image).
 		WithArgs(
 			"--pod-uid=$(POD_UID)",
 			"--atunnel-listen-address=:443",

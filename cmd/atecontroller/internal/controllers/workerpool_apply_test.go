@@ -369,7 +369,7 @@ func TestBuildDeploymentApplyConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildDeploymentApplyConfig(tt.wp, ateomOTelSettings{})
+			got := buildDeploymentApplyConfig(tt.wp, tt.wp.Spec.WorkerImage, ateomOTelSettings{})
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Fatalf("buildDeploymentApplyConfig() mismatch (-want +got):\n%s", diff)
 			}
@@ -389,7 +389,7 @@ func TestBuildDeploymentApplyConfigMetadata(t *testing.T) {
 		},
 	})
 
-	got := buildDeploymentApplyConfig(wp, ateomOTelSettings{})
+	got := buildDeploymentApplyConfig(wp, wp.Spec.WorkerImage, ateomOTelSettings{})
 	wantLabels := map[string]string{
 		"project":             "agent-substrate",
 		"team":                "compute",
@@ -431,7 +431,7 @@ func TestMicroVMPodShape(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			wp := testWorkerPoolApplyConfig(nil)
 			wp.Spec.SandboxClass = tt.class
-			ps := buildDeploymentApplyConfig(wp, ateomOTelSettings{}).Spec.Template.Spec
+			ps := buildDeploymentApplyConfig(wp, wp.Spec.WorkerImage, ateomOTelSettings{}).Spec.Template.Spec
 
 			// /dev/kvm must come from the device plugin, never a hostPath: a
 			// hostPath mount carries no cgroup device allow rule, and the
@@ -524,7 +524,7 @@ func TestMicroVMDeviceRequestsPreserveTemplateResources(t *testing.T) {
 		},
 	})
 	wp.Spec.SandboxClass = atev1alpha1.SandboxClassMicroVM
-	c := buildDeploymentApplyConfig(wp, ateomOTelSettings{}).Spec.Template.Spec.Containers[0]
+	c := buildDeploymentApplyConfig(wp, wp.Spec.WorkerImage, ateomOTelSettings{}).Spec.Template.Spec.Containers[0]
 
 	if got, ok := deviceLimit(c, string(corev1.ResourceMemory)); !ok || got != "2Gi" {
 		t.Errorf("memory limit = %q (present=%v), want 2Gi", got, ok)
@@ -589,7 +589,7 @@ func TestAteomSecurityContextByClass(t *testing.T) {
 // TestTerminationGracePeriodSeconds asserts the pod's grace period is hardcoded to 3600s.
 func TestTerminationGracePeriodSeconds(t *testing.T) {
 	wp := testWorkerPoolApplyConfig(nil)
-	ps := buildDeploymentApplyConfig(wp, ateomOTelSettings{}).Spec.Template.Spec
+	ps := buildDeploymentApplyConfig(wp, wp.Spec.WorkerImage, ateomOTelSettings{}).Spec.Template.Spec
 	if ps.TerminationGracePeriodSeconds == nil {
 		t.Fatalf("TerminationGracePeriodSeconds not set")
 	}
@@ -614,7 +614,7 @@ func TestBuildDeploymentApplyConfigOTelEndpoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), ateomOTelSettings{Endpoint: tt.endpoint}).
+			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), testWorkerImage, ateomOTelSettings{Endpoint: tt.endpoint}).
 				Spec.Template.Spec.Containers[0]
 			env := envByName(c.Env)
 
@@ -710,7 +710,7 @@ func TestBuildDeploymentApplyConfigMetricExportTuning(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), tt.otel).
+			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), testWorkerImage, tt.otel).
 				Spec.Template.Spec.Containers[0]
 			env := envByName(c.Env)
 			for _, k := range []string{"OTEL_METRIC_EXPORT_INTERVAL", "OTEL_METRIC_EXPORT_TIMEOUT"} {
@@ -767,7 +767,7 @@ func TestBuildDeploymentApplyConfigTracesSamplerPropagation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), tt.otel).
+			c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), testWorkerImage, tt.otel).
 				Spec.Template.Spec.Containers[0]
 			env := envByName(c.Env)
 			for _, k := range []string{"OTEL_TRACES_SAMPLER", "OTEL_TRACES_SAMPLER_ARG"} {
@@ -837,7 +837,7 @@ func testWorkerPoolApplyConfig(tmpl *atev1alpha1.WorkerPoolPodTemplate) *atev1al
 		ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "default", UID: "uid"},
 		Spec: atev1alpha1.WorkerPoolSpec{
 			Replicas:    2,
-			WorkerImage: "ateom:v1",
+			WorkerImage: testWorkerImage,
 			Template:    tmpl,
 		},
 	}
@@ -987,4 +987,39 @@ func expectedDeploymentApplyConfig(mutatePodSpec func(*corev1ac.PodSpecApplyConf
 			WithTemplate(corev1ac.PodTemplateSpec().
 				WithLabels(map[string]string{"ate.dev/worker-pool": wp.Name}).
 				WithSpec(podSpecAC)))
+}
+
+const testWorkerImage = "ateom:v1"
+
+func TestWorkerImage(t *testing.T) {
+	const release = "registry.example/substrate/ateom-gvisor:1.3.1"
+	tests := []struct {
+		name         string
+		sandboxClass atev1alpha1.SandboxClass
+		gvisorImage  string
+		want         string
+	}{
+		{name: "no release image keeps the pool's", sandboxClass: atev1alpha1.SandboxClassGvisor, want: testWorkerImage},
+		{name: "gVisor pool runs the release image", sandboxClass: atev1alpha1.SandboxClassGvisor, gvisorImage: release, want: release},
+		{name: "defaulted class is gVisor", gvisorImage: release, want: release},
+		{name: "micro-VM pool keeps its own", sandboxClass: atev1alpha1.SandboxClassMicroVM, gvisorImage: release, want: testWorkerImage},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wp := testWorkerPoolApplyConfig(nil)
+			wp.Spec.SandboxClass = tt.sandboxClass
+			if got := workerImage(wp, tt.gvisorImage); got != tt.want {
+				t.Errorf("workerImage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildDeploymentApplyConfigUsesGivenImage(t *testing.T) {
+	const release = "registry.example/substrate/ateom-gvisor:1.3.1"
+	c := buildDeploymentApplyConfig(testWorkerPoolApplyConfig(nil), release, ateomOTelSettings{}).
+		Spec.Template.Spec.Containers[0]
+	if c.Image == nil || *c.Image != release {
+		t.Errorf("ateom container image = %v, want %q", c.Image, release)
+	}
 }

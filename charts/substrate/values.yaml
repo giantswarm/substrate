@@ -102,6 +102,15 @@ atelet:
     # cold pull and unpack.
     pinnedImages: []
 
+ateController:
+  gvisorWorker:
+    # Run every gVisor WorkerPool on this release's ateom-gvisor image
+    # (image.registry, image.repository, image.tag or the chart's appVersion)
+    # instead of the pool's own spec.workerImage. atelet and ateom share a
+    # node-local protocol with no cross-version guarantee, so the release that
+    # runs atelet picks the worker build. false runs each pool's workerImage.
+    followRelease: true
+
 # Additional arguments appended to the ateapi defaults.
 ateApi:
   extraArgs: []
@@ -260,6 +269,6 @@ images:
   # versions, as this chart's are). Its egress config (atenet-egress.yaml) is
   # written for this build's config schema, so the two move together; the
   # publish pipeline stamps AGENTGATEWAY_IMAGE here and refuses a drift.
-  agentgateway: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.2.1
+  agentgateway: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.2.2
   # Not rendered by any template of this chart; kept as upstream keeps it.
   busybox: gsoci.azurecr.io/giantswarm/busybox:1.36

@@ -17,6 +17,7 @@ package egress
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
@@ -147,6 +148,7 @@ func TestInjectionDenials(t *testing.T) {
 		providerName string
 		leg          string
 		want         envoy_type.StatusCode
+		wantBody     string
 	}{
 		{
 			name:         "credential URI for another provider is refused",
@@ -154,44 +156,113 @@ func TestInjectionDenials(t *testing.T) {
 			providerName: "vault", // policy URI is ate-secret://k8s/...
 			leg:          extproc.EgressTLSMITMFilterChainName,
 			want:         envoy_type.StatusCode_InternalServerError,
+			wantBody:     deniedBody,
 		},
 		{
 			// A transient provider failure is retryable.
 			name:         "provider unavailable fails closed as retryable",
-			provider:     &fakeProvider{err: status.Error(codes.Unavailable, "provider down")},
+			provider:     &fakeProvider{err: status.Error(codes.Unavailable, "dial tcp provider.internal:50051: connection refused")},
 			providerName: injectionProviderName,
 			leg:          extproc.EgressTLSMITMFilterChainName,
 			want:         envoy_type.StatusCode_ServiceUnavailable,
+			wantBody:     "credential provider k8s unavailable",
+		},
+		{
+			name:         "provider deadline fails closed as retryable",
+			provider:     &fakeProvider{err: status.Error(codes.DeadlineExceeded, "deadline")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_ServiceUnavailable,
+			wantBody:     "credential provider k8s unavailable",
+		},
+		{
+			name:         "exhausted provider fails closed as retryable",
+			provider:     &fakeProvider{err: status.Error(codes.ResourceExhausted, "quota")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_ServiceUnavailable,
+			wantBody:     "credential provider k8s unavailable",
 		},
 		{
 			// A secret the provider does not hold cannot appear on retry.
-			name:         "secret not found denies as non-retryable",
+			name:         "secret not found denies with the provider's message",
 			provider:     &fakeProvider{err: status.Error(codes.NotFound, "no such secret")},
 			providerName: injectionProviderName,
 			leg:          extproc.EgressTLSMITMFilterChainName,
 			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     "credential provider k8s denied: no such secret",
 		},
 		{
-			name:         "provider refuses the actor denies as non-retryable",
+			name:         "provider refuses the actor denies with the provider's message",
 			provider:     &fakeProvider{err: status.Error(codes.PermissionDenied, "atespace not allowed")},
 			providerName: injectionProviderName,
 			leg:          extproc.EgressTLSMITMFilterChainName,
 			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     "credential provider k8s denied: atespace not allowed",
 		},
 		{
-			// An unclassified error denies rather than inviting retries.
-			name:         "unexpected provider error denies",
-			provider:     &fakeProvider{err: errors.New("provider down")},
+			name:         "failed precondition denies with the provider's message",
+			provider:     &fakeProvider{err: status.Error(codes.FailedPrecondition, "sign in to github and retry")},
 			providerName: injectionProviderName,
 			leg:          extproc.EgressTLSMITMFilterChainName,
 			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     "credential provider k8s denied: sign in to github and retry",
 		},
 		{
-			name:         "empty secret fails closed",
+			name:         "a denial without a message says so",
+			provider:     &fakeProvider{err: status.Error(codes.Unauthenticated, "")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     "credential provider k8s denied the request",
+		},
+		{
+			name:         "a denial's control characters are escaped",
+			provider:     &fakeProvider{err: status.Error(codes.PermissionDenied, "no grant\r\nSet-Cookie: x")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     `credential provider k8s denied: no grant\r\nSet-Cookie: x`,
+		},
+		{
+			name:         "a denial's message is truncated",
+			provider:     &fakeProvider{err: status.Error(codes.PermissionDenied, strings.Repeat("é", 400))},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_Forbidden,
+			wantBody:     "credential provider k8s denied: " + strings.Repeat("é", maxProviderMessageBytes/2),
+		},
+		{
+			name:         "internal provider error is a bad gateway without its message",
+			provider:     &fakeProvider{err: status.Error(codes.Internal, "panic in provider at /src/x.go")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_BadGateway,
+			wantBody:     "credential provider k8s failed",
+		},
+		{
+			name:         "invalid argument is a bad gateway, not the actor's fault",
+			provider:     &fakeProvider{err: status.Error(codes.InvalidArgument, "bad actor identity")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_BadGateway,
+			wantBody:     "credential provider k8s failed",
+		},
+		{
+			name:         "unclassified error is a bad gateway",
+			provider:     &fakeProvider{err: errors.New("provider down")},
+			providerName: injectionProviderName,
+			leg:          extproc.EgressTLSMITMFilterChainName,
+			want:         envoy_type.StatusCode_BadGateway,
+			wantBody:     "credential provider k8s failed",
+		},
+		{
+			name:         "empty secret is a bad gateway",
 			provider:     &fakeProvider{resp: bearerTokenResponse("")},
 			providerName: injectionProviderName,
 			leg:          extproc.EgressTLSMITMFilterChainName,
-			want:         envoy_type.StatusCode_ServiceUnavailable,
+			want:         envoy_type.StatusCode_BadGateway,
+			wantBody:     "credential provider k8s failed",
 		},
 	}
 	for _, tc := range tests {
@@ -200,6 +271,10 @@ func TestInjectionDenials(t *testing.T) {
 			_, err := h.HandleRequestHeaders(context.Background(),
 				innerMetadata(tc.leg, "GET", "api.example.com", nil))
 			wantStatus(t, err, tc.want)
+			var re *extproc.ReqError
+			if errors.As(err, &re) && re.Msg != tc.wantBody {
+				t.Errorf("body = %q, want %q", re.Msg, tc.wantBody)
+			}
 		})
 	}
 }
