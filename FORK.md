@@ -133,6 +133,7 @@ beside upstream's `RevertActor` tests (#1675) and the fake atelet carries upstre
 pause's `Prune*`, the make-ca-pool half of the CA rotation moved into `cmd/kubectl-ate/internal/cmd/admin.go`, where
 upstream #1733 consolidated the admin subcommands; protobuf and python stubs regenerated with `hack/update/codegen.sh`.
 The fork commits above are the replayed SHAs.
+| A credential provider bounds how long the injector reuses its answer (`FetchSecretResponse.max_age` in `pkg/proto/credproviderpb/credprovider.proto`: unset keeps the injector's default, zero fetches again for every request, never past the default) | the egress gateway agentgateway runs caches a secret by actor and URI for a fixed 300 s, so a provider whose answer depends on who acts on the actor at the moment (kagent answering with the GitHub token of the person whose turn runs) had it injected after that turn, into another person's next turn on a shared instance included; the gateway side is giantswarm/agentgateway-upstream `fork/credential-max-age`. atenet's Go injector keeps no cache and already fetches every request | `feat/credential-max-age` | to file, with the agentgateway field |
 
 ## Upstream items prepared without a carried patch
 

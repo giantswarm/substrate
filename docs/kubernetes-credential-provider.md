@@ -10,7 +10,10 @@ directly over mTLS to inject credentials into HTTP and intercepted HTTPS request
 entry in that Kubernetes Secret. Omitting the key requires exactly one data entry.
 The provider reads Kubernetes on every fetch and never persists or logs values.
 AGW caches successful credentials per actor and URI for five minutes, so rotation
-can take that long to reach injected requests.
+can take that long to reach injected requests. A provider bounds that reuse with
+`FetchSecretResponse.max_age`: zero fetches the credential again for every
+request, and no answer is reused past the five minutes. This provider leaves it
+unset.
 
 Each request requires a trusted injector certificate with the configured SPIFFE
 identity, an explicit atespace-to-namespace grant for the attested actor, and
