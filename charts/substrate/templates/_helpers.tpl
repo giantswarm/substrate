@@ -270,12 +270,20 @@ maxExpirationSeconds: {{ int . }}
 {{- end }}
 
 {{/*
-The egress gateway's credential providers: the bundled k8s.io one and
+The egress gateway's credential providers: the bundled ones and
 credentialProvider.additionalProviders, each dialed with the gateway's pod
 identity and verified against the servicedns.podcert.ate.dev trust bundle.
+One Deployment serves both bundled names: k8s.io returns the Secret value and
+google-access-token.k8s.io returns a Google access token minted from the
+service account key it holds.
 */}}
 {{- define "substrate.egressCredentialProviders" -}}
-{{- $providers := list (dict "uriAuthority" "k8s.io" "host" (printf "%s.%s.svc:50051" (include "substrate.fullname" (list "k8s-credential-provider" .)) .Release.Namespace)) -}}
+{{- $bundled := list "k8s.io" "google-access-token.k8s.io" -}}
+{{- $bundledHost := printf "%s.%s.svc:50051" (include "substrate.fullname" (list "k8s-credential-provider" .)) .Release.Namespace -}}
+{{- $providers := list -}}
+{{- range $bundled -}}
+{{- $providers = append $providers (dict "uriAuthority" . "host" $bundledHost) -}}
+{{- end -}}
 {{- range .Values.credentialProvider.additionalProviders -}}
 {{- if or (not .uriAuthority) (not .host) -}}
 {{- fail "credentialProvider.additionalProviders entries need uriAuthority and host" -}}
@@ -285,8 +293,8 @@ identity and verified against the servicedns.podcert.ate.dev trust bundle.
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" $authority) -}}
 {{- fail (printf "credentialProvider.additionalProviders: uriAuthority %q must be a lowercase DNS name" $authority) -}}
 {{- end -}}
-{{- if eq $authority "k8s.io" -}}
-{{- fail "credentialProvider.additionalProviders cannot replace the bundled k8s.io provider" -}}
+{{- if has $authority $bundled -}}
+{{- fail (printf "credentialProvider.additionalProviders cannot replace the bundled %s provider" $authority) -}}
 {{- end -}}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.svc:[0-9]{1,5}$" $host) -}}
 {{- fail (printf "credentialProvider.additionalProviders: host %q must be <service>.<namespace>.svc:<port>" $host) -}}
