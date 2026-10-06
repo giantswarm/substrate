@@ -48,6 +48,13 @@ func TestParseURI(t *testing.T) {
 			uri:  "ate-secret://k8s.io/default/ns1/example-api/token",
 			want: SecretRef{Namespace: "ns1", Name: "example-api", Key: "token"},
 		},
+		{
+			name: "google access token",
+			uri:  "ate-secret://google-access-token.k8s.io/default/ns1/vertex/credentials.json",
+			want: SecretRef{Namespace: "ns1", Name: "vertex", Key: "credentials.json", Kind: KindGoogleAccessToken},
+		},
+		{name: "google access token key required", uri: "ate-secret://google-access-token.k8s.io/default/ns1/vertex", wantErr: true},
+		{name: "unknown k8s.io subdomain", uri: "ate-secret://vault.k8s.io/default/ns1/example-api/token", wantErr: true},
 		{name: "key required", uri: "ate-secret://k8s.io/default/ns1/example-api", wantErr: true},
 		{name: "wrong scheme", uri: "https://k8s.io/default/ns1/example-api/token", wantErr: true},
 		{name: "wrong provider", uri: "ate-secret://vault.io/default/ns1/example-api/token", wantErr: true},

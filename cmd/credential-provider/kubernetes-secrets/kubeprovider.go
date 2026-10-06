@@ -15,13 +15,17 @@
 // This file implements the CredentialProvider plugin API backed by Kubernetes
 // Secrets. It resolves ate-secret:// URIs of the provider "k8s.io" to a Secret
 // value read straight from the Kubernetes API — so Substrate never stores the
-// secret, it only brokers a read the provider is authorized to perform.
+// secret, it only brokers a read the provider is authorized to perform. The
+// provider "google-access-token.k8s.io" reads the same Secrets and returns a
+// Google access token minted from the service account key they hold; see
+// google.go.
 package main
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -37,7 +41,8 @@ import (
 	"github.com/agent-substrate/substrate/pkg/proto/credproviderpb"
 )
 
-// ProviderName is the ate-secret:// URI host this backend serves.
+// ProviderName is the ate-secret:// URI host that returns Secret values
+// unchanged.
 const ProviderName = "k8s.io"
 
 // uriScheme is the only scheme a credential URI may carry.
@@ -47,11 +52,39 @@ const uriScheme = "ate-secret"
 // API server the provider runs in — the only cluster served today.
 const LocalLocator = "default"
 
-// SecretRef is a parsed ate-secret:// URI for the k8s.io provider.
+// CredentialKind is how a resolved Secret entry becomes the credential the
+// gateway injects.
+type CredentialKind int
+
+const (
+	// KindSecretValue returns the Secret entry unchanged.
+	KindSecretValue CredentialKind = iota
+	// KindGoogleAccessToken treats the entry as a Google service account key and
+	// returns an access token minted from it.
+	KindGoogleAccessToken
+)
+
+// String returns the provider name that selects the kind.
+func (k CredentialKind) String() string {
+	if k == KindGoogleAccessToken {
+		return GoogleAccessTokenProviderName
+	}
+	return ProviderName
+}
+
+// providerKinds maps each ate-secret:// host this binary serves to the kind of
+// credential it resolves.
+var providerKinds = map[string]CredentialKind{
+	ProviderName:                  KindSecretValue,
+	GoogleAccessTokenProviderName: KindGoogleAccessToken,
+}
+
+// SecretRef is a parsed ate-secret:// URI for one of the providers served here.
 //
 // Only Secrets in the local cluster are addressable today:
 //
 //	ate-secret://k8s.io/default/<namespace>/<secret>/<key>
+//	ate-secret://google-access-token.k8s.io/default/<namespace>/<secret>/<key>
 //
 // Future work: the secret uri can grow a "cluster/<cluster>" locator for fetching remote Secrets.
 //
@@ -61,10 +94,12 @@ type SecretRef struct {
 	Name      string
 	// Key is the data key within the Secret to return.
 	Key string
+	// Kind is selected by the URI host.
+	Kind CredentialKind
 }
 
-// ParseURI parses an ate-secret:// URI of the k8s.io provider. It
-// rejects any other scheme or provider name.
+// ParseURI parses an ate-secret:// URI of a provider served here. It rejects
+// any other scheme or provider name.
 func ParseURI(raw string) (SecretRef, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -73,8 +108,9 @@ func ParseURI(raw string) (SecretRef, error) {
 	if u.Scheme != uriScheme {
 		return SecretRef{}, fmt.Errorf("malformed credential URI %q: scheme is %q, want %q", raw, u.Scheme, uriScheme)
 	}
-	if u.Host != ProviderName {
-		return SecretRef{}, fmt.Errorf("credential URI %q: provider is %q, this provider serves %q", raw, u.Host, ProviderName)
+	kind, ok := providerKinds[u.Host]
+	if !ok {
+		return SecretRef{}, fmt.Errorf("credential URI %q: provider is %q, this provider serves %q and %q", raw, u.Host, ProviderName, GoogleAccessTokenProviderName)
 	}
 	// The grammar is scheme/host/path only; a query or fragment means the caller
 	// assumed a syntax this provider does not honor, so reject it rather than
@@ -105,7 +141,7 @@ func ParseURI(raw string) (SecretRef, error) {
 	if len(tail) != 3 {
 		return SecretRef{}, fmt.Errorf("credential URI %q: want %s/<namespace>/<secret>/<key>, got %d trailing segments", raw, LocalLocator, len(tail))
 	}
-	ref := SecretRef{Namespace: tail[0], Name: tail[1], Key: tail[2]}
+	ref := SecretRef{Namespace: tail[0], Name: tail[1], Key: tail[2], Kind: kind}
 	if len(validation.IsDNS1123Label(ref.Namespace)) != 0 || len(validation.IsDNS1123Subdomain(ref.Name)) != 0 || len(validation.IsConfigMapKey(ref.Key)) != 0 {
 		return SecretRef{}, fmt.Errorf("credential URI contains an invalid namespace, secret name, or key")
 	}
@@ -120,18 +156,25 @@ type Server struct {
 	client kubernetes.Interface
 	// nsAuth restricts which namespaces an atespace may resolve secrets from.
 	nsAuth *NamespaceAuthorizer
+	// google mints and caches access tokens for KindGoogleAccessToken.
+	google *googleTokenExchanger
 }
 
 // NewServer builds a Kubernetes credential provider with a default-deny policy.
 func NewServer(client kubernetes.Interface, nsAuth *NamespaceAuthorizer) *Server {
-	return &Server{client: client, nsAuth: nsAuth}
+	return &Server{
+		client: client,
+		nsAuth: nsAuth,
+		google: newGoogleTokenExchanger(&http.Client{Timeout: googleTokenExchangeTimeout}),
+	}
 }
 
 // Grants exposes the enforced atespace→namespace policy for /statusz. Nil
 // when authorization is disabled.
 func (s *Server) Grants() map[string][]string { return s.nsAuth.Grants() }
 
-// FetchSecret resolves one ate-secret:// URI to its Secret value.
+// FetchSecret resolves one ate-secret:// URI to the credential it names: the
+// Secret value itself, or an access token minted from the key it holds.
 func (s *Server) FetchSecret(ctx context.Context, req *credproviderpb.FetchSecretRequest) (*credproviderpb.FetchSecretResponse, error) {
 	ref, err := ParseURI(req.GetUri())
 	if err != nil {
@@ -143,7 +186,7 @@ func (s *Server) FetchSecret(ctx context.Context, req *credproviderpb.FetchSecre
 	}
 
 	slog.InfoContext(ctx, "resolving credential",
-		slog.String("provider", ProviderName),
+		slog.String("provider", ref.Kind.String()),
 		slog.String("namespace", ref.Namespace),
 		slog.String("secret", ref.Name),
 		slog.String("actor", req.GetActorSpiffeId()),
@@ -163,6 +206,13 @@ func (s *Server) FetchSecret(ctx context.Context, req *credproviderpb.FetchSecre
 	value, err := selectKey(secret.Data, ref.Key)
 	if err != nil {
 		return nil, status.Errorf(codes.NotFound, "secret %s/%s: %v", ref.Namespace, ref.Name, err)
+	}
+	if ref.Kind == KindGoogleAccessToken {
+		token, err := s.google.AccessToken(ctx, value)
+		if err != nil {
+			return nil, status.Errorf(status.Code(err), "secret %s/%s: %s", ref.Namespace, ref.Name, status.Convert(err).Message())
+		}
+		value = []byte(token)
 	}
 	return &credproviderpb.FetchSecretResponse{OpaqueBytes: value}, nil
 }
