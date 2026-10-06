@@ -290,6 +290,7 @@ func (c *fakeGoldenControl) DeleteActor(_ context.Context, req *ateapipb.DeleteA
 		return nil, status.Error(codes.NotFound, "no actor")
 	}
 	c.exists = false
+	c.goldenSnapshot = ""
 	return &ateapipb.Actor{}, nil
 }
 
@@ -369,6 +370,12 @@ func withSnapshotDeadline(at time.Time) func(*ateapipb.ActorTemplate) {
 func withGoldenTag() func(*ateapipb.ActorTemplate) {
 	return func(tmpl *ateapipb.ActorTemplate) {
 		seededGoldenStatus(tmpl).GoldenTag = &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	}
+}
+
+func withGoldenActorCrashes(n int32) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		seededGoldenStatus(tmpl).GoldenActorCrashes = n
 	}
 }
 
@@ -526,11 +533,21 @@ func TestReconcileOne(t *testing.T) {
 			wantCreates: 1,
 		},
 		{
-			name:             "crashed golden actor fails the template",
-			template:         testTemplate(),
+			name:             "crashed golden actor past the bound fails the template",
+			template:         testTemplate(withGoldenActorCrashes(maxGoldenActorCrashes)),
 			control:          &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 			wantFailedReason: reasonGoldenActorCrashed,
-			wantMessage:      "crashed",
+			wantMessage:      "5 golden actors crashed",
+		},
+		{
+			name:         "crashed golden actor is replaced by a new one",
+			template:     testTemplate(),
+			control:      &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, snapshot: goldenSnapshot},
+			wantTag:      true,
+			wantDeadline: true,
+			wantCreates:  1,
+			wantResumes:  1,
+			wantSuspends: 1,
 		},
 		{
 			name:        "resume failure requeues without failing",

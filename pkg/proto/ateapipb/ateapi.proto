@@ -897,6 +897,14 @@ message GoldenSnapshotStatus {
   //
   // +k8s:optional
   int32 workload_boot_failures = 4;
+
+  // golden_actor_crashes counts the golden actors observed CRASHED before
+  // the snapshot was taken. Each one is deleted and a new golden actor is
+  // booted, so a worker lost to a pool roll costs a boot and not the
+  // template; ate-api gives the template up once the count reaches its bound.
+  //
+  // +k8s:optional
+  int32 golden_actor_crashes = 5;
 }
 
 message ActorTemplateStatus {
