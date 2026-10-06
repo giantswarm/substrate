@@ -32,6 +32,7 @@ import (
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -146,8 +147,10 @@ func (s *fakeTemplateStore) storedStatus(t *testing.T, ref resources.ActorTempla
 // from that observation. Tests seed mid-lifecycle states via exists /
 // goldenState / goldenSnapshot.
 type fakeGoldenControl struct {
-	mu           sync.Mutex
-	tag          *ateapipb.Tag
+	mu  sync.Mutex
+	tag *ateapipb.Tag
+	// backupTag is the legacy golden backup tag, <uid>-legacy.
+	backupTag    *ateapipb.Tag
 	tagErr       error
 	deleteErr    error
 	deleteTagErr error
@@ -247,13 +250,23 @@ func (c *fakeGoldenControl) SuspendActor(_ context.Context, req *ateapipb.Suspen
 	}, nil
 }
 
-func (c *fakeGoldenControl) GetTag(_ context.Context, _ *ateapipb.GetTagRequest) (*ateapipb.Tag, error) {
+// tagSlot returns the tag the name refers to: the legacy golden backup tag
+// or the golden tag.
+func (c *fakeGoldenControl) tagSlot(name string) **ateapipb.Tag {
+	if strings.HasSuffix(name, "-legacy") {
+		return &c.backupTag
+	}
+	return &c.tag
+}
+
+func (c *fakeGoldenControl) GetTag(_ context.Context, req *ateapipb.GetTagRequest) (*ateapipb.Tag, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.tag == nil {
+	tag := *c.tagSlot(req.GetTag().GetName())
+	if tag == nil {
 		return nil, status.Error(codes.NotFound, "no tag")
 	}
-	return proto.CloneOf(c.tag), nil
+	return proto.CloneOf(tag), nil
 }
 
 func (c *fakeGoldenControl) CreateTag(_ context.Context, req *ateapipb.CreateTagRequest) (*ateapipb.Tag, error) {
@@ -263,19 +276,21 @@ func (c *fakeGoldenControl) CreateTag(_ context.Context, req *ateapipb.CreateTag
 	if c.tagErr != nil {
 		return nil, c.tagErr
 	}
-	c.tag = proto.CloneOf(req.GetTag())
-	c.tag.Status = &ateapipb.TagStatus{ActorTemplateUid: testTemplateUID, Snapshot: &ateapipb.ExternalSnapshot{SnapshotUri: c.goldenSnapshot}}
-	return proto.CloneOf(c.tag), nil
+	tag := proto.CloneOf(req.GetTag())
+	tag.Status = &ateapipb.TagStatus{ActorTemplateUid: testTemplateUID, Snapshot: &ateapipb.ExternalSnapshot{SnapshotUri: c.goldenSnapshot}}
+	*c.tagSlot(req.GetTag().GetMetadata().GetName()) = tag
+	return proto.CloneOf(tag), nil
 }
 
-func (c *fakeGoldenControl) DeleteTag(_ context.Context, _ *ateapipb.DeleteTagRequest) (*ateapipb.Tag, error) {
+func (c *fakeGoldenControl) DeleteTag(_ context.Context, req *ateapipb.DeleteTagRequest) (*ateapipb.Tag, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.deleteTagErr != nil {
 		return nil, c.deleteTagErr
 	}
-	tag := c.tag
-	c.tag = nil
+	slot := c.tagSlot(req.GetTag().GetName())
+	tag := *slot
+	*slot = nil
 	return tag, nil
 }
 
@@ -290,6 +305,7 @@ func (c *fakeGoldenControl) DeleteActor(_ context.Context, req *ateapipb.DeleteA
 		return nil, status.Error(codes.NotFound, "no actor")
 	}
 	c.exists = false
+	c.goldenSnapshot = ""
 	return &ateapipb.Actor{}, nil
 }
 
@@ -855,6 +871,7 @@ func TestResync_QueuesOnlyActionableTemplates(t *testing.T) {
 		{"mid warmup", []func(*ateapipb.ActorTemplate){withSnapshotDeadline(time.Now().Add(time.Hour))}, true},
 		{"workload boot failures below the bound", []func(*ateapipb.ActorTemplate){withWorkloadBootFailures(maxWorkloadBootFailures - 1)}, true},
 		{"golden snapshot taken", []func(*ateapipb.ActorTemplate){withGoldenTag()}, false},
+		{"legacy golden snapshot", []func(*ateapipb.ActorTemplate){withLegacyGoldenSnapshot(t, "s3://bucket/root/atespaces/ate-golden/actors/"+someActorUID+"/snapshots/snap-1")}, true},
 		{"failed", []func(*ateapipb.ActorTemplate){withFailed(reasonGoldenActorCrashed)}, false},
 	}
 
@@ -1019,6 +1036,141 @@ func TestReconcileOne_GoldenTagConflict(t *testing.T) {
 			r.resync(t.Context())
 			if r.queue.Len() != 0 {
 				t.Fatal("resync queued a terminally failed template")
+			}
+		})
+	}
+}
+
+// legacyGoldenStatusBytes encodes a GoldenSnapshotStatus as releases before
+// golden tags stored it: field 1 an ExternalSnapshot instead of an ObjectRef.
+func legacyGoldenStatusBytes(t *testing.T, snapshotURI string) []byte {
+	t.Helper()
+	snapshot, err := proto.Marshal(&ateapipb.ExternalSnapshot{
+		SnapshotUri:  snapshotURI,
+		ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+	})
+	if err != nil {
+		t.Fatalf("marshal ExternalSnapshot: %v", err)
+	}
+	return protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), snapshot)
+}
+
+func withLegacyGoldenSnapshot(t *testing.T, snapshotURI string) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		legacy := &ateapipb.GoldenSnapshotStatus{}
+		if err := proto.Unmarshal(legacyGoldenStatusBytes(t, snapshotURI), legacy); err != nil {
+			t.Fatalf("unmarshal legacy GoldenSnapshotStatus: %v", err)
+		}
+		tmpl.Status.GoldenSnapshotStatus = legacy
+	}
+}
+
+func TestLegacyGoldenSnapshot(t *testing.T) {
+	snapshotURI := "s3://bucket/root/atespaces/ate-golden/actors/" + someActorUID + "/snapshots/snap-1"
+	legacy := testTemplate(withLegacyGoldenSnapshot(t, snapshotURI)).GetStatus().GetGoldenSnapshotStatus()
+	if got := legacy.GetGoldenTag().GetAtespace(); got != snapshotURI {
+		t.Fatalf("legacy golden_tag.atespace = %q, want the snapshot URI %q", got, snapshotURI)
+	}
+	if !legacyGoldenSnapshot(legacy) {
+		t.Error("legacyGoldenSnapshot(legacy status) = false, want true")
+	}
+	if goldenSnapshotDone(legacy) {
+		t.Error("goldenSnapshotDone(legacy status) = true, want false")
+	}
+	tagged := testTemplate(withGoldenTag()).GetStatus().GetGoldenSnapshotStatus()
+	if legacyGoldenSnapshot(tagged) {
+		t.Error("legacyGoldenSnapshot(golden tag) = true, want false")
+	}
+	if legacyGoldenSnapshot(nil) {
+		t.Error("legacyGoldenSnapshot(nil) = true, want false")
+	}
+}
+
+func TestReconcileOne_LegacyGoldenSnapshot(t *testing.T) {
+	legacyURI := "s3://bucket/root/atespaces/ate-golden/actors/" + someActorUID + "/snapshots/snap-1"
+	newURI := "s3://bucket/root/atespaces/ate-golden/actors/" + someActorUID + "/snapshots/snap-2"
+	goldenRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	backupRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID + "-legacy"}
+	backupTag := func(snapshotURI string) *ateapipb.Tag {
+		return &ateapipb.Tag{
+			Metadata:    &ateapipb.ResourceMetadata{Atespace: backupRef.GetAtespace(), Name: backupRef.GetName()},
+			SourceActor: goldenRef,
+			Status:      &ateapipb.TagStatus{ActorTemplateUid: testTemplateUID, Snapshot: &ateapipb.ExternalSnapshot{SnapshotUri: snapshotURI}},
+		}
+	}
+	tests := []struct {
+		name    string
+		control *fakeGoldenControl
+		// wantBackups: CreateTag calls for the backup tag.
+		wantBackups int
+		// wantBackupURI: the snapshot the backup tag holds in the end.
+		wantBackupURI string
+	}{
+		{
+			name:          "backs up the legacy golden actor and rebuilds",
+			control:       &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, goldenSnapshot: legacyURI, snapshot: newURI},
+			wantBackups:   1,
+			wantBackupURI: legacyURI,
+		},
+		{
+			name: "keeps a finished backup tag an earlier pass created",
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, goldenSnapshot: legacyURI, snapshot: newURI,
+				backupTag: backupTag(legacyURI)},
+			wantBackupURI: legacyURI,
+		},
+		{
+			name: "makes an unfinished backup tag again",
+			control: &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, goldenSnapshot: legacyURI, snapshot: newURI,
+				backupTag: backupTag("")},
+			wantBackups:   1,
+			wantBackupURI: legacyURI,
+		},
+		{
+			name:    "rebuilds without a backup when the golden actor is gone",
+			control: &fakeGoldenControl{snapshot: newURI},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newFakeTemplateStore(testTemplate(withLegacyGoldenSnapshot(t, legacyURI)))
+			r := newTestTemplateReconciler(st, tt.control)
+
+			// The second pass shows the rebuild is done and stays done.
+			for pass := range 2 {
+				if _, err := r.reconcileOne(context.Background(), testTemplateRef); err != nil {
+					t.Fatalf("reconcileOne pass %d: %v", pass, err)
+				}
+			}
+
+			snapshotStatus := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if got := snapshotStatus.GetGoldenTag(); !proto.Equal(got, goldenRef) {
+				t.Errorf("stored golden tag = %v, want the rebuilt %v", got, goldenRef)
+			}
+			if got := snapshotStatus.GetErrorMessage(); got != "" {
+				t.Errorf("stored error message = %q, want empty", got)
+			}
+			if got := tt.control.tag.GetStatus().GetSnapshot().GetSnapshotUri(); got != newURI {
+				t.Errorf("golden tag snapshot = %q, want the new golden %q", got, newURI)
+			}
+			var backups int
+			for _, req := range tt.control.tagReqs {
+				if req.GetTag().GetMetadata().GetName() != backupRef.GetName() {
+					continue
+				}
+				backups++
+				if !proto.Equal(req.GetTag().GetSourceActor(), goldenRef) || req.GetTag().GetScope() != ateapipb.TagScope_TAG_SCOPE_PUBLISHED {
+					t.Errorf("backup CreateTag request = %v, want a published tag of %v", req.GetTag(), goldenRef)
+				}
+			}
+			if backups != tt.wantBackups {
+				t.Errorf("backup CreateTag calls = %d, want %d", backups, tt.wantBackups)
+			}
+			if got := tt.control.backupTag.GetStatus().GetSnapshot().GetSnapshotUri(); got != tt.wantBackupURI {
+				t.Errorf("backup tag snapshot = %q, want %q", got, tt.wantBackupURI)
+			}
+			// A new golden actor booted once.
+			if creates, resumes, suspends := tt.control.callCounts(); creates != 1 || resumes != 1 || suspends != 1 {
+				t.Errorf("control calls = create:%d resume:%d suspend:%d, want 1 each", creates, resumes, suspends)
 			}
 		})
 	}

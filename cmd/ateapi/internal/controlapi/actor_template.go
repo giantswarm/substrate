@@ -177,6 +177,9 @@ func (s *RPCService) DeleteActorTemplate(ctx context.Context, req *ateapipb.Dele
 	if _, err := s.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: goldenRef}); err != nil && status.Code(err) != codes.NotFound {
 		return nil, fmt.Errorf("while deleting golden tag: %w", err)
 	}
+	if _, err := s.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: legacyGoldenBackupRef(goldenRef)}); err != nil && status.Code(err) != codes.NotFound {
+		return nil, fmt.Errorf("while deleting legacy golden backup tag: %w", err)
+	}
 	deleted, err := s.impl.DeleteActorTemplate(ctx, templateRef)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
