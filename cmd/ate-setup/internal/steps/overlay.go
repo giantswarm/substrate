@@ -204,11 +204,19 @@ func (e *Env) patchAtenetEgressInject(raw []byte, provider config.CredentialProv
 	return replaceManifestMarker(raw, "#ATE_EGRESS_INJECT_FLAGS", flagsBlock)
 }
 
-// The HTTP and HTTPS listeners share the egress policy and its providers.
+// The HTTP and HTTPS listeners share the egress policy and its providers. The
+// bundled provider serves a second name, google-access-token.k8s.io, from the
+// same Deployment.
 func patchAgentgatewayEgressInject(raw []byte, provider config.CredentialProvider) ([]byte, error) {
 	var block string
 	if provider.Enabled() {
-		block = fmt.Sprintf(`credentialProviders:
+		names := []string{provider.Name}
+		if provider.Kubernetes() {
+			names = append(names, config.GoogleAccessTokenProviderName)
+		}
+		block = "credentialProviders:"
+		for _, name := range names {
+			block += fmt.Sprintf(`
 - uriAuthority: %q
   target:
     host: %q
@@ -217,7 +225,8 @@ func patchAgentgatewayEgressInject(raw []byte, provider config.CredentialProvide
         hostname: %q
         cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
         key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
-        root: /run/servicedns-ca/trust-bundle.pem`, provider.Name, provider.Address, provider.ServerName())
+        root: /run/servicedns-ca/trust-bundle.pem`, name, provider.Address, provider.ServerName())
+		}
 	}
 	return replaceManifestMarker(raw, "#ATE_AGENTGATEWAY_CREDENTIAL_PROVIDERS", block)
 }

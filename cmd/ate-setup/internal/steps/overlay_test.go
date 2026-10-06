@@ -667,18 +667,25 @@ func TestRenderAgentgatewayCredentialProvider(t *testing.T) {
 						}
 						continue
 					}
-					want := []map[string]any{{
-						"uriAuthority": tc.provider.Name,
-						"target": map[string]any{
-							"host": tc.provider.Address,
-							"policies": map[string]any{"backendTLS": map[string]any{
-								"hostname": tc.provider.ServerName(),
-								"cert":     "/run/podidentity.podcert.ate.dev/credential-bundle.pem",
-								"key":      "/run/podidentity.podcert.ate.dev/credential-bundle.pem",
-								"root":     "/run/servicedns-ca/trust-bundle.pem",
-							}},
-						},
-					}}
+					names := []string{tc.provider.Name}
+					if tc.provider.Kubernetes() {
+						names = append(names, config.GoogleAccessTokenProviderName)
+					}
+					var want []map[string]any
+					for _, name := range names {
+						want = append(want, map[string]any{
+							"uriAuthority": name,
+							"target": map[string]any{
+								"host": tc.provider.Address,
+								"policies": map[string]any{"backendTLS": map[string]any{
+									"hostname": tc.provider.ServerName(),
+									"cert":     "/run/podidentity.podcert.ate.dev/credential-bundle.pem",
+									"key":      "/run/podidentity.podcert.ate.dev/credential-bundle.pem",
+									"root":     "/run/servicedns-ca/trust-bundle.pem",
+								}},
+							},
+						})
+					}
 					if !reflect.DeepEqual(got.Providers, want) {
 						t.Errorf("credential providers = %v, want %v", got.Providers, want)
 					}
