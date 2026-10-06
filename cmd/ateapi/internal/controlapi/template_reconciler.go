@@ -225,6 +225,12 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 			// The snapshot has already failed.
 			return 0, nil
 		}
+		if legacyGoldenSnapshot(goldenSnapshotStatus) {
+			if tmpl, err = r.rebuildLegacyGolden(ctx, tmpl, goldenActorRef); err != nil {
+				return 0, err
+			}
+			continue
+		}
 		if goldenSnapshotStatus.GetGoldenTag() != nil {
 			// The golden snapshot exists already.
 			return 0, nil
@@ -479,7 +485,95 @@ func (r *ActorTemplateReconciler) fail(ctx context.Context, observed *ateapipb.A
 // goldenSnapshotDone reports whether the golden snapshot build reached a
 // terminal state: the snapshot was recorded, or the build failed.
 func goldenSnapshotDone(snapshotStatus *ateapipb.GoldenSnapshotStatus) bool {
+	if legacyGoldenSnapshot(snapshotStatus) {
+		return false
+	}
 	return snapshotStatus.GetGoldenTag() != nil || snapshotStatus.GetErrorMessage() != ""
+}
+
+// legacyGoldenSnapshot reports whether the status still holds the golden
+// snapshot a release before golden tags recorded. Field 1 of
+// GoldenSnapshotStatus was then an ExternalSnapshot; read as the ObjectRef it
+// is now, its snapshot_uri lands in atespace and the name stays empty. A
+// stored golden tag always has a name.
+func legacyGoldenSnapshot(snapshotStatus *ateapipb.GoldenSnapshotStatus) bool {
+	ref := snapshotStatus.GetGoldenTag()
+	return ref != nil && ref.GetName() == ""
+}
+
+// legacyGoldenBackupRef names the published tag that keeps a legacy golden
+// snapshot after its template is rebuilt.
+func legacyGoldenBackupRef(goldenActorRef *ateapipb.ObjectRef) *ateapipb.ObjectRef {
+	return &ateapipb.ObjectRef{Atespace: goldenActorRef.GetAtespace(), Name: goldenActorRef.GetName() + "-legacy"}
+}
+
+// rebuildLegacyGolden starts the golden snapshot of a template goldened before
+// golden tags over. Such a snapshot is not reused: it froze the sandbox as the
+// older release booted it, including the trust store of that day, so the
+// template gets a new golden through the normal flow and its actors restore
+// their data onto that. The old golden actor's snapshot is kept as the
+// published tag <uid>-legacy, then the actor is deleted to free the golden
+// name, and the golden status is cleared. Reentrant: a finished backup tag is
+// kept, an unfinished one is made again, and a gone actor is not backed up.
+func (r *ActorTemplateReconciler) rebuildLegacyGolden(ctx context.Context, tmpl *ateapipb.ActorTemplate, goldenActorRef *ateapipb.ObjectRef) (*ateapipb.ActorTemplate, error) {
+	legacyURI := tmpl.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag().GetAtespace()
+	backupRef := legacyGoldenBackupRef(goldenActorRef)
+	if err := r.backUpLegacyGolden(ctx, goldenActorRef, backupRef); err != nil {
+		return nil, err
+	}
+	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+		return nil, fmt.Errorf("while deleting legacy golden actor: %w", err)
+	}
+	tmpl, err := r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
+		snapshotStatus.GoldenTag = nil
+		snapshotStatus.TakeGoldenSnapshotAt = nil
+		snapshotStatus.WorkloadBootFailures = 0
+	})
+	if err != nil {
+		return nil, err
+	}
+	slog.InfoContext(ctx, "Rebuilding the golden snapshot recorded before golden tags",
+		slog.String("ActorTemplate", resources.ActorTemplateRefFromActorTemplate(tmpl).String()),
+		slog.String("legacySnapshot", legacyURI),
+		slog.String("backupTag", backupRef.GetAtespace()+"/"+backupRef.GetName()))
+	return tmpl, nil
+}
+
+// backUpLegacyGolden copies the legacy golden actor's snapshot into the
+// published backup tag, unless an earlier pass finished that already or the
+// actor holds no snapshot to keep.
+func (r *ActorTemplateReconciler) backUpLegacyGolden(ctx context.Context, goldenActorRef, backupRef *ateapipb.ObjectRef) error {
+	tag, err := r.control.GetTag(ctx, &ateapipb.GetTagRequest{Tag: backupRef})
+	switch {
+	case err == nil && tag.GetStatus().GetSnapshot().GetSnapshotUri() != "":
+		return nil
+	case err == nil:
+		// CreateTag cannot resume an incomplete copy. Delete it before retrying.
+		if _, err := r.control.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: backupRef}); err != nil && status.Code(err) != codes.NotFound {
+			return fmt.Errorf("while deleting incomplete legacy golden backup tag: %w", err)
+		}
+	case status.Code(err) != codes.NotFound:
+		return fmt.Errorf("while getting legacy golden backup tag: %w", err)
+	}
+
+	actor, err := r.control.GetActor(ctx, &ateapipb.GetActorRequest{Actor: goldenActorRef})
+	if status.Code(err) == codes.NotFound {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("while getting legacy golden actor: %w", err)
+	}
+	if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() == "" {
+		return nil
+	}
+	if _, err := r.control.CreateTag(ctx, &ateapipb.CreateTagRequest{Tag: &ateapipb.Tag{
+		Metadata:    &ateapipb.ResourceMetadata{Atespace: backupRef.GetAtespace(), Name: backupRef.GetName()},
+		SourceActor: goldenActorRef,
+		Scope:       ateapipb.TagScope_TAG_SCOPE_PUBLISHED,
+	}}); err != nil {
+		return fmt.Errorf("while creating legacy golden backup tag: %w", err)
+	}
+	return nil
 }
 
 // goldenSnapshotWarmupFor returns 0 when every container has a readyz probe

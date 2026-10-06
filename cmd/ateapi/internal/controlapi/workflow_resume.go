@@ -230,7 +230,15 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 			dataOnly = src.Scope == ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 		}
 		if dataOnly {
-			ref := actorTemplate.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
+			goldenStatus := actorTemplate.GetStatus().GetGoldenSnapshotStatus()
+			if !goldenSnapshotDone(goldenStatus) {
+				// The golden snapshot is still being built, or rebuilt from
+				// one recorded before golden tags: the resume is retried
+				// once the reconciler records the golden tag.
+				meta := actorTemplate.GetMetadata()
+				return nil, nil, src, status.Errorf(codes.Unavailable, "the golden snapshot of ActorTemplate %s/%s is being built; retry the resume", meta.GetAtespace(), meta.GetName())
+			}
+			ref := goldenStatus.GetGoldenTag()
 			if ref == nil {
 				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
 			}

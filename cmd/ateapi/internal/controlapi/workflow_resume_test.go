@@ -924,7 +924,11 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 		// tag with another template's UID.
 		goldenTagGone          bool
 		goldenTagOtherTemplate bool
-		wantCode               codes.Code
+		// goldenLegacy seeds the golden snapshot a release before golden
+		// tags recorded; goldenFailed a golden build that failed.
+		goldenLegacy bool
+		goldenFailed bool
+		wantCode     codes.Code
 		// wantReason is the AIP-193 reason the refusal carries; a refusal
 		// without one is an ordinary FailedPrecondition.
 		wantReason    ateerrors.Reason
@@ -970,9 +974,23 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			wantCode:     codes.FailedPrecondition,
 		},
 		{
-			name:         "fails when template has no golden snapshot",
+			name:         "retries while the template's golden snapshot is being built",
 			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
 			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			wantCode:     codes.Unavailable,
+		},
+		{
+			name:         "retries while a legacy golden snapshot is rebuilt",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenLegacy: true,
+			wantCode:     codes.Unavailable,
+		},
+		{
+			name:         "fails when the template's golden snapshot failed",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenFailed: true,
 			wantCode:     codes.FailedPrecondition,
 			wantReason:   ateerrors.ReasonGoldenSnapshotUnavailable,
 		},
@@ -1063,6 +1081,16 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			if tt.goldenURI != "" {
 				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
 					GoldenTag: &ateapipb.ObjectRef{Atespace: "ns", Name: "golden"},
+				}}
+			}
+			if tt.goldenLegacy {
+				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
+					GoldenTag: &ateapipb.ObjectRef{Atespace: goldenSnapshotURI},
+				}}
+			}
+			if tt.goldenFailed {
+				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
+					ErrorMessage: "GoldenActorCrashed: seeded failure",
 				}}
 			}
 			stored, err := persistence.CreateActorTemplate(ctx, tmpl)
@@ -1640,12 +1668,12 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "23 Golden data resume requires a golden snapshot",
+			name: "23 Golden data resume waits for the golden snapshot",
 			actor: actorSeed{
 				localSnapshot: &ateapipb.LocalSnapshotInfo{SnapshotName: localSnapshotName, NodeVmsWithLocalSnapshots: []string{"node-1"}},
 			},
 			tmpl: templateSeed{onPause: dataScope, fromData: fromGolden},
-			want: restoreWant{code: codes.FailedPrecondition},
+			want: restoreWant{code: codes.Unavailable},
 		},
 		{
 			name: "24 Data pause snapshot under Golden fromData restores on the golden",
