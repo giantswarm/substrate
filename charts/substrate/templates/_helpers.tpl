@@ -104,8 +104,8 @@ Usage:
 
 {{/*
 OTEL_* env entries for a Go component, as a list of "- name/value" items.
-Empty when nothing under .Values.otel is set, so callers can gate the env
-key on the result.
+A signal exports only where an endpoint resolves; every other signal is
+turned off, so the defaults (no endpoint) export nothing.
 
 Usage:
   {{- with include "substrate.otel.env" . }}
@@ -120,9 +120,10 @@ Usage:
 {{- end }}
 {{- range $signal := list "traces" "metrics" "logs" }}
 {{- $cfg := index $otel $signal }}
-{{- if not $cfg.enabled }}
-{{- /* "none" is the SDK's own exporter name for "export nothing"; leaving the
-       endpoint unset would fall back to the SDK default of localhost:4317. */}}
+{{- if not (include "substrate.otel.signalEndpoint" (list $signal $)) }}
+{{- /* "none" is the SDK's own exporter name for "export nothing": a disabled
+       signal, or one without an endpoint, would otherwise export to the SDK
+       default of localhost:4317, where nothing listens. */}}
 - name: OTEL_{{ upper $signal }}_EXPORTER
   value: none
 {{- else if $cfg.endpoint }}

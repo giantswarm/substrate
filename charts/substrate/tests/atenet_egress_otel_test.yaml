@@ -59,3 +59,75 @@ tests:
       content:
         name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: ""
+
+- it: exports nothing with the default values, where no endpoint is set
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_TRACES_EXPORTER
+        value: none
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_METRICS_EXPORTER
+        value: none
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_LOGS_EXPORTER
+        value: none
+
+- it: exports a signal that has its own endpoint and turns the others off
+  set:
+    otel.metrics.endpoint: http://collector.example:4317
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+        value: http://collector.example:4317
+  - notContains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_METRICS_EXPORTER
+        value: none
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_TRACES_EXPORTER
+        value: none
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_LOGS_EXPORTER
+        value: none
+
+- it: exports every signal through the shared endpoint
+  set:
+    otel.endpoint: http://collector.example:4317
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - notContains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_TRACES_EXPORTER
+        value: none
+  - notContains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_METRICS_EXPORTER
+        value: none
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_LOGS_EXPORTER
+        value: otlp
