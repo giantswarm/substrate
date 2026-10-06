@@ -149,6 +149,14 @@ func goldenSnapshotUnavailable(ctx context.Context, actorTemplate *ateapipb.Acto
 		fmt.Errorf("%s for %s/%s: the actor cannot be resumed; start a new actor", cause, meta.GetAtespace(), meta.GetName()))
 }
 
+// workerLostCrash is the error of a resume that crashed the actor because its
+// assigned worker was lost: gone, draining, or no longer hosting it. It
+// carries the reason, so a caller can tell an actor the infrastructure lost
+// from one its workload crashed.
+func workerLostCrash(ctx context.Context, actorRef resources.ActorRef, reason ateerrors.Reason) error {
+	return ateerrors.NewGRPCError(ctx, codes.Aborted, reason, nil, fmt.Errorf("actor %s crashed", actorRef))
+}
+
 // validateGoldenSnapshotScope rejects a golden snapshot that does not carry
 // the guest state (memory + fs delta) a restore needs. Golden actors always
 // commit Full (commitSnapshotScope), so this only trips on golden snapshots
@@ -397,7 +405,7 @@ func (w *ActorWorkflow) validateAssignedWorker(ctx context.Context, actorRef res
 			if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, ateattr.ReasonWorkerPodGone); cerr != nil {
 				return nil, cerr
 			}
-			return nil, status.Errorf(codes.Aborted, "actor %s crashed", actorRef)
+			return nil, workerLostCrash(ctx, actorRef, ateerrors.ReasonWorkerPodGone)
 		}
 		return nil, fmt.Errorf("failed to get already assigned worker for actor %w", err)
 	}
@@ -408,7 +416,7 @@ func (w *ActorWorkflow) validateAssignedWorker(ctx context.Context, actorRef res
 		if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, ateattr.ReasonWorkerReassigned); cerr != nil {
 			return nil, cerr
 		}
-		return nil, status.Errorf(codes.Aborted, "actor %s crashed", actorRef.String())
+		return nil, workerLostCrash(ctx, actorRef, ateerrors.ReasonWorkerReassigned)
 	}
 	// Verify the worker is still hosting this Actor.
 	hosted, err := workerHostsActor(ctx, w.store, worker.GetMetadata().GetName(), actor.GetMetadata().GetUid())
@@ -421,7 +429,7 @@ func (w *ActorWorkflow) validateAssignedWorker(ctx context.Context, actorRef res
 		if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, ateattr.ReasonWorkerReassigned); cerr != nil {
 			return nil, fmt.Errorf("while crashing actor: %w", cerr)
 		}
-		return nil, status.Errorf(codes.Aborted, "actor %s crashed", actorRef)
+		return nil, workerLostCrash(ctx, actorRef, ateerrors.ReasonWorkerReassigned)
 	}
 	constraints, err := schedulingConstraints(actor, actorTemplate)
 	if err != nil {

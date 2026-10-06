@@ -328,6 +328,15 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 					// CRASHED without it.
 					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, status.Convert(resumeErr).Message())
 				}
+				if workerLostGoldenActor(resumeErr) {
+					// The resume crashed the golden actor because its worker
+					// was lost, typically to a pool roll. Nothing about the
+					// template failed: boot a new golden actor on the retry.
+					if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+						return 0, fmt.Errorf("while deleting golden actor its worker lost: %w", err)
+					}
+					return 0, fmt.Errorf("while resuming golden actor (its worker was lost; booting a new one): %w", resumeErr)
+				}
 				if workloadFailedBoot(resumeErr) {
 					// The workload itself failed the boot — it exited before
 					// its readiness probe answered, or never answered it — and
@@ -374,6 +383,17 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 // reason that joins it later bounds the golden boot without a change here.
 func workloadFailedBoot(err error) bool {
 	return ateattr.FailureDomain(ateattr.FailureReason(err)) == ateattr.FailureDomainWorkload
+}
+
+// workerLostGoldenActor reports whether a resume crashed the golden actor
+// because its assigned worker was lost (WORKER_POD_GONE, WORKER_REASSIGNED)
+// rather than because of anything the template or its workload did.
+func workerLostGoldenActor(err error) bool {
+	switch ateerrors.Reason(ateattr.FailureReason(err)) {
+	case ateerrors.ReasonWorkerPodGone, ateerrors.ReasonWorkerReassigned:
+		return true
+	}
+	return false
 }
 
 // giveUpGoldenBoot ends a golden boot whose workload failed

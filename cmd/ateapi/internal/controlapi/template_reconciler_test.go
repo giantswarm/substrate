@@ -1175,3 +1175,41 @@ func TestReconcileOne_LegacyGoldenSnapshot(t *testing.T) {
 		})
 	}
 }
+
+// TestReconcileOne_GoldenActorWorkerLost is a golden boot during a worker pool
+// roll: the resume crashes the golden actor because its worker is draining.
+// The template does not fail; the next pass boots a new golden actor.
+func TestReconcileOne_GoldenActorWorkerLost(t *testing.T) {
+	goldenSnapshot := "gs://bucket/root/atespaces/ate-golden/actors/" + someActorUID + "/snapshots/snap-1"
+	goldenRef := resources.ActorRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	for _, reason := range []ateerrors.Reason{ateerrors.ReasonWorkerReassigned, ateerrors.ReasonWorkerPodGone} {
+		t.Run(string(reason), func(t *testing.T) {
+			ctx := context.Background()
+			st := newFakeTemplateStore(testTemplate())
+			control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, snapshot: goldenSnapshot,
+				resumeErr: fmt.Errorf("workflow failed at step AssignWorker: %w", workerLostCrash(ctx, goldenRef, reason))}
+			r := newTestTemplateReconciler(st, control)
+
+			if _, err := r.reconcileOne(ctx, testTemplateRef); err == nil {
+				t.Fatal("reconcileOne with a lost worker: err = nil, want a retry")
+			}
+			if got := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetErrorMessage(); got != "" {
+				t.Fatalf("stored error message = %q, want empty", got)
+			}
+			if len(control.deleteReqs) != 1 || control.exists {
+				t.Fatalf("DeleteActor calls = %d, golden actor exists = %v; want the lost golden actor deleted", len(control.deleteReqs), control.exists)
+			}
+
+			control.resumeErr = nil
+			if _, err := r.reconcileOne(ctx, testTemplateRef); err != nil {
+				t.Fatalf("reconcileOne after the roll: %v", err)
+			}
+			if got := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetGoldenTag(); got.GetName() != testTemplateUID {
+				t.Errorf("stored golden tag = %v, want the new golden", got)
+			}
+			if creates, resumes, _ := control.callCounts(); creates != 1 || resumes != 2 {
+				t.Errorf("control calls = create:%d resume:%d, want a new golden actor booted (create:1 resume:2)", creates, resumes)
+			}
+		})
+	}
+}
