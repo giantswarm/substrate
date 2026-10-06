@@ -388,6 +388,12 @@ func withGoldenTag() func(*ateapipb.ActorTemplate) {
 	}
 }
 
+func withGoldenActorCrashes(n int32) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		seededGoldenStatus(tmpl).GoldenActorCrashes = n
+	}
+}
+
 func withFailed(reason string) func(*ateapipb.ActorTemplate) {
 	return func(tmpl *ateapipb.ActorTemplate) {
 		seededGoldenStatus(tmpl).ErrorMessage = reason + ": seeded failure"
@@ -542,11 +548,21 @@ func TestReconcileOne(t *testing.T) {
 			wantCreates: 1,
 		},
 		{
-			name:             "crashed golden actor fails the template",
-			template:         testTemplate(),
+			name:             "crashed golden actor past the bound fails the template",
+			template:         testTemplate(withGoldenActorCrashes(maxGoldenActorCrashes)),
 			control:          &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 			wantFailedReason: reasonGoldenActorCrashed,
-			wantMessage:      "crashed",
+			wantMessage:      "5 golden actors crashed",
+		},
+		{
+			name:         "crashed golden actor is replaced by a new one",
+			template:     testTemplate(),
+			control:      &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, snapshot: goldenSnapshot},
+			wantTag:      true,
+			wantDeadline: true,
+			wantCreates:  1,
+			wantResumes:  1,
+			wantSuspends: 1,
 		},
 		{
 			name:        "resume failure requeues without failing",
