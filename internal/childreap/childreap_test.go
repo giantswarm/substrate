@@ -18,8 +18,11 @@ package childreap
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -304,4 +307,125 @@ func TestAnAbandonedRoundRetriesOnceTheEntryLeaves(t *testing.T) {
 			t.Fatal("leaving the entry did not re-arm the reaper; the orphans it gave up on stay zombies")
 		}
 	})
+}
+
+// TestOrphansAreReapedWhileACommandRuns is runsc deleting a sandbox the pod's
+// init inherited: the command waits for an orphan's PID to go away, which
+// takes the reaper collecting the orphan while the command runs.
+func TestOrphansAreReapedWhileACommandRuns(t *testing.T) {
+	r := New()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go r.Run(ctx)
+
+	// Left for the reaper, like a killed sandbox.
+	orphan := exec.Command("/bin/sleep", "0.2")
+	if err := orphan.Start(); err != nil {
+		t.Fatalf("start orphan: %v", err)
+	}
+	pid := strconv.Itoa(orphan.Process.Pid)
+
+	// An unreaped zombie still answers signal 0.
+	waitCtx, stop := context.WithTimeout(ctx, 10*time.Second)
+	defer stop()
+	started := time.Now()
+	waiter := exec.CommandContext(waitCtx, "/bin/sh", "-c", "while kill -0 "+pid+" 2>/dev/null; do sleep 0.02; done")
+	if err := r.RunCommand(waiter); err != nil {
+		t.Fatalf("the command waiting for the orphan failed after %s: %v", time.Since(started).Round(time.Millisecond), err)
+	}
+}
+
+// TestCommandsKeepTheirExitStatus runs commands with known exit statuses while
+// orphans keep the reaper busy.
+func TestCommandsKeepTheirExitStatus(t *testing.T) {
+	r := New()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go r.Run(ctx)
+
+	run, stop := context.WithTimeout(ctx, 2*time.Second)
+	defer stop()
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for run.Err() == nil {
+				if exec.Command("true").Start() != nil {
+					return
+				}
+			}
+		})
+	}
+	for range 8 {
+		wg.Go(func() {
+			for run.Err() == nil {
+				err := r.RunCommand(exec.Command("/bin/sh", "-c", "exit 3"))
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+					t.Errorf("RunCommand = %v, want exit status 3", err)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+}
+
+func TestCombinedOutput(t *testing.T) {
+	out, err := New().CombinedOutput(exec.Command("/bin/sh", "-c", "echo out; echo err >&2"))
+	if err != nil {
+		t.Fatalf("CombinedOutput: %v", err)
+	}
+	if got, want := string(out), "out\nerr\n"; got != want {
+		t.Errorf("CombinedOutput = %q, want %q", got, want)
+	}
+	cmd := exec.Command("true")
+	cmd.Stdout = &strings.Builder{}
+	if _, err := New().CombinedOutput(cmd); err == nil {
+		t.Error("CombinedOutput with Stdout set succeeded, want an error")
+	}
+}
+
+// TestChildPIDsListsBothWays checks the children files and the /proc scan
+// agree on a child of this process.
+func TestChildPIDsListsBothWays(t *testing.T) {
+	child := exec.Command("/bin/sleep", "5")
+	if err := child.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer func() {
+		_ = child.Process.Kill()
+		_ = child.Wait()
+	}()
+	listers := map[string]func() ([]int, error){"scan": childPIDsFromScan}
+	if hasChildrenFiles() {
+		listers["children files"] = childPIDsFromTasks
+	}
+	for name, list := range listers {
+		pids, err := list()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !slices.Contains(pids, child.Process.Pid) {
+			t.Errorf("%s = %v, want it to hold the child %d", name, pids, child.Process.Pid)
+		}
+	}
+}
+
+func TestParentPID(t *testing.T) {
+	tests := []struct {
+		stat     string
+		wantPPID int
+		wantOK   bool
+	}{
+		{"42 (runsc) S 1 42 42 0 -1", 1, true},
+		{"42 (a) (b) Z 7 42 42 0 -1", 7, true},
+		{"42 (cut", 0, false},
+		{"42 (x) S", 0, false},
+	}
+	for _, tt := range tests {
+		ppid, ok := parentPID([]byte(tt.stat))
+		if ppid != tt.wantPPID || ok != tt.wantOK {
+			t.Errorf("parentPID(%q) = %d, %v, want %d, %v", tt.stat, ppid, ok, tt.wantPPID, tt.wantOK)
+		}
+	}
 }
