@@ -67,6 +67,14 @@ const (
 // failed, a lease — is retried without bound, as before.
 const maxWorkloadBootFailures = 3
 
+// maxGoldenActorCrashes bounds the golden actors a template replaces after
+// observing them CRASHED before the snapshot was taken. The actor records no
+// cause: a worker deleted under it by a pool roll crashes it as well as its
+// workload does, and an upgrade boots the goldens of new templates exactly
+// while it rolls the pool. Past the bound the template fails with
+// reasonGoldenActorCrashed.
+const maxGoldenActorCrashes = 5
+
 // templateReconcilerStore enumerates the exact storage methods needed by
 // ActorTemplateReconciler and nothing more.
 type templateReconcilerStore interface {
@@ -263,7 +271,26 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				// giveUpGoldenBoot crashed it and died before recording why.
 				return 0, r.fail(ctx, tmpl, reasonGoldenActorNotReady, workloadBootFailuresMessage(failures, nil))
 			}
-			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, "golden actor crashed before its snapshot was taken")
+			// A crash carries no cause on the actor: its worker may have been
+			// deleted under it by a pool roll as well as its workload crashed.
+			// Replace the golden actor until the bound, counting first so the
+			// bound holds across passes and replicas.
+			crashes := goldenSnapshotStatus.GetGoldenActorCrashes() + 1
+			if crashes > maxGoldenActorCrashes {
+				return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, fmt.Sprintf("%d golden actors crashed before the snapshot was taken", crashes-1))
+			}
+			if tmpl, err = r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
+				snapshotStatus.GoldenActorCrashes = crashes
+				snapshotStatus.TakeGoldenSnapshotAt = nil
+			}); err != nil {
+				return 0, err
+			}
+			slog.WarnContext(ctx, "Golden actor crashed before its snapshot was taken; booting a new one",
+				slog.String("ActorTemplate", ref.String()), slog.Int("crashes", int(crashes)))
+			if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+				return 0, fmt.Errorf("while deleting crashed golden actor: %w", err)
+			}
+			continue
 
 		case ateapipb.ActorState_ACTOR_STATE_RUNNING:
 			takeAt := goldenSnapshotStatus.GetTakeGoldenSnapshotAt()

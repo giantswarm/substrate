@@ -2411,8 +2411,15 @@ type GoldenSnapshotStatus struct {
 	//
 	// +k8s:optional
 	WorkloadBootFailures int32 `protobuf:"varint,4,opt,name=workload_boot_failures,json=workloadBootFailures,proto3" json:"workload_boot_failures,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// golden_actor_crashes counts the golden actors observed CRASHED before
+	// the snapshot was taken. Each one is deleted and a new golden actor is
+	// booted, so a worker lost to a pool roll costs a boot and not the
+	// template; ate-api gives the template up once the count reaches its bound.
+	//
+	// +k8s:optional
+	GoldenActorCrashes int32 `protobuf:"varint,5,opt,name=golden_actor_crashes,json=goldenActorCrashes,proto3" json:"golden_actor_crashes,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GoldenSnapshotStatus) Reset() {
@@ -2469,6 +2476,13 @@ func (x *GoldenSnapshotStatus) GetErrorMessage() string {
 func (x *GoldenSnapshotStatus) GetWorkloadBootFailures() int32 {
 	if x != nil {
 		return x.WorkloadBootFailures
+	}
+	return 0
+}
+
+func (x *GoldenSnapshotStatus) GetGoldenActorCrashes() int32 {
+	if x != nil {
+		return x.GoldenActorCrashes
 	}
 	return 0
 }
@@ -7199,13 +7213,14 @@ const file_ateapi_proto_rawDesc = "" +
 	"\x06limits\x18\x01 \x03(\v2\x0e.ateapi.LimitsR\x06limits\"8\n" +
 	"\x06Limits\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
-	"\bquantity\x18\x02 \x01(\tR\bquantity\"\xf6\x01\n" +
+	"\bquantity\x18\x02 \x01(\tR\bquantity\"\xa8\x02\n" +
 	"\x14GoldenSnapshotStatus\x120\n" +
 	"\n" +
 	"golden_tag\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\tgoldenTag\x12Q\n" +
 	"\x17take_golden_snapshot_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x14takeGoldenSnapshotAt\x12#\n" +
 	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\x124\n" +
-	"\x16workload_boot_failures\x18\x04 \x01(\x05R\x14workloadBootFailures\"i\n" +
+	"\x16workload_boot_failures\x18\x04 \x01(\x05R\x14workloadBootFailures\x120\n" +
+	"\x14golden_actor_crashes\x18\x05 \x01(\x05R\x12goldenActorCrashes\"i\n" +
 	"\x13ActorTemplateStatus\x12R\n" +
 	"\x16golden_snapshot_status\x18\x01 \x01(\v2\x1c.ateapi.GoldenSnapshotStatusR\x14goldenSnapshotStatus\"k\n" +
 	"\rSandboxConfig\x129\n" +
