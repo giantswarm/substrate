@@ -60,6 +60,11 @@ func TestNewResourceDefaults(t *testing.T) {
 	if attrs[string(semconv.ServiceInstanceIDKey)] == "" {
 		t.Error("service.instance.id must be set")
 	}
+	// newResource tolerates ErrSchemaURLConflict, so only the schema URL shows
+	// a semconv import that no longer matches the SDK's own detectors.
+	if got, want := res.SchemaURL(), resource.Default().SchemaURL(); got != want {
+		t.Errorf("schema URL = %q, want the SDK's %q", got, want)
+	}
 }
 
 func TestNewResourceEnvWins(t *testing.T) {
