@@ -105,11 +105,11 @@ data:
                       cert: /run/podidentity.podcert.ate.dev/credential-bundle.pem
                       key: /run/podidentity.podcert.ate.dev/credential-bundle.pem
                       root: /run/servicedns.podcert.ate.dev/trust-bundle.pem
-      - protocol: TCP
-        tcpRoutes:
-        - backends:
-          - dynamic:
-              target: source.connectHeaders["host"]
+      # No TCP listener: a tunnel whose first bytes are neither a TLS
+      # ClientHello nor an HTTP request is a raw stream, and this agentgateway
+      # applies no egress policy to a TCP route. Without a TCP listener the
+      # AUTO bind closes the stream. The policy API of this line has no
+      # TLS-passthrough rule that could select one.
 {{- with .Values.atenetEgress.upstreamTrust.caBundle }}
 ---
 apiVersion: v1
