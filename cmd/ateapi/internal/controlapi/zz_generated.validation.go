@@ -3796,6 +3796,34 @@ func Validate_GoldenSnapshotStatus(
 		errs = append(errs, fn(fldPath.Child("workload_boot_failures"), &obj.WorkloadBootFailures, oldVal, oldObj != nil)...)
 	}
 
+	{ // field ateapipb.GoldenSnapshotStatus.GoldenActorCrashes
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *int32,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.GoldenSnapshotStatus) *int32 {
+				return &oldObj.GoldenActorCrashes
+			})
+		errs = append(errs, fn(fldPath.Child("golden_actor_crashes"), &obj.GoldenActorCrashes, oldVal, oldObj != nil)...)
+	}
+
 	return errs
 }
 
