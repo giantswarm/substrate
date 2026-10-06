@@ -32,6 +32,17 @@ import (
 const (
 	migrationTableName = "schema_migrations"
 	migrationLockName  = "agent-substrate:atepg:migrations"
+
+	// openFGAMigrationVersion is the Substrate migration that creates the
+	// OpenFGA tables (migrations/000002_openfga.sql).
+	openFGAMigrationVersion = 2
+	// openFGALedgerTableName is the Goose ledger of OpenFGA's own embedded
+	// migrations, which created the OpenFGA tables before Substrate managed
+	// them in its own migrations.
+	openFGALedgerTableName = "goose_db_version"
+	// pinnedOpenFGAMigrationVersion is the OpenFGA PostgreSQL migration whose
+	// schema migrations/000002_openfga.sql reproduces.
+	pinnedOpenFGAMigrationVersion = 6
 )
 
 //go:embed migrations/*.sql
@@ -53,6 +64,9 @@ func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("atepg requires PostgreSQL 13 or newer for xid8 and pg_current_snapshot. server_version_num is %d", version)
 	}
 	if err := rejectUnversionedSubstrateSchema(ctx, pool); err != nil {
+		return err
+	}
+	if err := adoptOpenFGASchema(ctx, pool); err != nil {
 		return err
 	}
 
@@ -127,6 +141,64 @@ func rejectUnversionedSubstrateSchema(ctx context.Context, pool *pgxpool.Pool) e
 	if hasSubstrateTables && !hasMetadata {
 		return errors.New("unsupported PostgreSQL schema: Substrate tables exist without a migration ledger")
 	}
+	return nil
+}
+
+// adoptOpenFGASchema records migrations/000002_openfga.sql as applied in a
+// database whose OpenFGA tables were created by OpenFGA's own embedded
+// migrations, which ateapi ran before Substrate managed the OpenFGA schema.
+// Those migrations, at the pinned version, create exactly the schema of
+// 000002, which would otherwise fail on the existing tables. OpenFGA's ledger
+// stays, so an ateapi that still runs OpenFGA's migrations finds them applied.
+func adoptOpenFGASchema(ctx context.Context, pool *pgxpool.Pool) error {
+	lockID, err := migrationLockID(ctx, pool)
+	if err != nil {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin OpenFGA schema adoption: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize with Goose's session lock on the same key, so a concurrent
+	// startup neither applies 000002 nor adopts the schema twice.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+		return fmt.Errorf("lock PostgreSQL migrations for OpenFGA schema adoption: %w", err)
+	}
+
+	var hasLedger, hasOpenFGALedger bool
+	if err := tx.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL, to_regclass($2) IS NOT NULL`,
+		migrationTableName, openFGALedgerTableName).Scan(&hasLedger, &hasOpenFGALedger); err != nil {
+		return fmt.Errorf("check OpenFGA migration ledger: %w", err)
+	}
+	if !hasLedger || !hasOpenFGALedger {
+		return nil
+	}
+	var current, openFGAVersion int64
+	if err := tx.QueryRow(ctx, fmt.Sprintf(`
+		SELECT
+			(SELECT COALESCE(max(version_id), 0) FROM %s WHERE is_applied),
+			(SELECT COALESCE(max(version_id), 0) FROM %s WHERE is_applied)`,
+		migrationTableName, openFGALedgerTableName)).Scan(&current, &openFGAVersion); err != nil {
+		return fmt.Errorf("read OpenFGA migration versions: %w", err)
+	}
+	if current != openFGAMigrationVersion-1 {
+		return nil
+	}
+	if openFGAVersion != pinnedOpenFGAMigrationVersion {
+		return fmt.Errorf("unsupported PostgreSQL schema: OpenFGA's migrations are at version %d, migration %d adopts version %d only",
+			openFGAVersion, openFGAMigrationVersion, pinnedOpenFGAMigrationVersion)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s (version_id, is_applied) VALUES ($1, true)`, migrationTableName),
+		openFGAMigrationVersion); err != nil {
+		return fmt.Errorf("record OpenFGA schema adoption: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit OpenFGA schema adoption: %w", err)
+	}
+	slog.InfoContext(ctx, "Adopted the OpenFGA schema created by OpenFGA's migrations",
+		slog.Int64("openfga_version", openFGAVersion),
+		slog.Int64("migration_version", openFGAMigrationVersion))
 	return nil
 }
 
