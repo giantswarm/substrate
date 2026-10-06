@@ -28,11 +28,10 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/openfga/openfga/assets"
 	"github.com/pressly/goose/v3"
 )
-
-const pinnedOpenFGAMigrationVersion = 6
 
 var transactionControl = regexp.MustCompile(`(?im)^\s*(BEGIN|START\s+TRANSACTION|COMMIT|ROLLBACK)\s*;`)
 
@@ -274,6 +273,113 @@ func TestMigrationSchemaStates(t *testing.T) {
 			t.Error("Connect created a migration ledger for an unsupported schema")
 		}
 	})
+}
+
+// TestMigrationsAdoptOpenFGASchema upgrades a database in which OpenFGA's own
+// embedded migrations created the OpenFGA tables next to Substrate's first
+// migration, the schema of an ateapi that predates 000002_openfga.sql.
+func TestMigrationsAdoptOpenFGASchema(t *testing.T) {
+	pool := requirePool(t)
+
+	for _, tc := range []struct {
+		name           string
+		openFGAVersion int64
+		wantErr        string
+	}{
+		{name: "pinned version", openFGAVersion: pinnedOpenFGAMigrationVersion},
+		{name: "older version", openFGAVersion: pinnedOpenFGAMigrationVersion - 1, wantErr: "OpenFGA's migrations are at version 5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			const schema = "migration-openfga-adopt"
+			if _, err := pool.Exec(ctx, `DROP SCHEMA IF EXISTS "migration-openfga-adopt" CASCADE; CREATE SCHEMA "migration-openfga-adopt"`); err != nil {
+				t.Fatalf("resetting schema: %v", err)
+			}
+			t.Cleanup(func() {
+				_, _ = pool.Exec(context.Background(), `DROP SCHEMA IF EXISTS "migration-openfga-adopt" CASCADE`)
+			})
+			migrationPool, err := pgxpool.New(ctx, containerDSN+"&search_path="+schema)
+			if err != nil {
+				t.Fatalf("opening migration pool: %v", err)
+			}
+			t.Cleanup(migrationPool.Close)
+
+			migrations, err := fs.Sub(migrationFiles, "migrations")
+			if err != nil {
+				t.Fatalf("opening migrations: %v", err)
+			}
+			provider, err := openMigrationProvider(ctx, migrationPool, migrations)
+			if err != nil {
+				t.Fatalf("creating migration provider: %v", err)
+			}
+			if _, err := provider.UpTo(ctx, openFGAMigrationVersion-1); err != nil {
+				t.Fatalf("applying the migrations before OpenFGA's: %v", err)
+			}
+			if err := provider.Close(); err != nil {
+				t.Fatalf("closing migration provider: %v", err)
+			}
+			applyOpenFGAMigrations(t, migrationPool, tc.openFGAVersion)
+
+			err = applyMigrations(ctx, migrationPool)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("applyMigrations error = %v, want %q", err, tc.wantErr)
+				}
+				if diff := cmp.Diff([]int64{1}, appliedMigrationVersions(t, migrationPool)); diff != "" {
+					t.Fatalf("applied migration versions after a refused adoption (-want +got):\n%s", diff)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("applyMigrations on an OpenFGA-created schema: %v", err)
+			}
+			// A restart finds every migration applied and adopts nothing again.
+			if err := applyMigrations(ctx, migrationPool); err != nil {
+				t.Fatalf("applyMigrations after the adoption: %v", err)
+			}
+			want, err := fs.Glob(migrationFiles, "migrations/*.sql")
+			if err != nil {
+				t.Fatalf("listing migrations: %v", err)
+			}
+			wantVersions := make([]int64, len(want))
+			for i := range want {
+				wantVersions[i] = int64(i + 1)
+			}
+			if diff := cmp.Diff(wantVersions, appliedMigrationVersions(t, migrationPool)); diff != "" {
+				t.Fatalf("applied migration versions after the adoption (-want +got):\n%s", diff)
+			}
+			if _, err := migrationPool.Exec(ctx, `
+				INSERT INTO tuple (store, object_type, object_id, relation, _user, user_type, ulid, inserted_at, condition_name)
+				VALUES ('s', 'actor', 'a', 'owner', 'user:u', 'user', 'ulid', now(), 'c')`); err != nil {
+				t.Fatalf("writing a tuple to the adopted schema: %v", err)
+			}
+		})
+	}
+}
+
+// applyOpenFGAMigrations runs OpenFGA's embedded PostgreSQL migrations up to
+// version with OpenFGA's own Goose ledger, as ateapi did before
+// 000002_openfga.sql.
+func applyOpenFGAMigrations(t *testing.T, pool *pgxpool.Pool, version int64) {
+	t.Helper()
+	migrations, err := fs.Sub(assets.EmbedMigrations, assets.PostgresMigrationDir)
+	if err != nil {
+		t.Fatalf("opening OpenFGA migrations: %v", err)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations, goose.WithTableName(openFGALedgerTableName))
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("creating OpenFGA migration provider: %v", err)
+	}
+	defer func() {
+		if err := provider.Close(); err != nil {
+			t.Errorf("closing OpenFGA migration provider: %v", err)
+		}
+	}()
+	if _, err := provider.UpTo(t.Context(), version); err != nil {
+		t.Fatalf("applying OpenFGA migrations: %v", err)
+	}
 }
 
 func TestMigrationFailureLeavesCompletedPrefixAndResumes(t *testing.T) {
