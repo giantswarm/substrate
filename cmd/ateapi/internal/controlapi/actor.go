@@ -107,6 +107,9 @@ func (s *ServiceImpl) createActor(ctx context.Context, inActor *ateapipb.Actor, 
 	// Resolve the explicit tag, or freeze the template's current golden default.
 	tagRef := inActor.GetSourceTag()
 	if tagRef == nil {
+		if legacyGoldenSnapshot(template.GetStatus().GetGoldenSnapshotStatus()) {
+			return nil, goldenSnapshotAwaitingMigration(template)
+		}
 		tagRef = template.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
 	} else {
 		for _, volume := range template.GetVolumes() {

@@ -137,6 +137,25 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	return actor, true, nil
 }
 
+// legacyGoldenSnapshot reports whether the status still holds the golden
+// snapshot a release before golden tags recorded. Field 1 of
+// GoldenSnapshotStatus was then an ExternalSnapshot; read as the ObjectRef it
+// is now, its snapshot_uri lands in atespace and the name stays empty. A
+// golden tag the reconciler records always has a name.
+func legacyGoldenSnapshot(snapshotStatus *ateapipb.GoldenSnapshotStatus) bool {
+	ref := snapshotStatus.GetGoldenTag()
+	return ref != nil && ref.GetName() == ""
+}
+
+// goldenSnapshotAwaitingMigration refuses, for the moment, a resume or a create
+// on a template whose golden snapshot a release before golden tags recorded:
+// the ActorTemplate reconciler migrates it into the golden tag the caller needs
+// on its next pass, so the refusal is one a retry outlives.
+func goldenSnapshotAwaitingMigration(actorTemplate *ateapipb.ActorTemplate) error {
+	meta := actorTemplate.GetMetadata()
+	return status.Errorf(codes.Unavailable, "the golden snapshot of ActorTemplate %s/%s was recorded before golden tags and awaits its migration into one; retry", meta.GetAtespace(), meta.GetName())
+}
+
 // goldenSnapshotUnavailable refuses a resume that restores the actor's data onto
 // its ActorTemplate's golden snapshot when the template has no usable one. The
 // refusal carries ReasonGoldenSnapshotUnavailable so a caller can tell it from
@@ -230,7 +249,14 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 			dataOnly = src.Scope == ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 		}
 		if dataOnly {
-			ref := actorTemplate.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
+			goldenStatus := actorTemplate.GetStatus().GetGoldenSnapshotStatus()
+			if msg := goldenStatus.GetErrorMessage(); msg != "" {
+				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "the ActorTemplate golden snapshot failed: "+msg)
+			}
+			if legacyGoldenSnapshot(goldenStatus) {
+				return nil, nil, src, goldenSnapshotAwaitingMigration(actorTemplate)
+			}
+			ref := goldenStatus.GetGoldenTag()
 			if ref == nil {
 				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
 			}
