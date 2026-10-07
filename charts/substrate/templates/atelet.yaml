@@ -102,6 +102,20 @@ globalDefault: false
 preemptionPolicy: {{ $preemption }}
 description: "Node-local ate components that every actor activation depends on."
 ---
+{{- /* The pinned images reach atelet as a mounted file it reads at every
+  pass, never as an argument: a changed list then changes this ConfigMap
+  and no pod template, so it rolls without restarting any atelet. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "substrate.fullname" (list "atelet-pinned-images" .) }}
+  namespace: {{ .Release.Namespace }}
+data:
+  pinned-images: |
+{{- range .Values.atelet.imageCache.pinnedImages }}
+    {{ . }}
+{{- end }}
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -166,10 +180,8 @@ spec:
 {{- if not (kindIs "invalid" .maxBytes) }}
         - --image-cache-max-bytes={{ .maxBytes | int64 }}
 {{- end }}
-{{- with .pinnedImages }}
-        - --image-cache-pinned-images={{ join "," . }}
 {{- end }}
-{{- end }}
+        - --image-cache-pinned-images-file=/etc/atelet/image-cache/pinned-images
 {{- with .Values.atelet.extraArgs }}
 {{ toYaml . | indent 8 }}
 {{- end }}
@@ -246,6 +258,11 @@ spec:
         - name: host-dev
           mountPath: /host/dev
           readOnly: true
+        # Mounted whole, never through subPath: kubelet then swaps in a
+        # changed list in place.
+        - name: pinned-images
+          mountPath: /etc/atelet/image-cache
+          readOnly: true
       volumes:
       - name: run-ateom
         hostPath:
@@ -263,6 +280,9 @@ spec:
         hostPath:
           path: /dev
           type: Directory
+      - name: pinned-images
+        configMap:
+          name: {{ include "substrate.fullname" (list "atelet-pinned-images" .) }}
       - name: podidentity
         projected:
           sources:
