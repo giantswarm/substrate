@@ -17,20 +17,28 @@
 #   1. mirrors upstream `main` into this fork's `main` — kagent-dev/substrate
 #      rewrites its main when it rebases onto agent-substrate/substrate, so the
 #      mirror is a forced update of the one branch nobody edits here;
-#   2. probes whether the carried patches of the `giantswarm` branch still
-#      rebase onto upstream `main` and names the first one that would conflict;
-#   3. on `workflow_dispatch` with a `pin`, re-pins the branch: rebases the
-#      carried patches onto the new upstream tag (a patch upstream has merged
-#      falls away), builds and tests, and pushes the rebased branch — or, when
-#      a patch conflicts, pushes what applied before it and opens a pull
-#      request that names the conflicting patch and the ones behind it.
+#   2. probes whether the carried patches of the line still rebase onto
+#      upstream `main` and names the first one that would conflict;
+#   3. on `workflow_dispatch` with a `pin`, builds a re-pin candidate: rebases
+#      the carried patches onto the new upstream tag (a patch upstream has
+#      merged falls away), builds and tests, pushes the candidate to
+#      `sync/<date>-<pin>` — whose push runs the line's required checks on it
+#      — and opens a pull request against the line; when a patch conflicts, the
+#      candidate holds what applied before it and the pull request names the
+#      rest, to be finished by hand on the same branch;
+#   4. on `workflow_dispatch` with `land`, lands a candidate: once the line's
+#      required checks passed on the candidate's head, pushes exactly that
+#      commit to the line and closes the pull request. A re-pin rewrites the
+#      line, so no merge method of the pull request can land it; the gate is
+#      the required checks on the pushed commit.
 # Pushes are made as the org's HeraldBot GitHub App (a token minted per run
 # from the org secrets HERALD_CLIENT_ID / HERALD_APP_KEY; the App is installed
-# on every org repository with contents and workflows write access and is a
-# bypass actor of both rulesets): a push with GITHUB_TOKEN triggers no other
-# workflow — and the push to `giantswarm` is what publishes the dev build —
-# while a classic personal access token without the `workflow` scope cannot
-# push commits that touch .github/workflows, which every mirror and re-pin does.
+# on every org repository with contents and workflows write access): a push
+# with GITHUB_TOKEN triggers no other workflow — and the candidate's push is
+# what runs the required checks on it, the line's push what publishes the dev
+# build — while a classic personal access token without the `workflow` scope
+# cannot push commits that touch .github/workflows, which every mirror and
+# re-pin does.
 name: sync-upstream
 
 on:
@@ -39,8 +47,15 @@ on:
   workflow_dispatch:
     inputs:
       pin:
-        description: "Upstream release tag (or commit) to re-pin the giantswarm branch onto, e.g. v0.0.27. Empty: mirror main and probe the rebase only."
+        description: "Upstream release tag (or commit) to re-pin the line onto, e.g. v0.0.27: pushes a candidate and opens its pull request. Empty: mirror main and probe the rebase only."
         required: false
+      land:
+        description: "A candidate branch (sync/<date>-<pin>) to land on the line once its required checks passed"
+        required: false
+      line:
+        description: "The line to re-pin or land on: giantswarm or a maintenance branch (release-1.3)"
+        required: false
+        default: giantswarm
       dry_run:
         description: "Do everything except push"
         type: boolean
@@ -56,11 +71,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  LINE_BRANCH: giantswarm
+  LINE_BRANCH: ${{ inputs.line || 'giantswarm' }}
   UPSTREAM_REPO: kagent-dev/substrate
+  # The checks the line's ruleset requires on every update of the line.
+  REQUIRED_CHECKS: run-tests govulncheck
 
 jobs:
   sync:
+    if: inputs.land == ''
     runs-on: ubuntu-latest
     steps:
       - name: Mint the bot token
@@ -71,7 +89,7 @@ jobs:
           private-key: ${{ secrets.HERALD_APP_KEY }}
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          ref: giantswarm
+          ref: ${{ env.LINE_BRANCH }}
           fetch-depth: 0
           fetch-tags: true
           token: ${{ steps.app.outputs.token }}
@@ -188,49 +206,121 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
           set -o errexit -o nounset -o pipefail
+          branch="sync/$(date -u +%Y%m%d)-${NEW}"
+          [ "${LINE_BRANCH}" = giantswarm ] || branch="sync/$(date -u +%Y%m%d)-${LINE_BRANCH}-${NEW}"
+          land="Actions → sync-upstream → Run workflow with \`land\` = \`${branch}\` and \`line\` = \`${LINE_BRANCH}\`"
           if git rebase --onto "${NEW}" "${CURRENT}"; then
             echo "- re-pin: the carried patches rebased onto \`${NEW}\`" >> "$GITHUB_STEP_SUMMARY"
             git log --reverse --format='  - `%h` %s' "${NEW}..HEAD" >> "$GITHUB_STEP_SUMMARY"
             go build ./...
             go test ./...
-            if [ "${DRY_RUN}" != true ]; then
-              git push --force-with-lease="refs/heads/${LINE_BRANCH}:${HEAD_SHA}" origin "HEAD:refs/heads/${LINE_BRANCH}"
-              echo "- pushed \`${LINE_BRANCH}\` (\`${HEAD_SHA:0:12}\` → \`$(git rev-parse --short HEAD)\`); the publish workflow builds the dev build" >> "$GITHUB_STEP_SUMMARY"
-            fi
-            exit 0
+            title="sync: re-pin ${LINE_BRANCH} onto ${NEW}"
+            {
+              echo "Re-pin candidate of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\`: the carried patches replayed, \`go build ./... && go test ./...\` passed."
+              echo
+              git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+              echo
+              echo "The push of this branch runs the line's required checks (${REQUIRED_CHECKS}) on its head. Review the candidate here; once they are green, land it with ${land}, which pushes exactly this head to \`${LINE_BRANCH}\` and closes this pull request. Do not merge it: the line is a rebased branch, a merge would fold the old pin back in (FORK.md, \"Re-pin\")."
+              echo
+              echo "Line head: ${HEAD_SHA}"
+            } > "${RUNNER_TEMP}/body.md"
+            failed=false
+          else
+            # A carried patch conflicts: the candidate holds the patches before
+            # it, and the pull request names the rest.
+            conflict=$(git rev-parse REBASE_HEAD)
+            git rebase --abort
+            git checkout --quiet --detach "${conflict}^"
+            git rebase --quiet --onto "${NEW}" "${CURRENT}"
+            title="sync: re-pin ${LINE_BRANCH} onto ${NEW} (hand-over: a carried patch conflicts)"
+            {
+              echo "Re-pin of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\` stopped at a conflicting carried patch."
+              echo
+              echo "Replayed on this branch:"
+              git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+              echo
+              echo "Conflicting: \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
+              echo
+              echo "Not replayed yet (in order):"
+              git log --reverse --format='- `%h` %s' "${conflict}^..${HEAD_SHA}"
+              echo
+              echo "To finish (FORK.md, \"Re-pin\"): check this branch out, \`git cherry-pick -x\` the conflicting patch and the ones behind it, resolve, run \`go build ./... && go test ./...\` and push this branch, which runs the line's required checks (${REQUIRED_CHECKS}) on its head. Once they are green, land it with ${land}. Do not merge it: the line is a rebased branch, a merge would fold the old pin back in."
+              echo
+              echo "Line head: ${HEAD_SHA}"
+            } > "${RUNNER_TEMP}/body.md"
+            echo "- re-pin: conflict at \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::carried patch $(git rev-parse --short "${conflict}") conflicts with ${NEW}; hand-over candidate ${branch}"
+            failed=true
           fi
-
-          # A carried patch conflicts: replay the patches before it onto the new
-          # pin, push that as a hand-over branch and open a pull request that
-          # names the rest. The pull request is a hand-over, not a merge — the
-          # line is a rebased branch (FORK.md, "Re-pin").
-          conflict=$(git rev-parse REBASE_HEAD)
-          git rebase --abort
-          branch="sync/$(date -u +%Y%m%d)-${NEW}"
-          git branch --force "${branch}" "${conflict}^"
-          git checkout --quiet "${branch}"
-          git rebase --quiet --onto "${NEW}" "${CURRENT}"
           {
-            echo "Re-pin of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\` stopped at a conflicting carried patch."
+            echo "- candidate \`${branch}\` at \`$(git rev-parse --short HEAD)\`, pull request against \`${LINE_BRANCH}\`: ${title}"
             echo
-            echo "Replayed on this branch:"
-            git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+            echo '<details><summary>pull request body</summary>'
             echo
-            echo "Conflicting: \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
+            cat "${RUNNER_TEMP}/body.md"
             echo
-            echo "Not replayed yet (in order):"
-            git log --reverse --format='- `%h` %s' "${conflict}^..${HEAD_SHA}"
-            echo
-            echo "To finish (FORK.md, \"Re-pin\"): check this branch out, \`git cherry-pick -x\` the conflicting patch and the ones behind it, resolve, run \`go build ./... && go test ./...\`, then update the line with \`git push --force-with-lease origin HEAD:${LINE_BRANCH}\` and close this pull request. Do not merge it: the line is a rebased branch, a merge would fold the old pin back in."
-          } > "${RUNNER_TEMP}/body.md"
-          {
-            echo "- re-pin: conflict at \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
+            echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "${DRY_RUN}" != true ]; then
             git push --force origin "HEAD:refs/heads/${branch}"
             gh pr create --repo "${GITHUB_REPOSITORY}" --base "${LINE_BRANCH}" --head "${branch}" \
-              --title "sync: re-pin ${LINE_BRANCH} onto ${NEW} (hand-over: a carried patch conflicts)" \
-              --body-file "${RUNNER_TEMP}/body.md" >> "$GITHUB_STEP_SUMMARY"
+              --title "${title}" --body-file "${RUNNER_TEMP}/body.md" >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "::error::carried patch $(git rev-parse --short "${conflict}") conflicts with ${NEW}; hand-over branch ${branch}"
-          exit 1
+          [ "${failed}" = false ]
+
+  land:
+    if: inputs.land != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint the bot token
+        id: app
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
+        with:
+          client-id: ${{ secrets.HERALD_CLIENT_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ env.LINE_BRANCH }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - name: Land the candidate
+        # The candidate lands as the commit its required checks ran on, onto
+        # the line head it was replayed from; the line's ruleset refuses a push
+        # whose head has not passed them.
+        env:
+          CANDIDATE: ${{ inputs.land }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          case "${CANDIDATE}" in
+            sync/*) ;;
+            *) echo "::error::${CANDIDATE} is not a re-pin candidate (sync/<date>-<pin>)"; exit 1 ;;
+          esac
+          pr=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${CANDIDATE}" --base "${LINE_BRANCH}" --state open --json number,headRefOid,body --jq '.[0] // empty')
+          if [ -z "${pr}" ]; then
+            echo "::error::no open pull request of ${CANDIDATE} against ${LINE_BRANCH}"
+            exit 1
+          fi
+          number=$(jq -r .number <<<"${pr}")
+          sha=$(jq -r .headRefOid <<<"${pr}")
+          base=$(jq -r .body <<<"${pr}" | sed -n 's/^Line head: \([0-9a-f]\{40\}\)$/\1/p' | tail -1)
+          line=$(git rev-parse HEAD)
+          if [ "${base}" != "${line}" ]; then
+            echo "::error::${LINE_BRANCH} is at ${line}, the candidate was replayed from ${base:-an unrecorded head}: build a new candidate"
+            exit 1
+          fi
+          for check in ${REQUIRED_CHECKS}; do
+            conclusion=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?check_name=${check}&filter=latest" --jq '[.check_runs[].conclusion] | if length == 0 then "missing" elif all(. == "success") then "success" else map(. // "pending") | join(",") end')
+            echo "- \`${check}\` on \`${sha:0:12}\`: ${conclusion}" >> "$GITHUB_STEP_SUMMARY"
+            if [ "${conclusion}" != success ]; then
+              echo "::error::required check ${check} on ${sha} is ${conclusion}"
+              exit 1
+            fi
+          done
+          git fetch --quiet origin "${sha}"
+          echo "- land #${number}: \`${LINE_BRANCH}\` \`${line:0:12}\` → \`${sha:0:12}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${DRY_RUN}" != true ]; then
+            git push --force-with-lease="refs/heads/${LINE_BRANCH}:${line}" origin "${sha}:refs/heads/${LINE_BRANCH}"
+            gh pr close "${number}" --repo "${GITHUB_REPOSITORY}" --comment "Landed: \`${LINE_BRANCH}\` is now \`${sha}\`, the head the required checks passed on."
+          fi
