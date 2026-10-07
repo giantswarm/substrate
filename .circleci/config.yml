@@ -26,8 +26,9 @@
 # and substrate with their image defaults stamped to this registry, including
 # the agentgateway image atenet-router and atenet-egress run, which comes from
 # the Giant Swarm line of agentgateway (pinned below) instead of upstream's
-# build. Every other branch builds the six images without pushing, so a
-# Dockerfile regression surfaces on the pull request. Hand-written: the
+# build. Every pull request branch builds the six images without pushing,
+# so a Dockerfile regression surfaces on the pull request; a maintenance
+# branch (release-X.Y) is built by its tag pipeline alone. Hand-written: the
 # repository carries upstream's workflows and its own, nothing
 # devctl-generated.
 version: 2.1
@@ -268,7 +269,12 @@ workflows:
             - scan
           filters: *publish-filters
 
-  # Every other branch: the same six builds for both platforms, nothing pushed.
+  # Every pull request branch: the same six builds for both platforms, nothing
+  # pushed. The line's branch and its maintenance branches (release-X.Y) are
+  # left out: the auto-release workflow tags their pushed head at once and the
+  # tag's own pipeline builds it, while a branch build of a tagged head stops
+  # on architect's release-version guard, whose failure would stand on the
+  # candidate's commit and refuse its promotion.
   validate:
     jobs:
       - architect/push-to-registries: &validate-push
@@ -283,7 +289,7 @@ workflows:
           annotations: index:io.giantswarm.upstream.version=v0.3.0-alpha3
           filters: &validate-filters
             branches:
-              ignore: giantswarm
+              ignore: /^(giantswarm|release-[0-9]+\.[0-9]+)$/
       - architect/push-to-registries:
           <<: *validate-push
           name: build-atecontroller
