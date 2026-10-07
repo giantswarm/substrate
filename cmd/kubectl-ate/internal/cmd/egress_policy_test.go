@@ -638,6 +638,7 @@ rules:
 			var stdout bytes.Buffer
 			runner := &createEgressPolicyRunner{
 				creator:   test.creator,
+				guard:     &fakeEgressPolicyGuard{version: ateapipb.EgressPolicyContractVersion},
 				actor:     actor,
 				policy:    manifest,
 				outputFmt: test.outputFmt,
@@ -805,6 +806,7 @@ rules:
 			var stdout bytes.Buffer
 			runner := &updateEgressPolicyRunner{
 				updater:   test.updater,
+				guard:     &fakeEgressPolicyGuard{version: ateapipb.EgressPolicyContractVersion},
 				actor:     actor,
 				policy:    manifest,
 				outputFmt: test.outputFmt,
@@ -828,6 +830,210 @@ rules:
 				t.Errorf("stdout mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// fakeEgressPolicyGuard reports a configured egress policy contract, or
+// contractErr, and answers the read-back with stored. readBack records whether
+// the runner read the policy back.
+type fakeEgressPolicyGuard struct {
+	version     string
+	contractErr error
+	stored      *ateapipb.EgressPolicy
+	storedErr   error
+	readBack    bool
+}
+
+func (f *fakeEgressPolicyGuard) GetEgressPolicyContract(ctx context.Context, req *ateapipb.GetEgressPolicyContractRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicyContract, error) {
+	if f.contractErr != nil {
+		return nil, f.contractErr
+	}
+	return &ateapipb.EgressPolicyContract{Version: f.version}, nil
+}
+
+func (f *fakeEgressPolicyGuard) GetActorEgressPolicy(ctx context.Context, req *ateapipb.GetActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error) {
+	f.readBack = true
+	if f.storedErr != nil {
+		return nil, f.storedErr
+	}
+	return f.stored, nil
+}
+
+func TestCheckEgressPolicyContract(t *testing.T) {
+	actor := &ateapipb.ObjectRef{Atespace: "team-a", Name: "c1"}
+	tests := []struct {
+		name         string
+		guard        *fakeEgressPolicyGuard
+		wantReported bool
+		wantErr      string
+	}{
+		{
+			name:         "same contract passes",
+			guard:        &fakeEgressPolicyGuard{version: ateapipb.EgressPolicyContractVersion},
+			wantReported: true,
+		},
+		{
+			name:         "another contract is refused with both named",
+			guard:        &fakeEgressPolicyGuard{version: "v0.2.0-beta5"},
+			wantReported: true,
+			wantErr:      `refusing to create the egress policy for actor "c1" in atespace "team-a": ate-api speaks egress-policy contract "v0.2.0-beta5", this kubectl-ate speaks "` + ateapipb.EgressPolicyContractVersion + `", and the two give the rules' fields another meaning; use the kubectl-ate of the server's release`,
+		},
+		{
+			name:         "an empty contract is another contract",
+			guard:        &fakeEgressPolicyGuard{},
+			wantReported: true,
+			wantErr:      `refusing to create the egress policy for actor "c1" in atespace "team-a": ate-api speaks egress-policy contract "", this kubectl-ate speaks "` + ateapipb.EgressPolicyContractVersion + `", and the two give the rules' fields another meaning; use the kubectl-ate of the server's release`,
+		},
+		{
+			name:  "a server without the RPC reports none",
+			guard: &fakeEgressPolicyGuard{contractErr: status.Error(codes.Unimplemented, "unknown method GetEgressPolicyContract")},
+		},
+		{
+			name:    "other errors wrap",
+			guard:   &fakeEgressPolicyGuard{contractErr: status.Error(codes.Unavailable, "api-server down")},
+			wantErr: `failed to read the egress-policy contract of ate-api: rpc error: code = Unavailable desc = api-server down`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reported, err := checkEgressPolicyContract(context.Background(), test.guard, "create", actor)
+			gotErr := ""
+			if err != nil {
+				gotErr = err.Error()
+			}
+			if gotErr != test.wantErr {
+				t.Fatalf("checkEgressPolicyContract() error = %q, want %q", gotErr, test.wantErr)
+			}
+			if reported != test.wantReported {
+				t.Errorf("checkEgressPolicyContract() reported = %v, want %v", reported, test.wantReported)
+			}
+		})
+	}
+}
+
+// TestEgressPolicyRunners_Guard drives create and update against servers of
+// another contract: one that reports it, refused before the write, and one
+// that reports none, whose stored rules are read back. A server of another
+// contract can decode a tls_passthrough rule as one allowing every destination
+// and store it without the hostnames it could not decode, which reads back as
+// an empty tls_passthrough rule.
+func TestEgressPolicyRunners_Guard(t *testing.T) {
+	actor := &ateapipb.ObjectRef{Atespace: "team-a", Name: "c1"}
+	sent := []*ateapipb.EgressRule{{TlsPassthrough: &ateapipb.TLSPassthroughRule{Hostnames: []string{"db.example.com"}}}}
+	meta := &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "default", Uid: "3f2b1c0e-8d5a-4b6e-9c1d-2a7e4f6b8c0d", Version: 1}
+	manifest := &ateapipb.EgressPolicy{Metadata: meta, Rules: sent}
+	accepted := &ateapipb.EgressPolicy{Metadata: meta, Rules: sent}
+	asAll := &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{TlsPassthrough: &ateapipb.TLSPassthroughRule{}}}}
+	unimplemented := status.Error(codes.Unimplemented, "unknown method GetEgressPolicyContract")
+
+	tests := []struct {
+		name         string
+		guard        *fakeEgressPolicyGuard
+		policy       *ateapipb.EgressPolicy // the manifest when not manifest
+		wantWrite    bool
+		wantReadBack bool
+		wantErr      []string
+	}{
+		{
+			name:    "a server of another contract is refused before the write",
+			guard:   &fakeEgressPolicyGuard{version: "v0.2.0-beta5"},
+			wantErr: []string{`ate-api speaks egress-policy contract "v0.2.0-beta5", this kubectl-ate speaks "` + ateapipb.EgressPolicyContractVersion + `"`},
+		},
+		{
+			name:      "a server of the same contract is not read back",
+			guard:     &fakeEgressPolicyGuard{version: ateapipb.EgressPolicyContractVersion},
+			wantWrite: true,
+		},
+		{
+			name:         "a server without a contract that stored the rules passes",
+			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			wantWrite:    true,
+			wantReadBack: true,
+		},
+		{
+			name:         "a server without a contract that stored other rules is refused with the difference",
+			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, stored: asAll},
+			wantWrite:    true,
+			wantReadBack: true,
+			wantErr: []string{
+				`ate-api reports no egress-policy contract and stored the egress policy for actor "c1" in atespace "team-a" with other rules than it accepted`,
+				`The stored policy is in force: replace it with the kubectl-ate of the server's release ("kubectl ate get egress-policy c1 -a team-a -o yaml", rewrite the rules in that release's shape, "kubectl ate update egress-policy c1 -a team-a -f <manifest>")`,
+				`Rules (-accepted +stored):`,
+				`db.example.com`,
+			},
+		},
+		{
+			name:         "a server without a contract that changed the policy again is not judged",
+			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, stored: &ateapipb.EgressPolicy{Metadata: &ateapipb.ResourceMetadata{Version: 2}}},
+			wantWrite:    true,
+			wantReadBack: true,
+			wantErr:      []string{`changed again before it could be verified (version 1 written, 2 stored)`},
+		},
+		{
+			name:    "a server without a contract gets no rule without hostnames",
+			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{Http: &ateapipb.HTTPRule{Hostnames: []string{"api.example.com"}}}, {TlsPassthrough: &ateapipb.TLSPassthroughRule{}}}},
+			wantErr: []string{`ate-api reports no egress-policy contract, and rules[1] names no protocol with hostnames, which a server of another contract can store as a rule allowing every destination`},
+		},
+		{
+			name:    "a server without a contract gets no rule without a protocol",
+			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{}}},
+			wantErr: []string{`rules[0] names no protocol with hostnames`},
+		},
+		{
+			name:         "a failed read-back is an error",
+			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, storedErr: status.Error(codes.Unavailable, "api-server down")},
+			wantWrite:    true,
+			wantReadBack: true,
+			wantErr:      []string{`reading back the egress policy for actor "c1" in atespace "team-a" to verify it failed`},
+		},
+	}
+	for _, test := range tests {
+		for _, verb := range []string{"create", "update"} {
+			t.Run(verb+"/"+test.name, func(t *testing.T) {
+				guard := *test.guard
+				manifest := manifest
+				if test.policy != nil {
+					manifest = test.policy
+				}
+				var stdout bytes.Buffer
+				var runner interface{ Run(context.Context) error }
+				var wrote func() bool
+				switch verb {
+				case "create":
+					creator := &fakeEgressPolicyCreator{policy: accepted}
+					runner = &createEgressPolicyRunner{creator: creator, guard: &guard, actor: actor, policy: manifest, outputFmt: "table", stdout: &stdout}
+					wrote = func() bool { return creator.req != nil }
+				case "update":
+					updater := &fakeEgressPolicyUpdater{policy: accepted}
+					runner = &updateEgressPolicyRunner{updater: updater, guard: &guard, actor: actor, policy: manifest, outputFmt: "table", stdout: &stdout}
+					wrote = func() bool { return updater.req != nil }
+				}
+				err := runner.Run(context.Background())
+				gotErr := ""
+				if err != nil {
+					gotErr = err.Error()
+				}
+				if (gotErr == "") != (len(test.wantErr) == 0) {
+					t.Fatalf("Run() error = %q, want one containing %q", gotErr, test.wantErr)
+				}
+				for _, want := range test.wantErr {
+					if !strings.Contains(gotErr, want) {
+						t.Errorf("Run() error = %q, want it to contain %q", gotErr, want)
+					}
+				}
+				if wrote() != test.wantWrite {
+					t.Errorf("wrote = %v, want %v", wrote(), test.wantWrite)
+				}
+				if guard.readBack != test.wantReadBack {
+					t.Errorf("read back = %v, want %v", guard.readBack, test.wantReadBack)
+				}
+				if (err == nil) != (stdout.Len() > 0) {
+					t.Errorf("stdout = %q with error %v: the policy prints only when the write is accepted", stdout.String(), err)
+				}
+			})
+		}
 	}
 }
 

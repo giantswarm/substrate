@@ -1035,3 +1035,13 @@ func TestHeaderNameValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestGetEgressPolicyContract(t *testing.T) {
+	got, err := (&RPCService{}).GetEgressPolicyContract(context.Background(), &ateapipb.GetEgressPolicyContractRequest{})
+	if err != nil {
+		t.Fatalf("GetEgressPolicyContract() error = %v", err)
+	}
+	if got.GetVersion() != ateapipb.EgressPolicyContractVersion {
+		t.Errorf("GetEgressPolicyContract() version = %q, want %q", got.GetVersion(), ateapipb.EgressPolicyContractVersion)
+	}
+}

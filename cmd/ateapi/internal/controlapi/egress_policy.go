@@ -58,6 +58,12 @@ func validateCreateActorEgressPolicyRequest(ctx context.Context, req *ateapipb.C
 	return Validate_CreateActorEgressPolicyRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)
 }
 
+// GetEgressPolicyContract reports the egress policy contract this server
+// decodes, so a client of another contract can refuse before it writes.
+func (s *RPCService) GetEgressPolicyContract(context.Context, *ateapipb.GetEgressPolicyContractRequest) (*ateapipb.EgressPolicyContract, error) {
+	return &ateapipb.EgressPolicyContract{Version: ateapipb.EgressPolicyContractVersion}, nil
+}
+
 func (s *RPCService) GetActorEgressPolicy(ctx context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
 	if errs := validateGetActorEgressPolicyRequest(ctx, req); len(errs) > 0 {
 		return nil, toGRPCStatusError(errs)

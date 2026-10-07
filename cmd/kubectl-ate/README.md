@@ -264,6 +264,14 @@ kubectl ate update egress-policy <actor-name> -a <atespace> -f policy.yaml
 * `create` can take a manifest with no `metadata`, taking `name` and `atespace` from the command line.
 * `update` replaces the entire policy and the manifest metadata must match `uid`
   and `version` for the `EgressPolicy` being updated.
+* `create` and `update` first compare the egress-policy contract ate-api reports
+  with their own and refuse a server of another one, whose `EgressRule` gives
+  the same field numbers another meaning. A server too old to report one gets
+  no rule without hostnames (another contract can store it as a rule allowing
+  every destination); it is written to, and the stored policy is read back: when its rules differ from
+  the ones the server accepted, the command fails with the difference. The
+  stored policy is then in force; replace it with the `kubectl-ate` of the
+  server's release.
 
 #### `kubectl ate get egress-policy` output columns
 
