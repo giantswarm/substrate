@@ -45,6 +45,7 @@ const (
 	Control_CreateActorEgressPolicy_FullMethodName    = "/ateapi.Control/CreateActorEgressPolicy"
 	Control_UpdateActorEgressPolicy_FullMethodName    = "/ateapi.Control/UpdateActorEgressPolicy"
 	Control_DeleteActorEgressPolicy_FullMethodName    = "/ateapi.Control/DeleteActorEgressPolicy"
+	Control_GetEgressPolicyContract_FullMethodName    = "/ateapi.Control/GetEgressPolicyContract"
 	Control_MintActorJWT_FullMethodName               = "/ateapi.Control/MintActorJWT"
 	Control_MintActorCertificate_FullMethodName       = "/ateapi.Control/MintActorCertificate"
 	Control_CreateTag_FullMethodName                  = "/ateapi.Control/CreateTag"
@@ -112,6 +113,10 @@ type ControlClient interface {
 	UpdateActorEgressPolicy(ctx context.Context, in *UpdateActorEgressPolicyRequest, opts ...grpc.CallOption) (*EgressPolicy, error)
 	// Delete the egress policy resource nested under an Actor.
 	DeleteActorEgressPolicy(ctx context.Context, in *DeleteActorEgressPolicyRequest, opts ...grpc.CallOption) (*EgressPolicy, error)
+	// Get the version of the egress policy contract this server speaks: the
+	// shape in which it decodes EgressPolicy and EgressRule. A client compares
+	// it with its own before it writes an egress policy.
+	GetEgressPolicyContract(ctx context.Context, in *GetEgressPolicyContractRequest, opts ...grpc.CallOption) (*EgressPolicyContract, error)
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -296,6 +301,16 @@ func (c *controlClient) DeleteActorEgressPolicy(ctx context.Context, in *DeleteA
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EgressPolicy)
 	err := c.cc.Invoke(ctx, Control_DeleteActorEgressPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlClient) GetEgressPolicyContract(ctx context.Context, in *GetEgressPolicyContractRequest, opts ...grpc.CallOption) (*EgressPolicyContract, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EgressPolicyContract)
+	err := c.cc.Invoke(ctx, Control_GetEgressPolicyContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -574,6 +589,10 @@ type ControlServer interface {
 	UpdateActorEgressPolicy(context.Context, *UpdateActorEgressPolicyRequest) (*EgressPolicy, error)
 	// Delete the egress policy resource nested under an Actor.
 	DeleteActorEgressPolicy(context.Context, *DeleteActorEgressPolicyRequest) (*EgressPolicy, error)
+	// Get the version of the egress policy contract this server speaks: the
+	// shape in which it decodes EgressPolicy and EgressRule. A client compares
+	// it with its own before it writes an egress policy.
+	GetEgressPolicyContract(context.Context, *GetEgressPolicyContractRequest) (*EgressPolicyContract, error)
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -679,6 +698,9 @@ func (UnimplementedControlServer) UpdateActorEgressPolicy(context.Context, *Upda
 }
 func (UnimplementedControlServer) DeleteActorEgressPolicy(context.Context, *DeleteActorEgressPolicyRequest) (*EgressPolicy, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteActorEgressPolicy not implemented")
+}
+func (UnimplementedControlServer) GetEgressPolicyContract(context.Context, *GetEgressPolicyContractRequest) (*EgressPolicyContract, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEgressPolicyContract not implemented")
 }
 func (UnimplementedControlServer) MintActorJWT(context.Context, *MintActorJWTRequest) (*MintActorJWTResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintActorJWT not implemented")
@@ -982,6 +1004,24 @@ func _Control_DeleteActorEgressPolicy_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControlServer).DeleteActorEgressPolicy(ctx, req.(*DeleteActorEgressPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Control_GetEgressPolicyContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEgressPolicyContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).GetEgressPolicyContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_GetEgressPolicyContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).GetEgressPolicyContract(ctx, req.(*GetEgressPolicyContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1454,6 +1494,10 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteActorEgressPolicy",
 			Handler:    _Control_DeleteActorEgressPolicy_Handler,
+		},
+		{
+			MethodName: "GetEgressPolicyContract",
+			Handler:    _Control_GetEgressPolicyContract_Handler,
 		},
 		{
 			MethodName: "MintActorJWT",
