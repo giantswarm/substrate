@@ -109,7 +109,8 @@ atelet:
     # Image references pulled at every pass and never evicted: the images
     # of the pool's ActorTemplates, on nodes whose cache volume sits above
     # the watermark, so the first actor after an idle spell does not pay a
-    # cold pull and unpack.
+    # cold pull and unpack. They reach atelet through a mounted ConfigMap
+    # it reads at every pass, so a changed list restarts no atelet pod.
     pinnedImages: []
 
 ateController:
