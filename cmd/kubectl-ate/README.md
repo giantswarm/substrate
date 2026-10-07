@@ -232,6 +232,64 @@ kubectl ate create actor <actor-name> -a <atespace> --template <template-name> -
 kubectl ate delete tag <tag-name> -a <atespace>
 ```
 
+### Egress Policies
+
+An actor has at most one egress policy. Its rules are evaluated in order: the
+first rule that matches a request allows it, and a request no rule matches, or
+from an actor with no policy, is denied. A rule is one of `hostnames` (DNS
+names, or a `*` as the leftmost label; with optional `effects`), `cidrs`
+(address prefixes) or `all` (every destination).
+
+The rule kinds are encoded by field number, and other releases of Substrate
+define other kinds under the same numbers: use the `kubectl-ate` built from the
+release the cluster runs, or a rule is stored with another meaning and no error.
+
+```bash
+# Get an actor's egress policy.
+kubectl ate get egress-policy <actor-name> -a <atespace>
+kubectl ate get egress-policy <actor-name> -a <atespace> -o yaml
+
+# Create an egress policy.
+kubectl ate create egress-policy <actor-name> -a <atespace> -f policy.yaml
+
+# Copy the egress policy of another actor.
+kubectl ate get egress-policy <src-actor> -a <atespace> -o yaml | \
+  kubectl ate create egress-policy <actor-name> -a <atespace> -f -
+
+# Replace an actor's egress policy: dump it, edit the rules, send it back.
+kubectl ate get egress-policy <actor-name> -a <atespace> -o yaml > policy.yaml
+$EDITOR policy.yaml
+kubectl ate update egress-policy <actor-name> -a <atespace> -f policy.yaml
+```
+
+A manifest is one `EgressPolicy` in YAML or JSON, as `get -o yaml` prints it:
+
+```yaml
+rules:
+- hostnames:
+    patterns: ["api.example.com", "*.googleapis.com"]
+- cidrs:
+    cidrs: ["10.0.0.0/8"]
+```
+
+#### Details
+
+* `create` can take a manifest with no `metadata`, taking `name` and `atespace` from the command line.
+* `update` replaces the entire policy and the manifest metadata must match `uid`
+  and `version` for the `EgressPolicy` being updated.
+* `get` exits 1 when the actor does not exist; an actor without a policy prints a
+  note on stderr and exits 0.
+
+#### `kubectl ate get egress-policy` output columns
+
+| Column | Meaning |
+|---|---|
+| `ATESPACE` | The atespace the actor and its policy belong to. |
+| `ACTOR` | The actor the policy applies to. |
+| `RULES` | Number of rules; `-o yaml` shows them in evaluation order. |
+| `VERSION` | The policy's version, bumped on every update. |
+| `AGE` | Time elapsed since the policy was created. |
+
 ### Logs
 
 `kubectl ate logs` requires a resource-type subcommand; running `kubectl ate logs <actor-name>` on its own prints help. The only supported resource type is `actors`:
