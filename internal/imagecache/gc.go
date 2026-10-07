@@ -224,6 +224,15 @@ func (s *Store) Pin(img *Image) {
 	s.pinned[img.Digest.String()] = append([]string(nil), img.LayerDirs...)
 }
 
+// Unpin releases the image Pin protected under digest, so the next pass
+// may evict it like any unplaced image. Unpinning a digest that is not
+// pinned does nothing.
+func (s *Store) Unpin(digest string) {
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	delete(s.pinned, digest)
+}
+
 // addPinnedRoots roots every pinned image (see Pin).
 func (s *Store) addPinnedRoots(rs *RootSet, dbg bool) {
 	s.pinMu.Lock()

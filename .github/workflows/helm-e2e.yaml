@@ -145,6 +145,14 @@ jobs:
         E2E_SANDBOX_CLASS: microvm
         E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-microvm.xml
       run: hack/run-e2e-kind.sh ./internal/e2e/suites/demo -v -args --no-color
+    - name: Run E2E tests (atelet restart)
+      # Deletes the atelet pod of a running actor's node and requires the next
+      # suspend to commit a snapshot within a client's 30 s budget, as after a
+      # DaemonSet roll. Its own step: nothing may use that atelet beside it.
+      env:
+        E2E_ATELET_RESTART: "1"
+        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-atelet-restart.xml
+      run: hack/run-e2e-kind.sh ./internal/e2e/suites/ateletrestart -v -args --no-color
     - name: Run E2E tests (identity and trust rotation)
       env:
         E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-identity.xml

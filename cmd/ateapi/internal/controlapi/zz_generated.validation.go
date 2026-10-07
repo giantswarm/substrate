@@ -727,6 +727,36 @@ func Validate_ActorStatus(
 		errs = append(errs, fn(fldPath.Child("crash"), obj.Crash, oldVal, oldObj != nil)...)
 	}
 
+	{ // field ateapipb.ActorStatus.FencingToken
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.FencingToken,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_FencingToken(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.ActorStatus) *ateapipb.FencingToken {
+				return oldObj.FencingToken
+			})
+		errs = append(errs, fn(fldPath.Child("fencing_token"), obj.FencingToken, oldVal, oldObj != nil)...)
+	}
+
 	return errs
 }
 
@@ -3530,6 +3560,79 @@ func Validate_ExternalVolumeTemplate(
 	return errs
 }
 
+// Validate_FencingToken validates an instance of FencingToken according
+// to declarative validation rules in the API schema.
+func Validate_FencingToken(
+	ctx context.Context, op operation.Operation, fldPath *field.Path,
+	obj, oldObj *ateapipb.FencingToken) (errs field.ErrorList) {
+
+	{ // field ateapipb.FencingToken.Holder
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			if e := validate.MaxLength(ctx, op, fldPath, obj, oldObj, 253); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.FencingToken) *string {
+				return &oldObj.Holder
+			})
+		errs = append(errs, fn(fldPath.Child("holder"), &obj.Holder, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.FencingToken.Generation
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *int64,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			if e := validate.Minimum(ctx, op, fldPath, obj, oldObj, 1); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.FencingToken) *int64 {
+				return &oldObj.Generation
+			})
+		errs = append(errs, fn(fldPath.Child("generation"), &obj.Generation, oldVal, oldObj != nil)...)
+	}
+
+	return errs
+}
+
 // Validate_GetActorEgressPolicyRequest validates an instance of GetActorEgressPolicyRequest according
 // to declarative validation rules in the API schema.
 func Validate_GetActorEgressPolicyRequest(
@@ -5677,6 +5780,36 @@ func Validate_PauseActorRequest(
 		errs = append(errs, fn(fldPath.Child("actor"), obj.Actor, oldVal, oldObj != nil)...)
 	}
 
+	{ // field ateapipb.PauseActorRequest.FencingToken
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.FencingToken,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_FencingToken(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.PauseActorRequest) *ateapipb.FencingToken {
+				return oldObj.FencingToken
+			})
+		errs = append(errs, fn(fldPath.Child("fencing_token"), obj.FencingToken, oldVal, oldObj != nil)...)
+	}
+
 	return errs
 }
 
@@ -6251,6 +6384,36 @@ func Validate_ResumeActorRequest(
 		errs = append(errs, fn(fldPath.Child("actor"), obj.Actor, oldVal, oldObj != nil)...)
 	}
 
+	{ // field ateapipb.ResumeActorRequest.FencingToken
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.FencingToken,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_FencingToken(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.ResumeActorRequest) *ateapipb.FencingToken {
+				return oldObj.FencingToken
+			})
+		errs = append(errs, fn(fldPath.Child("fencing_token"), obj.FencingToken, oldVal, oldObj != nil)...)
+	}
+
 	return errs
 }
 
@@ -6777,6 +6940,36 @@ func Validate_SuspendActorRequest(
 				return oldObj.Actor
 			})
 		errs = append(errs, fn(fldPath.Child("actor"), obj.Actor, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.SuspendActorRequest.FencingToken
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.FencingToken,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_FencingToken(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.SuspendActorRequest) *ateapipb.FencingToken {
+				return oldObj.FencingToken
+			})
+		errs = append(errs, fn(fldPath.Child("fencing_token"), obj.FencingToken, oldVal, oldObj != nil)...)
 	}
 
 	return errs

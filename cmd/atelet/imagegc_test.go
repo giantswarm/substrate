@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -192,6 +193,10 @@ type fakeGCStore struct {
 	ensured      []string
 	ensureErr    error
 	pinned       []string
+	unpinned     []string
+	// digests overrides the digest a reference resolves to; any other
+	// reference resolves to sha256:aaa….
+	digests map[string]string
 }
 
 func (f *fakeGCStore) EnsureImage(_ context.Context, ref string) (*imagecache.Image, error) {
@@ -199,11 +204,19 @@ func (f *fakeGCStore) EnsureImage(_ context.Context, ref string) (*imagecache.Im
 	if f.ensureErr != nil {
 		return nil, f.ensureErr
 	}
-	return &imagecache.Image{Digest: v1.Hash{Algorithm: "sha256", Hex: strings.Repeat("a", 64)}}, nil
+	hex := strings.Repeat("a", 64)
+	if d, ok := f.digests[ref]; ok {
+		hex = d
+	}
+	return &imagecache.Image{Digest: v1.Hash{Algorithm: "sha256", Hex: hex}}, nil
 }
 
 func (f *fakeGCStore) Pin(img *imagecache.Image) {
 	f.pinned = append(f.pinned, img.Digest.String())
+}
+
+func (f *fakeGCStore) Unpin(digest string) {
+	f.unpinned = append(f.unpinned, digest)
 }
 
 func (f *fakeGCStore) CacheSize() (int64, error) {
@@ -282,7 +295,7 @@ func TestRunTicks(t *testing.T) {
 func TestRunPassEnsuresAndPinsBeforeEvicting(t *testing.T) {
 	fake := &fakeGCStore{size: 100, stats: imagecache.EvictStats{FreedBytes: 100}}
 	g := &imageCacheGC{store: fake, cacheDir: t.TempDir(), highPct: 100, lowPct: 0, maxBytes: 1,
-		pinned: []string{"registry.example/a:1", "registry.example/b:2"}}
+		pinned: []string{"registry.example/app-a:1", "registry.example/app-b:2"}}
 	g.runPass(context.Background())
 	if len(fake.ensured) != 2 || len(fake.pinned) != 2 {
 		t.Errorf("ensured=%v pinned=%v, want both pins pulled and pinned", fake.ensured, fake.pinned)
@@ -295,13 +308,129 @@ func TestRunPassEnsuresAndPinsBeforeEvicting(t *testing.T) {
 func TestRunPassRunsWhenAPinnedPullFails(t *testing.T) {
 	fake := &fakeGCStore{size: 100, ensureErr: errors.New("registry down")}
 	g := &imageCacheGC{store: fake, cacheDir: t.TempDir(), highPct: 100, lowPct: 0, maxBytes: 1,
-		pinned: []string{"registry.example/a:1"}}
+		pinned: []string{"registry.example/app-a:1"}}
 	g.runPass(context.Background())
 	if len(fake.pinned) != 0 {
 		t.Errorf("pinned=%v after a failed pull, want none", fake.pinned)
 	}
 	if fake.evictCalls != 1 {
 		t.Errorf("evictCalls=%d, want 1: a failed pin must not gate the pass", fake.evictCalls)
+	}
+}
+
+func hexOf(c string) string { return strings.Repeat(c, 64) }
+
+func writePinnedFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsurePinnedJoinsFlagAndFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "pinned-images")
+	writePinnedFile(t, file, "# kagent images\n\nregistry.example/app-b:2\n  registry.example/app-a:1  \nnot a reference\n")
+	fake := &fakeGCStore{}
+	g := &imageCacheGC{store: fake, pinned: []string{"registry.example/app-a:1"}, pinnedFile: file}
+	g.ensurePinned(context.Background())
+	want := []string{"registry.example/app-a:1", "registry.example/app-b:2"}
+	if fmt.Sprint(fake.ensured) != fmt.Sprint(want) {
+		t.Errorf("ensured=%v, want %v (flag first, file once each, comments and malformed lines skipped)", fake.ensured, want)
+	}
+}
+
+func TestEnsurePinnedUnpinsWhatLeftTheFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "pinned-images")
+	fake := &fakeGCStore{digests: map[string]string{
+		"registry.example/old:1":  hexOf("1"),
+		"registry.example/new:2":  hexOf("2"),
+		"registry.example/keep:1": hexOf("3"),
+	}}
+	g := &imageCacheGC{store: fake, pinnedFile: file}
+
+	writePinnedFile(t, file, "registry.example/old:1\nregistry.example/keep:1\n")
+	g.ensurePinned(context.Background())
+	if len(fake.unpinned) != 0 {
+		t.Fatalf("unpinned=%v on the first pass, want none", fake.unpinned)
+	}
+
+	writePinnedFile(t, file, "registry.example/new:2\nregistry.example/keep:1\n")
+	g.ensurePinned(context.Background())
+	if want := []string{"sha256:" + hexOf("1")}; fmt.Sprint(fake.unpinned) != fmt.Sprint(want) {
+		t.Errorf("unpinned=%v, want only the image that left the list %v", fake.unpinned, want)
+	}
+}
+
+func TestEnsurePinnedUnpinsTheDigestATagMovedFrom(t *testing.T) {
+	fake := &fakeGCStore{digests: map[string]string{"registry.example/app-a:latest": hexOf("1")}}
+	g := &imageCacheGC{store: fake, pinned: []string{"registry.example/app-a:latest"}}
+	g.ensurePinned(context.Background())
+	fake.digests["registry.example/app-a:latest"] = hexOf("2")
+	g.ensurePinned(context.Background())
+	if want := []string{"sha256:" + hexOf("1")}; fmt.Sprint(fake.unpinned) != fmt.Sprint(want) {
+		t.Errorf("unpinned=%v, want the digest the tag moved from %v", fake.unpinned, want)
+	}
+}
+
+func TestEnsurePinnedKeepsAPinWhosePullFails(t *testing.T) {
+	fake := &fakeGCStore{}
+	g := &imageCacheGC{store: fake, pinned: []string{"registry.example/app-a:1"}}
+	g.ensurePinned(context.Background())
+	fake.ensureErr = errors.New("registry down")
+	g.ensurePinned(context.Background())
+	if len(fake.unpinned) != 0 {
+		t.Errorf("unpinned=%v after a failed re-pull, want the earlier pin kept", fake.unpinned)
+	}
+}
+
+func TestEnsurePinnedKeepsPinsWhenTheFileIsUnreadable(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "pinned-images")
+	writePinnedFile(t, file, "registry.example/app-a:1\n")
+	fake := &fakeGCStore{}
+	g := &imageCacheGC{store: fake, pinnedFile: file}
+	g.ensurePinned(context.Background())
+
+	// A directory in the file's place: reading it fails with something
+	// other than not-exist.
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(file, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g.ensurePinned(context.Background())
+	if len(fake.unpinned) != 0 {
+		t.Errorf("unpinned=%v with an unreadable file, want the pins kept", fake.unpinned)
+	}
+}
+
+func TestEnsurePinnedMissingFileIsAnEmptyList(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "pinned-images")
+	writePinnedFile(t, file, "registry.example/app-a:1\n")
+	fake := &fakeGCStore{}
+	g := &imageCacheGC{store: fake, pinnedFile: file}
+	g.ensurePinned(context.Background())
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	g.ensurePinned(context.Background())
+	if want := []string{"sha256:" + hexOf("a")}; fmt.Sprint(fake.unpinned) != fmt.Sprint(want) {
+		t.Errorf("unpinned=%v once the file is gone, want %v", fake.unpinned, want)
+	}
+}
+
+func TestRunPinsOnlyRefreshes(t *testing.T) {
+	fake := &fakeGCStore{}
+	g := &imageCacheGC{store: fake, pinned: []string{"registry.example/app-a:1"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	g.RunPinsOnly(ctx, 10*time.Millisecond)
+	if len(fake.ensured) < 2 {
+		t.Errorf("ensured=%v, want the immediate refresh plus at least one tick", fake.ensured)
+	}
+	if fake.evictCalls != 0 {
+		t.Errorf("evictCalls=%d, want 0: the pins-only loop never evicts", fake.evictCalls)
 	}
 }
 
