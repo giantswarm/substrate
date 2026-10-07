@@ -5152,6 +5152,90 @@ func (x *DeleteActorEgressPolicyRequest) GetActor() *ObjectRef {
 	return nil
 }
 
+type GetEgressPolicyContractRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEgressPolicyContractRequest) Reset() {
+	*x = GetEgressPolicyContractRequest{}
+	mi := &file_ateapi_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEgressPolicyContractRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEgressPolicyContractRequest) ProtoMessage() {}
+
+func (x *GetEgressPolicyContractRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ateapi_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEgressPolicyContractRequest.ProtoReflect.Descriptor instead.
+func (*GetEgressPolicyContractRequest) Descriptor() ([]byte, []int) {
+	return file_ateapi_proto_rawDescGZIP(), []int{69}
+}
+
+// EgressPolicyContract names the egress policy contract a server speaks.
+type EgressPolicyContract struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The contract version: the upstream release whose EgressPolicy and
+	// EgressRule shape the server decodes, such as "v0.3.0-alpha3". Two
+	// versions that differ encode the same field numbers with another meaning.
+	Version       string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EgressPolicyContract) Reset() {
+	*x = EgressPolicyContract{}
+	mi := &file_ateapi_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EgressPolicyContract) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EgressPolicyContract) ProtoMessage() {}
+
+func (x *EgressPolicyContract) ProtoReflect() protoreflect.Message {
+	mi := &file_ateapi_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EgressPolicyContract.ProtoReflect.Descriptor instead.
+func (*EgressPolicyContract) Descriptor() ([]byte, []int) {
+	return file_ateapi_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *EgressPolicyContract) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
 type GetTagRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// +k8s:required
@@ -5163,7 +5247,7 @@ type GetTagRequest struct {
 
 func (x *GetTagRequest) Reset() {
 	*x = GetTagRequest{}
-	mi := &file_ateapi_proto_msgTypes[69]
+	mi := &file_ateapi_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5175,7 +5259,7 @@ func (x *GetTagRequest) String() string {
 func (*GetTagRequest) ProtoMessage() {}
 
 func (x *GetTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[69]
+	mi := &file_ateapi_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5188,7 +5272,7 @@ func (x *GetTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTagRequest.ProtoReflect.Descriptor instead.
 func (*GetTagRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{69}
+	return file_ateapi_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *GetTagRequest) GetTag() *ObjectRef {
@@ -5227,7 +5311,7 @@ type MintActorJWTRequest struct {
 
 func (x *MintActorJWTRequest) Reset() {
 	*x = MintActorJWTRequest{}
-	mi := &file_ateapi_proto_msgTypes[70]
+	mi := &file_ateapi_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5239,7 +5323,7 @@ func (x *MintActorJWTRequest) String() string {
 func (*MintActorJWTRequest) ProtoMessage() {}
 
 func (x *MintActorJWTRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[70]
+	mi := &file_ateapi_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5252,7 +5336,7 @@ func (x *MintActorJWTRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MintActorJWTRequest.ProtoReflect.Descriptor instead.
 func (*MintActorJWTRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{70}
+	return file_ateapi_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *MintActorJWTRequest) GetActor() *ObjectRef {
@@ -5307,7 +5391,7 @@ type MintActorJWTResponse struct {
 
 func (x *MintActorJWTResponse) Reset() {
 	*x = MintActorJWTResponse{}
-	mi := &file_ateapi_proto_msgTypes[71]
+	mi := &file_ateapi_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5319,7 +5403,7 @@ func (x *MintActorJWTResponse) String() string {
 func (*MintActorJWTResponse) ProtoMessage() {}
 
 func (x *MintActorJWTResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[71]
+	mi := &file_ateapi_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5332,7 +5416,7 @@ func (x *MintActorJWTResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MintActorJWTResponse.ProtoReflect.Descriptor instead.
 func (*MintActorJWTResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{71}
+	return file_ateapi_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *MintActorJWTResponse) GetActorJwt() string {
@@ -5377,7 +5461,7 @@ type MintActorCertificateRequest struct {
 
 func (x *MintActorCertificateRequest) Reset() {
 	*x = MintActorCertificateRequest{}
-	mi := &file_ateapi_proto_msgTypes[72]
+	mi := &file_ateapi_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5389,7 +5473,7 @@ func (x *MintActorCertificateRequest) String() string {
 func (*MintActorCertificateRequest) ProtoMessage() {}
 
 func (x *MintActorCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[72]
+	mi := &file_ateapi_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5402,7 +5486,7 @@ func (x *MintActorCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MintActorCertificateRequest.ProtoReflect.Descriptor instead.
 func (*MintActorCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{72}
+	return file_ateapi_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *MintActorCertificateRequest) GetActor() *ObjectRef {
@@ -5446,7 +5530,7 @@ type MintActorCertificateResponse struct {
 
 func (x *MintActorCertificateResponse) Reset() {
 	*x = MintActorCertificateResponse{}
-	mi := &file_ateapi_proto_msgTypes[73]
+	mi := &file_ateapi_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5458,7 +5542,7 @@ func (x *MintActorCertificateResponse) String() string {
 func (*MintActorCertificateResponse) ProtoMessage() {}
 
 func (x *MintActorCertificateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[73]
+	mi := &file_ateapi_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5471,7 +5555,7 @@ func (x *MintActorCertificateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MintActorCertificateResponse.ProtoReflect.Descriptor instead.
 func (*MintActorCertificateResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{73}
+	return file_ateapi_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *MintActorCertificateResponse) GetActorCertificates() [][]byte {
@@ -5491,7 +5575,7 @@ type GetActorSnapshotRequest struct {
 
 func (x *GetActorSnapshotRequest) Reset() {
 	*x = GetActorSnapshotRequest{}
-	mi := &file_ateapi_proto_msgTypes[74]
+	mi := &file_ateapi_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5503,7 +5587,7 @@ func (x *GetActorSnapshotRequest) String() string {
 func (*GetActorSnapshotRequest) ProtoMessage() {}
 
 func (x *GetActorSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[74]
+	mi := &file_ateapi_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5516,7 +5600,7 @@ func (x *GetActorSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActorSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*GetActorSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{74}
+	return file_ateapi_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *GetActorSnapshotRequest) GetActorSnapshot() *ObjectRef {
@@ -5536,7 +5620,7 @@ type GetActorSnapshotTagRequest struct {
 
 func (x *GetActorSnapshotTagRequest) Reset() {
 	*x = GetActorSnapshotTagRequest{}
-	mi := &file_ateapi_proto_msgTypes[75]
+	mi := &file_ateapi_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5548,7 +5632,7 @@ func (x *GetActorSnapshotTagRequest) String() string {
 func (*GetActorSnapshotTagRequest) ProtoMessage() {}
 
 func (x *GetActorSnapshotTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[75]
+	mi := &file_ateapi_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5561,7 +5645,7 @@ func (x *GetActorSnapshotTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActorSnapshotTagRequest.ProtoReflect.Descriptor instead.
 func (*GetActorSnapshotTagRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{75}
+	return file_ateapi_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *GetActorSnapshotTagRequest) GetActorSnapshotTag() *ObjectRef {
@@ -5597,7 +5681,7 @@ type ListTagsRequest struct {
 
 func (x *ListTagsRequest) Reset() {
 	*x = ListTagsRequest{}
-	mi := &file_ateapi_proto_msgTypes[76]
+	mi := &file_ateapi_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5609,7 +5693,7 @@ func (x *ListTagsRequest) String() string {
 func (*ListTagsRequest) ProtoMessage() {}
 
 func (x *ListTagsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[76]
+	mi := &file_ateapi_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5622,7 +5706,7 @@ func (x *ListTagsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTagsRequest.ProtoReflect.Descriptor instead.
 func (*ListTagsRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{76}
+	return file_ateapi_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *ListTagsRequest) GetAtespace() string {
@@ -5656,7 +5740,7 @@ type ListTagsResponse struct {
 
 func (x *ListTagsResponse) Reset() {
 	*x = ListTagsResponse{}
-	mi := &file_ateapi_proto_msgTypes[77]
+	mi := &file_ateapi_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5668,7 +5752,7 @@ func (x *ListTagsResponse) String() string {
 func (*ListTagsResponse) ProtoMessage() {}
 
 func (x *ListTagsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[77]
+	mi := &file_ateapi_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5681,7 +5765,7 @@ func (x *ListTagsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTagsResponse.ProtoReflect.Descriptor instead.
 func (*ListTagsResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{77}
+	return file_ateapi_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *ListTagsResponse) GetTags() []*Tag {
@@ -5726,7 +5810,7 @@ type CreateTagRequest struct {
 
 func (x *CreateTagRequest) Reset() {
 	*x = CreateTagRequest{}
-	mi := &file_ateapi_proto_msgTypes[78]
+	mi := &file_ateapi_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5738,7 +5822,7 @@ func (x *CreateTagRequest) String() string {
 func (*CreateTagRequest) ProtoMessage() {}
 
 func (x *CreateTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[78]
+	mi := &file_ateapi_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5751,7 +5835,7 @@ func (x *CreateTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTagRequest.ProtoReflect.Descriptor instead.
 func (*CreateTagRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{78}
+	return file_ateapi_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *CreateTagRequest) GetTag() *Tag {
@@ -5781,7 +5865,7 @@ type UpdateTagRequest struct {
 
 func (x *UpdateTagRequest) Reset() {
 	*x = UpdateTagRequest{}
-	mi := &file_ateapi_proto_msgTypes[79]
+	mi := &file_ateapi_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5793,7 +5877,7 @@ func (x *UpdateTagRequest) String() string {
 func (*UpdateTagRequest) ProtoMessage() {}
 
 func (x *UpdateTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[79]
+	mi := &file_ateapi_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5806,7 +5890,7 @@ func (x *UpdateTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTagRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTagRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{79}
+	return file_ateapi_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *UpdateTagRequest) GetTag() *Tag {
@@ -5827,7 +5911,7 @@ type DeleteTagRequest struct {
 
 func (x *DeleteTagRequest) Reset() {
 	*x = DeleteTagRequest{}
-	mi := &file_ateapi_proto_msgTypes[80]
+	mi := &file_ateapi_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5839,7 +5923,7 @@ func (x *DeleteTagRequest) String() string {
 func (*DeleteTagRequest) ProtoMessage() {}
 
 func (x *DeleteTagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[80]
+	mi := &file_ateapi_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5852,7 +5936,7 @@ func (x *DeleteTagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTagRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTagRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{80}
+	return file_ateapi_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *DeleteTagRequest) GetTag() *ObjectRef {
@@ -5888,7 +5972,7 @@ type DeleteOptions struct {
 
 func (x *DeleteOptions) Reset() {
 	*x = DeleteOptions{}
-	mi := &file_ateapi_proto_msgTypes[81]
+	mi := &file_ateapi_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5900,7 +5984,7 @@ func (x *DeleteOptions) String() string {
 func (*DeleteOptions) ProtoMessage() {}
 
 func (x *DeleteOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[81]
+	mi := &file_ateapi_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5913,7 +5997,7 @@ func (x *DeleteOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteOptions.ProtoReflect.Descriptor instead.
 func (*DeleteOptions) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{81}
+	return file_ateapi_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *DeleteOptions) GetVersion() int64 {
@@ -5957,7 +6041,7 @@ type ListWorkerActorAssignmentsRequest struct {
 
 func (x *ListWorkerActorAssignmentsRequest) Reset() {
 	*x = ListWorkerActorAssignmentsRequest{}
-	mi := &file_ateapi_proto_msgTypes[82]
+	mi := &file_ateapi_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5969,7 +6053,7 @@ func (x *ListWorkerActorAssignmentsRequest) String() string {
 func (*ListWorkerActorAssignmentsRequest) ProtoMessage() {}
 
 func (x *ListWorkerActorAssignmentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[82]
+	mi := &file_ateapi_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5982,7 +6066,7 @@ func (x *ListWorkerActorAssignmentsRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use ListWorkerActorAssignmentsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkerActorAssignmentsRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{82}
+	return file_ateapi_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *ListWorkerActorAssignmentsRequest) GetWorker() *ObjectRef {
@@ -6019,7 +6103,7 @@ type ListWorkerActorAssignmentsResponse struct {
 
 func (x *ListWorkerActorAssignmentsResponse) Reset() {
 	*x = ListWorkerActorAssignmentsResponse{}
-	mi := &file_ateapi_proto_msgTypes[83]
+	mi := &file_ateapi_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6031,7 +6115,7 @@ func (x *ListWorkerActorAssignmentsResponse) String() string {
 func (*ListWorkerActorAssignmentsResponse) ProtoMessage() {}
 
 func (x *ListWorkerActorAssignmentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[83]
+	mi := &file_ateapi_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6044,7 +6128,7 @@ func (x *ListWorkerActorAssignmentsResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ListWorkerActorAssignmentsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkerActorAssignmentsResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{83}
+	return file_ateapi_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *ListWorkerActorAssignmentsResponse) GetActorAssignments() []*ActorAssignment {
@@ -6082,7 +6166,7 @@ type ListWorkersRequest struct {
 
 func (x *ListWorkersRequest) Reset() {
 	*x = ListWorkersRequest{}
-	mi := &file_ateapi_proto_msgTypes[84]
+	mi := &file_ateapi_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6094,7 +6178,7 @@ func (x *ListWorkersRequest) String() string {
 func (*ListWorkersRequest) ProtoMessage() {}
 
 func (x *ListWorkersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[84]
+	mi := &file_ateapi_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6107,7 +6191,7 @@ func (x *ListWorkersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkersRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkersRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{84}
+	return file_ateapi_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *ListWorkersRequest) GetPageSize() int32 {
@@ -6136,7 +6220,7 @@ type ListWorkersResponse struct {
 
 func (x *ListWorkersResponse) Reset() {
 	*x = ListWorkersResponse{}
-	mi := &file_ateapi_proto_msgTypes[85]
+	mi := &file_ateapi_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6148,7 +6232,7 @@ func (x *ListWorkersResponse) String() string {
 func (*ListWorkersResponse) ProtoMessage() {}
 
 func (x *ListWorkersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[85]
+	mi := &file_ateapi_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6161,7 +6245,7 @@ func (x *ListWorkersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkersResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkersResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{85}
+	return file_ateapi_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *ListWorkersResponse) GetWorkers() []*Worker {
@@ -6191,7 +6275,7 @@ type GetWorkerRequest struct {
 
 func (x *GetWorkerRequest) Reset() {
 	*x = GetWorkerRequest{}
-	mi := &file_ateapi_proto_msgTypes[86]
+	mi := &file_ateapi_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6203,7 +6287,7 @@ func (x *GetWorkerRequest) String() string {
 func (*GetWorkerRequest) ProtoMessage() {}
 
 func (x *GetWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[86]
+	mi := &file_ateapi_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6216,7 +6300,7 @@ func (x *GetWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWorkerRequest.ProtoReflect.Descriptor instead.
 func (*GetWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{86}
+	return file_ateapi_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *GetWorkerRequest) GetWorker() *ObjectRef {
@@ -6238,7 +6322,7 @@ type CreateWorkerRequest struct {
 
 func (x *CreateWorkerRequest) Reset() {
 	*x = CreateWorkerRequest{}
-	mi := &file_ateapi_proto_msgTypes[87]
+	mi := &file_ateapi_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6250,7 +6334,7 @@ func (x *CreateWorkerRequest) String() string {
 func (*CreateWorkerRequest) ProtoMessage() {}
 
 func (x *CreateWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[87]
+	mi := &file_ateapi_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6263,7 +6347,7 @@ func (x *CreateWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateWorkerRequest.ProtoReflect.Descriptor instead.
 func (*CreateWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{87}
+	return file_ateapi_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *CreateWorkerRequest) GetWorker() *Worker {
@@ -6298,7 +6382,7 @@ type UpdateWorkerRequest struct {
 
 func (x *UpdateWorkerRequest) Reset() {
 	*x = UpdateWorkerRequest{}
-	mi := &file_ateapi_proto_msgTypes[88]
+	mi := &file_ateapi_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6310,7 +6394,7 @@ func (x *UpdateWorkerRequest) String() string {
 func (*UpdateWorkerRequest) ProtoMessage() {}
 
 func (x *UpdateWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[88]
+	mi := &file_ateapi_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6323,7 +6407,7 @@ func (x *UpdateWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWorkerRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{88}
+	return file_ateapi_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *UpdateWorkerRequest) GetWorker() *Worker {
@@ -6350,7 +6434,7 @@ type DeleteWorkerRequest struct {
 
 func (x *DeleteWorkerRequest) Reset() {
 	*x = DeleteWorkerRequest{}
-	mi := &file_ateapi_proto_msgTypes[89]
+	mi := &file_ateapi_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6362,7 +6446,7 @@ func (x *DeleteWorkerRequest) String() string {
 func (*DeleteWorkerRequest) ProtoMessage() {}
 
 func (x *DeleteWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[89]
+	mi := &file_ateapi_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6375,7 +6459,7 @@ func (x *DeleteWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteWorkerRequest.ProtoReflect.Descriptor instead.
 func (*DeleteWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{89}
+	return file_ateapi_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *DeleteWorkerRequest) GetWorker() *ObjectRef {
@@ -6405,7 +6489,7 @@ type DrainWorkerRequest struct {
 
 func (x *DrainWorkerRequest) Reset() {
 	*x = DrainWorkerRequest{}
-	mi := &file_ateapi_proto_msgTypes[90]
+	mi := &file_ateapi_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6417,7 +6501,7 @@ func (x *DrainWorkerRequest) String() string {
 func (*DrainWorkerRequest) ProtoMessage() {}
 
 func (x *DrainWorkerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[90]
+	mi := &file_ateapi_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6430,7 +6514,7 @@ func (x *DrainWorkerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainWorkerRequest.ProtoReflect.Descriptor instead.
 func (*DrainWorkerRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{90}
+	return file_ateapi_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *DrainWorkerRequest) GetWorker() *ObjectRef {
@@ -6468,7 +6552,7 @@ type ListActorsRequest struct {
 
 func (x *ListActorsRequest) Reset() {
 	*x = ListActorsRequest{}
-	mi := &file_ateapi_proto_msgTypes[91]
+	mi := &file_ateapi_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6480,7 +6564,7 @@ func (x *ListActorsRequest) String() string {
 func (*ListActorsRequest) ProtoMessage() {}
 
 func (x *ListActorsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[91]
+	mi := &file_ateapi_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6493,7 +6577,7 @@ func (x *ListActorsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActorsRequest.ProtoReflect.Descriptor instead.
 func (*ListActorsRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{91}
+	return file_ateapi_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *ListActorsRequest) GetAtespace() string {
@@ -6529,7 +6613,7 @@ type ListActorsResponse struct {
 
 func (x *ListActorsResponse) Reset() {
 	*x = ListActorsResponse{}
-	mi := &file_ateapi_proto_msgTypes[92]
+	mi := &file_ateapi_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6541,7 +6625,7 @@ func (x *ListActorsResponse) String() string {
 func (*ListActorsResponse) ProtoMessage() {}
 
 func (x *ListActorsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[92]
+	mi := &file_ateapi_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6554,7 +6638,7 @@ func (x *ListActorsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActorsResponse.ProtoReflect.Descriptor instead.
 func (*ListActorsResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{92}
+	return file_ateapi_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *ListActorsResponse) GetActors() []*Actor {
@@ -6644,7 +6728,7 @@ type Worker struct {
 
 func (x *Worker) Reset() {
 	*x = Worker{}
-	mi := &file_ateapi_proto_msgTypes[93]
+	mi := &file_ateapi_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6656,7 +6740,7 @@ func (x *Worker) String() string {
 func (*Worker) ProtoMessage() {}
 
 func (x *Worker) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[93]
+	mi := &file_ateapi_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6669,7 +6753,7 @@ func (x *Worker) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Worker.ProtoReflect.Descriptor instead.
 func (*Worker) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{93}
+	return file_ateapi_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *Worker) GetMetadata() *ResourceMetadata {
@@ -6771,7 +6855,7 @@ type WorkerStatus struct {
 
 func (x *WorkerStatus) Reset() {
 	*x = WorkerStatus{}
-	mi := &file_ateapi_proto_msgTypes[94]
+	mi := &file_ateapi_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6783,7 +6867,7 @@ func (x *WorkerStatus) String() string {
 func (*WorkerStatus) ProtoMessage() {}
 
 func (x *WorkerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[94]
+	mi := &file_ateapi_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6796,7 +6880,7 @@ func (x *WorkerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerStatus.ProtoReflect.Descriptor instead.
 func (*WorkerStatus) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{94}
+	return file_ateapi_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *WorkerStatus) GetState() WorkerState {
@@ -6842,7 +6926,7 @@ type WorkerResources struct {
 
 func (x *WorkerResources) Reset() {
 	*x = WorkerResources{}
-	mi := &file_ateapi_proto_msgTypes[95]
+	mi := &file_ateapi_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6854,7 +6938,7 @@ func (x *WorkerResources) String() string {
 func (*WorkerResources) ProtoMessage() {}
 
 func (x *WorkerResources) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[95]
+	mi := &file_ateapi_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6867,7 +6951,7 @@ func (x *WorkerResources) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkerResources.ProtoReflect.Descriptor instead.
 func (*WorkerResources) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{95}
+	return file_ateapi_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *WorkerResources) GetResources() *Resources {
@@ -6921,7 +7005,7 @@ type ActorAssignment struct {
 
 func (x *ActorAssignment) Reset() {
 	*x = ActorAssignment{}
-	mi := &file_ateapi_proto_msgTypes[96]
+	mi := &file_ateapi_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6933,7 +7017,7 @@ func (x *ActorAssignment) String() string {
 func (*ActorAssignment) ProtoMessage() {}
 
 func (x *ActorAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[96]
+	mi := &file_ateapi_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6946,7 +7030,7 @@ func (x *ActorAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorAssignment.ProtoReflect.Descriptor instead.
 func (*ActorAssignment) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{96}
+	return file_ateapi_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *ActorAssignment) GetMetadata() *ResourceMetadata {
@@ -7004,7 +7088,7 @@ type SetWorkerCapacityRequest struct {
 
 func (x *SetWorkerCapacityRequest) Reset() {
 	*x = SetWorkerCapacityRequest{}
-	mi := &file_ateapi_proto_msgTypes[97]
+	mi := &file_ateapi_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7016,7 +7100,7 @@ func (x *SetWorkerCapacityRequest) String() string {
 func (*SetWorkerCapacityRequest) ProtoMessage() {}
 
 func (x *SetWorkerCapacityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[97]
+	mi := &file_ateapi_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7029,7 +7113,7 @@ func (x *SetWorkerCapacityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetWorkerCapacityRequest.ProtoReflect.Descriptor instead.
 func (*SetWorkerCapacityRequest) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{97}
+	return file_ateapi_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *SetWorkerCapacityRequest) GetWorker() *ObjectRef {
@@ -7056,7 +7140,7 @@ type SetWorkerCapacityResponse struct {
 
 func (x *SetWorkerCapacityResponse) Reset() {
 	*x = SetWorkerCapacityResponse{}
-	mi := &file_ateapi_proto_msgTypes[98]
+	mi := &file_ateapi_proto_msgTypes[100]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7068,7 +7152,7 @@ func (x *SetWorkerCapacityResponse) String() string {
 func (*SetWorkerCapacityResponse) ProtoMessage() {}
 
 func (x *SetWorkerCapacityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ateapi_proto_msgTypes[98]
+	mi := &file_ateapi_proto_msgTypes[100]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7081,7 +7165,7 @@ func (x *SetWorkerCapacityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetWorkerCapacityResponse.ProtoReflect.Descriptor instead.
 func (*SetWorkerCapacityResponse) Descriptor() ([]byte, []int) {
-	return file_ateapi_proto_rawDescGZIP(), []int{98}
+	return file_ateapi_proto_rawDescGZIP(), []int{100}
 }
 
 func (x *SetWorkerCapacityResponse) GetWorker() *Worker {
@@ -7351,7 +7435,10 @@ const file_ateapi_proto_rawDesc = "" +
 	"\x05actor\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\x05actor\x129\n" +
 	"\regress_policy\x18\x02 \x01(\v2\x14.ateapi.EgressPolicyR\fegressPolicy\"I\n" +
 	"\x1eDeleteActorEgressPolicyRequest\x12'\n" +
-	"\x05actor\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\x05actor\"4\n" +
+	"\x05actor\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\x05actor\" \n" +
+	"\x1eGetEgressPolicyContractRequest\"0\n" +
+	"\x14EgressPolicyContract\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\"4\n" +
 	"\rGetTagRequest\x12#\n" +
 	"\x03tag\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\x03tag\"w\n" +
 	"\x13MintActorJWTRequest\x12'\n" +
@@ -7495,7 +7582,7 @@ const file_ateapi_proto_rawDesc = "" +
 	"\vWorkerState\x12\x1c\n" +
 	"\x18WORKER_STATE_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13WORKER_STATE_ACTIVE\x10\x01\x12\x19\n" +
-	"\x15WORKER_STATE_DRAINING\x10\x022\xef\x13\n" +
+	"\x15WORKER_STATE_DRAINING\x10\x022\xd2\x14\n" +
 	"\aControl\x124\n" +
 	"\bGetActor\x12\x17.ateapi.GetActorRequest\x1a\r.ateapi.Actor\"\x00\x12:\n" +
 	"\vCreateActor\x12\x1a.ateapi.CreateActorRequest\x1a\r.ateapi.Actor\"\x00\x12:\n" +
@@ -7509,7 +7596,8 @@ const file_ateapi_proto_rawDesc = "" +
 	"\x14GetActorEgressPolicy\x12#.ateapi.GetActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12Y\n" +
 	"\x17CreateActorEgressPolicy\x12&.ateapi.CreateActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12Y\n" +
 	"\x17UpdateActorEgressPolicy\x12&.ateapi.UpdateActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12Y\n" +
-	"\x17DeleteActorEgressPolicy\x12&.ateapi.DeleteActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12K\n" +
+	"\x17DeleteActorEgressPolicy\x12&.ateapi.DeleteActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12a\n" +
+	"\x17GetEgressPolicyContract\x12&.ateapi.GetEgressPolicyContractRequest\x1a\x1c.ateapi.EgressPolicyContract\"\x00\x12K\n" +
 	"\fMintActorJWT\x12\x1b.ateapi.MintActorJWTRequest\x1a\x1c.ateapi.MintActorJWTResponse\"\x00\x12c\n" +
 	"\x14MintActorCertificate\x12#.ateapi.MintActorCertificateRequest\x1a$.ateapi.MintActorCertificateResponse\"\x00\x124\n" +
 	"\tCreateTag\x12\x18.ateapi.CreateTagRequest\x1a\v.ateapi.Tag\"\x00\x12.\n" +
@@ -7550,7 +7638,7 @@ func file_ateapi_proto_rawDescGZIP() []byte {
 }
 
 var file_ateapi_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_ateapi_proto_msgTypes = make([]protoimpl.MessageInfo, 102)
+var file_ateapi_proto_msgTypes = make([]protoimpl.MessageInfo, 104)
 var file_ateapi_proto_goTypes = []any{
 	(SnapshotContentScope)(0),                  // 0: ateapi.SnapshotContentScope
 	(TagScope)(0),                              // 1: ateapi.TagScope
@@ -7630,51 +7718,53 @@ var file_ateapi_proto_goTypes = []any{
 	(*CreateActorEgressPolicyRequest)(nil),     // 75: ateapi.CreateActorEgressPolicyRequest
 	(*UpdateActorEgressPolicyRequest)(nil),     // 76: ateapi.UpdateActorEgressPolicyRequest
 	(*DeleteActorEgressPolicyRequest)(nil),     // 77: ateapi.DeleteActorEgressPolicyRequest
-	(*GetTagRequest)(nil),                      // 78: ateapi.GetTagRequest
-	(*MintActorJWTRequest)(nil),                // 79: ateapi.MintActorJWTRequest
-	(*MintActorJWTResponse)(nil),               // 80: ateapi.MintActorJWTResponse
-	(*MintActorCertificateRequest)(nil),        // 81: ateapi.MintActorCertificateRequest
-	(*MintActorCertificateResponse)(nil),       // 82: ateapi.MintActorCertificateResponse
-	(*GetActorSnapshotRequest)(nil),            // 83: ateapi.GetActorSnapshotRequest
-	(*GetActorSnapshotTagRequest)(nil),         // 84: ateapi.GetActorSnapshotTagRequest
-	(*ListTagsRequest)(nil),                    // 85: ateapi.ListTagsRequest
-	(*ListTagsResponse)(nil),                   // 86: ateapi.ListTagsResponse
-	(*CreateTagRequest)(nil),                   // 87: ateapi.CreateTagRequest
-	(*UpdateTagRequest)(nil),                   // 88: ateapi.UpdateTagRequest
-	(*DeleteTagRequest)(nil),                   // 89: ateapi.DeleteTagRequest
-	(*DeleteOptions)(nil),                      // 90: ateapi.DeleteOptions
-	(*ListWorkerActorAssignmentsRequest)(nil),  // 91: ateapi.ListWorkerActorAssignmentsRequest
-	(*ListWorkerActorAssignmentsResponse)(nil), // 92: ateapi.ListWorkerActorAssignmentsResponse
-	(*ListWorkersRequest)(nil),                 // 93: ateapi.ListWorkersRequest
-	(*ListWorkersResponse)(nil),                // 94: ateapi.ListWorkersResponse
-	(*GetWorkerRequest)(nil),                   // 95: ateapi.GetWorkerRequest
-	(*CreateWorkerRequest)(nil),                // 96: ateapi.CreateWorkerRequest
-	(*UpdateWorkerRequest)(nil),                // 97: ateapi.UpdateWorkerRequest
-	(*DeleteWorkerRequest)(nil),                // 98: ateapi.DeleteWorkerRequest
-	(*DrainWorkerRequest)(nil),                 // 99: ateapi.DrainWorkerRequest
-	(*ListActorsRequest)(nil),                  // 100: ateapi.ListActorsRequest
-	(*ListActorsResponse)(nil),                 // 101: ateapi.ListActorsResponse
-	(*Worker)(nil),                             // 102: ateapi.Worker
-	(*WorkerStatus)(nil),                       // 103: ateapi.WorkerStatus
-	(*WorkerResources)(nil),                    // 104: ateapi.WorkerResources
-	(*ActorAssignment)(nil),                    // 105: ateapi.ActorAssignment
-	(*SetWorkerCapacityRequest)(nil),           // 106: ateapi.SetWorkerCapacityRequest
-	(*SetWorkerCapacityResponse)(nil),          // 107: ateapi.SetWorkerCapacityResponse
-	nil,                                        // 108: ateapi.Selector.MatchLabelsEntry
-	nil,                                        // 109: ateapi.ExternalVolume.VolumeContextEntry
-	nil,                                        // 110: ateapi.Worker.LabelsEntry
-	(*timestamppb.Timestamp)(nil),              // 111: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                      // 112: google.protobuf.Empty
+	(*GetEgressPolicyContractRequest)(nil),     // 78: ateapi.GetEgressPolicyContractRequest
+	(*EgressPolicyContract)(nil),               // 79: ateapi.EgressPolicyContract
+	(*GetTagRequest)(nil),                      // 80: ateapi.GetTagRequest
+	(*MintActorJWTRequest)(nil),                // 81: ateapi.MintActorJWTRequest
+	(*MintActorJWTResponse)(nil),               // 82: ateapi.MintActorJWTResponse
+	(*MintActorCertificateRequest)(nil),        // 83: ateapi.MintActorCertificateRequest
+	(*MintActorCertificateResponse)(nil),       // 84: ateapi.MintActorCertificateResponse
+	(*GetActorSnapshotRequest)(nil),            // 85: ateapi.GetActorSnapshotRequest
+	(*GetActorSnapshotTagRequest)(nil),         // 86: ateapi.GetActorSnapshotTagRequest
+	(*ListTagsRequest)(nil),                    // 87: ateapi.ListTagsRequest
+	(*ListTagsResponse)(nil),                   // 88: ateapi.ListTagsResponse
+	(*CreateTagRequest)(nil),                   // 89: ateapi.CreateTagRequest
+	(*UpdateTagRequest)(nil),                   // 90: ateapi.UpdateTagRequest
+	(*DeleteTagRequest)(nil),                   // 91: ateapi.DeleteTagRequest
+	(*DeleteOptions)(nil),                      // 92: ateapi.DeleteOptions
+	(*ListWorkerActorAssignmentsRequest)(nil),  // 93: ateapi.ListWorkerActorAssignmentsRequest
+	(*ListWorkerActorAssignmentsResponse)(nil), // 94: ateapi.ListWorkerActorAssignmentsResponse
+	(*ListWorkersRequest)(nil),                 // 95: ateapi.ListWorkersRequest
+	(*ListWorkersResponse)(nil),                // 96: ateapi.ListWorkersResponse
+	(*GetWorkerRequest)(nil),                   // 97: ateapi.GetWorkerRequest
+	(*CreateWorkerRequest)(nil),                // 98: ateapi.CreateWorkerRequest
+	(*UpdateWorkerRequest)(nil),                // 99: ateapi.UpdateWorkerRequest
+	(*DeleteWorkerRequest)(nil),                // 100: ateapi.DeleteWorkerRequest
+	(*DrainWorkerRequest)(nil),                 // 101: ateapi.DrainWorkerRequest
+	(*ListActorsRequest)(nil),                  // 102: ateapi.ListActorsRequest
+	(*ListActorsResponse)(nil),                 // 103: ateapi.ListActorsResponse
+	(*Worker)(nil),                             // 104: ateapi.Worker
+	(*WorkerStatus)(nil),                       // 105: ateapi.WorkerStatus
+	(*WorkerResources)(nil),                    // 106: ateapi.WorkerResources
+	(*ActorAssignment)(nil),                    // 107: ateapi.ActorAssignment
+	(*SetWorkerCapacityRequest)(nil),           // 108: ateapi.SetWorkerCapacityRequest
+	(*SetWorkerCapacityResponse)(nil),          // 109: ateapi.SetWorkerCapacityResponse
+	nil,                                        // 110: ateapi.Selector.MatchLabelsEntry
+	nil,                                        // 111: ateapi.ExternalVolume.VolumeContextEntry
+	nil,                                        // 112: ateapi.Worker.LabelsEntry
+	(*timestamppb.Timestamp)(nil),              // 113: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                      // 114: google.protobuf.Empty
 }
 var file_ateapi_proto_depIdxs = []int32{
 	0,   // 0: ateapi.ExternalSnapshot.content_scope:type_name -> ateapi.SnapshotContentScope
 	0,   // 1: ateapi.LocalSnapshotInfo.content_scope:type_name -> ateapi.SnapshotContentScope
 	9,   // 2: ateapi.LocalSnapshotInfo.durable_copy:type_name -> ateapi.ExternalSnapshot
-	108, // 3: ateapi.Selector.match_labels:type_name -> ateapi.Selector.MatchLabelsEntry
-	111, // 4: ateapi.ResourceMetadata.create_time:type_name -> google.protobuf.Timestamp
-	111, // 5: ateapi.ResourceMetadata.update_time:type_name -> google.protobuf.Timestamp
+	110, // 3: ateapi.Selector.match_labels:type_name -> ateapi.Selector.MatchLabelsEntry
+	113, // 4: ateapi.ResourceMetadata.create_time:type_name -> google.protobuf.Timestamp
+	113, // 5: ateapi.ResourceMetadata.update_time:type_name -> google.protobuf.Timestamp
 	8,   // 6: ateapi.ExternalVolume.status:type_name -> ateapi.ExternalVolume.Status
-	109, // 7: ateapi.ExternalVolume.volume_context:type_name -> ateapi.ExternalVolume.VolumeContextEntry
+	111, // 7: ateapi.ExternalVolume.volume_context:type_name -> ateapi.ExternalVolume.VolumeContextEntry
 	12,  // 8: ateapi.Actor.metadata:type_name -> ateapi.ResourceMetadata
 	27,  // 9: ateapi.Actor.actor_template:type_name -> ateapi.ObjectRef
 	11,  // 10: ateapi.Actor.worker_selector:type_name -> ateapi.Selector
@@ -7685,7 +7775,7 @@ var file_ateapi_proto_depIdxs = []int32{
 	17,  // 15: ateapi.EgressPolicyTemplate.rules:type_name -> ateapi.EgressRule
 	18,  // 16: ateapi.EgressRule.hostnames:type_name -> ateapi.HostnameRule
 	19,  // 17: ateapi.EgressRule.cidrs:type_name -> ateapi.CIDRRule
-	112, // 18: ateapi.EgressRule.all:type_name -> google.protobuf.Empty
+	114, // 18: ateapi.EgressRule.all:type_name -> google.protobuf.Empty
 	20,  // 19: ateapi.HostnameRule.effects:type_name -> ateapi.EgressRuleEffects
 	21,  // 20: ateapi.EgressRuleEffects.inject_static_headers:type_name -> ateapi.CredentialHeaderInjection
 	2,   // 21: ateapi.ActorStatus.state:type_name -> ateapi.ActorState
@@ -7711,7 +7801,7 @@ var file_ateapi_proto_depIdxs = []int32{
 	16,  // 41: ateapi.ActorTemplate.default_egress_policy:type_name -> ateapi.EgressPolicyTemplate
 	30,  // 42: ateapi.Resources.limits:type_name -> ateapi.Limits
 	27,  // 43: ateapi.GoldenSnapshotStatus.golden_tag:type_name -> ateapi.ObjectRef
-	111, // 44: ateapi.GoldenSnapshotStatus.take_golden_snapshot_at:type_name -> google.protobuf.Timestamp
+	113, // 44: ateapi.GoldenSnapshotStatus.take_golden_snapshot_at:type_name -> google.protobuf.Timestamp
 	31,  // 45: ateapi.ActorTemplateStatus.golden_snapshot_status:type_name -> ateapi.GoldenSnapshotStatus
 	3,   // 46: ateapi.SandboxConfig.sandbox_class:type_name -> ateapi.SandboxClass
 	0,   // 47: ateapi.SnapshotsConfig.on_pause:type_name -> ateapi.SnapshotContentScope
@@ -7771,29 +7861,29 @@ var file_ateapi_proto_depIdxs = []int32{
 	25,  // 101: ateapi.UpdateTagRequest.tag:type_name -> ateapi.Tag
 	27,  // 102: ateapi.DeleteTagRequest.tag:type_name -> ateapi.ObjectRef
 	27,  // 103: ateapi.ListWorkerActorAssignmentsRequest.worker:type_name -> ateapi.ObjectRef
-	105, // 104: ateapi.ListWorkerActorAssignmentsResponse.actor_assignments:type_name -> ateapi.ActorAssignment
-	102, // 105: ateapi.ListWorkersResponse.workers:type_name -> ateapi.Worker
+	107, // 104: ateapi.ListWorkerActorAssignmentsResponse.actor_assignments:type_name -> ateapi.ActorAssignment
+	104, // 105: ateapi.ListWorkersResponse.workers:type_name -> ateapi.Worker
 	27,  // 106: ateapi.GetWorkerRequest.worker:type_name -> ateapi.ObjectRef
-	102, // 107: ateapi.CreateWorkerRequest.worker:type_name -> ateapi.Worker
-	102, // 108: ateapi.UpdateWorkerRequest.worker:type_name -> ateapi.Worker
+	104, // 107: ateapi.CreateWorkerRequest.worker:type_name -> ateapi.Worker
+	104, // 108: ateapi.UpdateWorkerRequest.worker:type_name -> ateapi.Worker
 	27,  // 109: ateapi.DeleteWorkerRequest.worker:type_name -> ateapi.ObjectRef
-	90,  // 110: ateapi.DeleteWorkerRequest.options:type_name -> ateapi.DeleteOptions
+	92,  // 110: ateapi.DeleteWorkerRequest.options:type_name -> ateapi.DeleteOptions
 	27,  // 111: ateapi.DrainWorkerRequest.worker:type_name -> ateapi.ObjectRef
 	14,  // 112: ateapi.ListActorsResponse.actors:type_name -> ateapi.Actor
 	12,  // 113: ateapi.Worker.metadata:type_name -> ateapi.ResourceMetadata
-	110, // 114: ateapi.Worker.labels:type_name -> ateapi.Worker.LabelsEntry
-	103, // 115: ateapi.Worker.status:type_name -> ateapi.WorkerStatus
+	112, // 114: ateapi.Worker.labels:type_name -> ateapi.Worker.LabelsEntry
+	105, // 115: ateapi.Worker.status:type_name -> ateapi.WorkerStatus
 	7,   // 116: ateapi.WorkerStatus.state:type_name -> ateapi.WorkerState
-	104, // 117: ateapi.WorkerStatus.capacity:type_name -> ateapi.WorkerResources
-	104, // 118: ateapi.WorkerStatus.allocated:type_name -> ateapi.WorkerResources
+	106, // 117: ateapi.WorkerStatus.capacity:type_name -> ateapi.WorkerResources
+	106, // 118: ateapi.WorkerStatus.allocated:type_name -> ateapi.WorkerResources
 	29,  // 119: ateapi.WorkerResources.resources:type_name -> ateapi.Resources
 	12,  // 120: ateapi.ActorAssignment.metadata:type_name -> ateapi.ResourceMetadata
 	27,  // 121: ateapi.ActorAssignment.actor:type_name -> ateapi.ObjectRef
 	27,  // 122: ateapi.ActorAssignment.actor_template_ref:type_name -> ateapi.ObjectRef
 	29,  // 123: ateapi.ActorAssignment.resources:type_name -> ateapi.Resources
 	27,  // 124: ateapi.SetWorkerCapacityRequest.worker:type_name -> ateapi.ObjectRef
-	104, // 125: ateapi.SetWorkerCapacityRequest.capacity:type_name -> ateapi.WorkerResources
-	102, // 126: ateapi.SetWorkerCapacityResponse.worker:type_name -> ateapi.Worker
+	106, // 125: ateapi.SetWorkerCapacityRequest.capacity:type_name -> ateapi.WorkerResources
+	104, // 126: ateapi.SetWorkerCapacityResponse.worker:type_name -> ateapi.Worker
 	62,  // 127: ateapi.Control.GetActor:input_type -> ateapi.GetActorRequest
 	63,  // 128: ateapi.Control.CreateActor:input_type -> ateapi.CreateActorRequest
 	64,  // 129: ateapi.Control.UpdateActor:input_type -> ateapi.UpdateActorRequest
@@ -7806,68 +7896,70 @@ var file_ateapi_proto_depIdxs = []int32{
 	75,  // 136: ateapi.Control.CreateActorEgressPolicy:input_type -> ateapi.CreateActorEgressPolicyRequest
 	76,  // 137: ateapi.Control.UpdateActorEgressPolicy:input_type -> ateapi.UpdateActorEgressPolicyRequest
 	77,  // 138: ateapi.Control.DeleteActorEgressPolicy:input_type -> ateapi.DeleteActorEgressPolicyRequest
-	79,  // 139: ateapi.Control.MintActorJWT:input_type -> ateapi.MintActorJWTRequest
-	81,  // 140: ateapi.Control.MintActorCertificate:input_type -> ateapi.MintActorCertificateRequest
-	87,  // 141: ateapi.Control.CreateTag:input_type -> ateapi.CreateTagRequest
-	78,  // 142: ateapi.Control.GetTag:input_type -> ateapi.GetTagRequest
-	85,  // 143: ateapi.Control.ListTags:input_type -> ateapi.ListTagsRequest
-	88,  // 144: ateapi.Control.UpdateTag:input_type -> ateapi.UpdateTagRequest
-	89,  // 145: ateapi.Control.DeleteTag:input_type -> ateapi.DeleteTagRequest
-	93,  // 146: ateapi.Control.ListWorkers:input_type -> ateapi.ListWorkersRequest
-	95,  // 147: ateapi.Control.GetWorker:input_type -> ateapi.GetWorkerRequest
-	96,  // 148: ateapi.Control.CreateWorker:input_type -> ateapi.CreateWorkerRequest
-	97,  // 149: ateapi.Control.UpdateWorker:input_type -> ateapi.UpdateWorkerRequest
-	98,  // 150: ateapi.Control.DeleteWorker:input_type -> ateapi.DeleteWorkerRequest
-	99,  // 151: ateapi.Control.DrainWorker:input_type -> ateapi.DrainWorkerRequest
-	91,  // 152: ateapi.Control.ListWorkerActorAssignments:input_type -> ateapi.ListWorkerActorAssignmentsRequest
-	100, // 153: ateapi.Control.ListActors:input_type -> ateapi.ListActorsRequest
-	52,  // 154: ateapi.Control.CreateAtespace:input_type -> ateapi.CreateAtespaceRequest
-	53,  // 155: ateapi.Control.GetAtespace:input_type -> ateapi.GetAtespaceRequest
-	54,  // 156: ateapi.Control.ListAtespaces:input_type -> ateapi.ListAtespacesRequest
-	56,  // 157: ateapi.Control.DeleteAtespace:input_type -> ateapi.DeleteAtespaceRequest
-	57,  // 158: ateapi.Control.CreateActorTemplate:input_type -> ateapi.CreateActorTemplateRequest
-	58,  // 159: ateapi.Control.GetActorTemplate:input_type -> ateapi.GetActorTemplateRequest
-	59,  // 160: ateapi.Control.ListActorTemplates:input_type -> ateapi.ListActorTemplatesRequest
-	61,  // 161: ateapi.Control.DeleteActorTemplate:input_type -> ateapi.DeleteActorTemplateRequest
-	106, // 162: ateapi.WorkerService.SetWorkerCapacity:input_type -> ateapi.SetWorkerCapacityRequest
-	14,  // 163: ateapi.Control.GetActor:output_type -> ateapi.Actor
-	14,  // 164: ateapi.Control.CreateActor:output_type -> ateapi.Actor
-	14,  // 165: ateapi.Control.UpdateActor:output_type -> ateapi.Actor
-	66,  // 166: ateapi.Control.SuspendActor:output_type -> ateapi.SuspendActorResponse
-	68,  // 167: ateapi.Control.PauseActor:output_type -> ateapi.PauseActorResponse
-	70,  // 168: ateapi.Control.ResumeActor:output_type -> ateapi.ResumeActorResponse
-	72,  // 169: ateapi.Control.RevertActor:output_type -> ateapi.RevertActorResponse
-	14,  // 170: ateapi.Control.DeleteActor:output_type -> ateapi.Actor
-	15,  // 171: ateapi.Control.GetActorEgressPolicy:output_type -> ateapi.EgressPolicy
-	15,  // 172: ateapi.Control.CreateActorEgressPolicy:output_type -> ateapi.EgressPolicy
-	15,  // 173: ateapi.Control.UpdateActorEgressPolicy:output_type -> ateapi.EgressPolicy
-	15,  // 174: ateapi.Control.DeleteActorEgressPolicy:output_type -> ateapi.EgressPolicy
-	80,  // 175: ateapi.Control.MintActorJWT:output_type -> ateapi.MintActorJWTResponse
-	82,  // 176: ateapi.Control.MintActorCertificate:output_type -> ateapi.MintActorCertificateResponse
-	25,  // 177: ateapi.Control.CreateTag:output_type -> ateapi.Tag
-	25,  // 178: ateapi.Control.GetTag:output_type -> ateapi.Tag
-	86,  // 179: ateapi.Control.ListTags:output_type -> ateapi.ListTagsResponse
-	25,  // 180: ateapi.Control.UpdateTag:output_type -> ateapi.Tag
-	25,  // 181: ateapi.Control.DeleteTag:output_type -> ateapi.Tag
-	94,  // 182: ateapi.Control.ListWorkers:output_type -> ateapi.ListWorkersResponse
-	102, // 183: ateapi.Control.GetWorker:output_type -> ateapi.Worker
-	102, // 184: ateapi.Control.CreateWorker:output_type -> ateapi.Worker
-	102, // 185: ateapi.Control.UpdateWorker:output_type -> ateapi.Worker
-	102, // 186: ateapi.Control.DeleteWorker:output_type -> ateapi.Worker
-	102, // 187: ateapi.Control.DrainWorker:output_type -> ateapi.Worker
-	92,  // 188: ateapi.Control.ListWorkerActorAssignments:output_type -> ateapi.ListWorkerActorAssignmentsResponse
-	101, // 189: ateapi.Control.ListActors:output_type -> ateapi.ListActorsResponse
-	26,  // 190: ateapi.Control.CreateAtespace:output_type -> ateapi.Atespace
-	26,  // 191: ateapi.Control.GetAtespace:output_type -> ateapi.Atespace
-	55,  // 192: ateapi.Control.ListAtespaces:output_type -> ateapi.ListAtespacesResponse
-	26,  // 193: ateapi.Control.DeleteAtespace:output_type -> ateapi.Atespace
-	28,  // 194: ateapi.Control.CreateActorTemplate:output_type -> ateapi.ActorTemplate
-	28,  // 195: ateapi.Control.GetActorTemplate:output_type -> ateapi.ActorTemplate
-	60,  // 196: ateapi.Control.ListActorTemplates:output_type -> ateapi.ListActorTemplatesResponse
-	28,  // 197: ateapi.Control.DeleteActorTemplate:output_type -> ateapi.ActorTemplate
-	107, // 198: ateapi.WorkerService.SetWorkerCapacity:output_type -> ateapi.SetWorkerCapacityResponse
-	163, // [163:199] is the sub-list for method output_type
-	127, // [127:163] is the sub-list for method input_type
+	78,  // 139: ateapi.Control.GetEgressPolicyContract:input_type -> ateapi.GetEgressPolicyContractRequest
+	81,  // 140: ateapi.Control.MintActorJWT:input_type -> ateapi.MintActorJWTRequest
+	83,  // 141: ateapi.Control.MintActorCertificate:input_type -> ateapi.MintActorCertificateRequest
+	89,  // 142: ateapi.Control.CreateTag:input_type -> ateapi.CreateTagRequest
+	80,  // 143: ateapi.Control.GetTag:input_type -> ateapi.GetTagRequest
+	87,  // 144: ateapi.Control.ListTags:input_type -> ateapi.ListTagsRequest
+	90,  // 145: ateapi.Control.UpdateTag:input_type -> ateapi.UpdateTagRequest
+	91,  // 146: ateapi.Control.DeleteTag:input_type -> ateapi.DeleteTagRequest
+	95,  // 147: ateapi.Control.ListWorkers:input_type -> ateapi.ListWorkersRequest
+	97,  // 148: ateapi.Control.GetWorker:input_type -> ateapi.GetWorkerRequest
+	98,  // 149: ateapi.Control.CreateWorker:input_type -> ateapi.CreateWorkerRequest
+	99,  // 150: ateapi.Control.UpdateWorker:input_type -> ateapi.UpdateWorkerRequest
+	100, // 151: ateapi.Control.DeleteWorker:input_type -> ateapi.DeleteWorkerRequest
+	101, // 152: ateapi.Control.DrainWorker:input_type -> ateapi.DrainWorkerRequest
+	93,  // 153: ateapi.Control.ListWorkerActorAssignments:input_type -> ateapi.ListWorkerActorAssignmentsRequest
+	102, // 154: ateapi.Control.ListActors:input_type -> ateapi.ListActorsRequest
+	52,  // 155: ateapi.Control.CreateAtespace:input_type -> ateapi.CreateAtespaceRequest
+	53,  // 156: ateapi.Control.GetAtespace:input_type -> ateapi.GetAtespaceRequest
+	54,  // 157: ateapi.Control.ListAtespaces:input_type -> ateapi.ListAtespacesRequest
+	56,  // 158: ateapi.Control.DeleteAtespace:input_type -> ateapi.DeleteAtespaceRequest
+	57,  // 159: ateapi.Control.CreateActorTemplate:input_type -> ateapi.CreateActorTemplateRequest
+	58,  // 160: ateapi.Control.GetActorTemplate:input_type -> ateapi.GetActorTemplateRequest
+	59,  // 161: ateapi.Control.ListActorTemplates:input_type -> ateapi.ListActorTemplatesRequest
+	61,  // 162: ateapi.Control.DeleteActorTemplate:input_type -> ateapi.DeleteActorTemplateRequest
+	108, // 163: ateapi.WorkerService.SetWorkerCapacity:input_type -> ateapi.SetWorkerCapacityRequest
+	14,  // 164: ateapi.Control.GetActor:output_type -> ateapi.Actor
+	14,  // 165: ateapi.Control.CreateActor:output_type -> ateapi.Actor
+	14,  // 166: ateapi.Control.UpdateActor:output_type -> ateapi.Actor
+	66,  // 167: ateapi.Control.SuspendActor:output_type -> ateapi.SuspendActorResponse
+	68,  // 168: ateapi.Control.PauseActor:output_type -> ateapi.PauseActorResponse
+	70,  // 169: ateapi.Control.ResumeActor:output_type -> ateapi.ResumeActorResponse
+	72,  // 170: ateapi.Control.RevertActor:output_type -> ateapi.RevertActorResponse
+	14,  // 171: ateapi.Control.DeleteActor:output_type -> ateapi.Actor
+	15,  // 172: ateapi.Control.GetActorEgressPolicy:output_type -> ateapi.EgressPolicy
+	15,  // 173: ateapi.Control.CreateActorEgressPolicy:output_type -> ateapi.EgressPolicy
+	15,  // 174: ateapi.Control.UpdateActorEgressPolicy:output_type -> ateapi.EgressPolicy
+	15,  // 175: ateapi.Control.DeleteActorEgressPolicy:output_type -> ateapi.EgressPolicy
+	79,  // 176: ateapi.Control.GetEgressPolicyContract:output_type -> ateapi.EgressPolicyContract
+	82,  // 177: ateapi.Control.MintActorJWT:output_type -> ateapi.MintActorJWTResponse
+	84,  // 178: ateapi.Control.MintActorCertificate:output_type -> ateapi.MintActorCertificateResponse
+	25,  // 179: ateapi.Control.CreateTag:output_type -> ateapi.Tag
+	25,  // 180: ateapi.Control.GetTag:output_type -> ateapi.Tag
+	88,  // 181: ateapi.Control.ListTags:output_type -> ateapi.ListTagsResponse
+	25,  // 182: ateapi.Control.UpdateTag:output_type -> ateapi.Tag
+	25,  // 183: ateapi.Control.DeleteTag:output_type -> ateapi.Tag
+	96,  // 184: ateapi.Control.ListWorkers:output_type -> ateapi.ListWorkersResponse
+	104, // 185: ateapi.Control.GetWorker:output_type -> ateapi.Worker
+	104, // 186: ateapi.Control.CreateWorker:output_type -> ateapi.Worker
+	104, // 187: ateapi.Control.UpdateWorker:output_type -> ateapi.Worker
+	104, // 188: ateapi.Control.DeleteWorker:output_type -> ateapi.Worker
+	104, // 189: ateapi.Control.DrainWorker:output_type -> ateapi.Worker
+	94,  // 190: ateapi.Control.ListWorkerActorAssignments:output_type -> ateapi.ListWorkerActorAssignmentsResponse
+	103, // 191: ateapi.Control.ListActors:output_type -> ateapi.ListActorsResponse
+	26,  // 192: ateapi.Control.CreateAtespace:output_type -> ateapi.Atespace
+	26,  // 193: ateapi.Control.GetAtespace:output_type -> ateapi.Atespace
+	55,  // 194: ateapi.Control.ListAtespaces:output_type -> ateapi.ListAtespacesResponse
+	26,  // 195: ateapi.Control.DeleteAtespace:output_type -> ateapi.Atespace
+	28,  // 196: ateapi.Control.CreateActorTemplate:output_type -> ateapi.ActorTemplate
+	28,  // 197: ateapi.Control.GetActorTemplate:output_type -> ateapi.ActorTemplate
+	60,  // 198: ateapi.Control.ListActorTemplates:output_type -> ateapi.ListActorTemplatesResponse
+	28,  // 199: ateapi.Control.DeleteActorTemplate:output_type -> ateapi.ActorTemplate
+	109, // 200: ateapi.WorkerService.SetWorkerCapacity:output_type -> ateapi.SetWorkerCapacityResponse
+	164, // [164:201] is the sub-list for method output_type
+	127, // [127:164] is the sub-list for method input_type
 	127, // [127:127] is the sub-list for extension type_name
 	127, // [127:127] is the sub-list for extension extendee
 	0,   // [0:127] is the sub-list for field type_name
@@ -7884,7 +7976,7 @@ func file_ateapi_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ateapi_proto_rawDesc), len(file_ateapi_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   102,
+			NumMessages:   104,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

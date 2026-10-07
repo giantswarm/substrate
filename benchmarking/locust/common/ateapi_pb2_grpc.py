@@ -109,6 +109,11 @@ class ControlStub:
                 request_serializer=ateapi__pb2.DeleteActorEgressPolicyRequest.SerializeToString,
                 response_deserializer=ateapi__pb2.EgressPolicy.FromString,
                 _registered_method=True)
+        self.GetEgressPolicyContract = channel.unary_unary(
+                '/ateapi.Control/GetEgressPolicyContract',
+                request_serializer=ateapi__pb2.GetEgressPolicyContractRequest.SerializeToString,
+                response_deserializer=ateapi__pb2.EgressPolicyContract.FromString,
+                _registered_method=True)
         self.MintActorJWT = channel.unary_unary(
                 '/ateapi.Control/MintActorJWT',
                 request_serializer=ateapi__pb2.MintActorJWTRequest.SerializeToString,
@@ -321,6 +326,15 @@ class ControlServicer:
 
     def DeleteActorEgressPolicy(self, request, context):
         """Delete the egress policy resource nested under an Actor.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetEgressPolicyContract(self, request, context):
+        """Get the version of the egress policy contract this server speaks: the
+        shape in which it decodes EgressPolicy and EgressRule. A client compares
+        it with its own before it writes an egress policy.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -563,6 +577,11 @@ def add_ControlServicer_to_server(servicer, server):
                     servicer.DeleteActorEgressPolicy,
                     request_deserializer=ateapi__pb2.DeleteActorEgressPolicyRequest.FromString,
                     response_serializer=ateapi__pb2.EgressPolicy.SerializeToString,
+            ),
+            'GetEgressPolicyContract': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetEgressPolicyContract,
+                    request_deserializer=ateapi__pb2.GetEgressPolicyContractRequest.FromString,
+                    response_serializer=ateapi__pb2.EgressPolicyContract.SerializeToString,
             ),
             'MintActorJWT': grpc.unary_unary_rpc_method_handler(
                     servicer.MintActorJWT,
@@ -1005,6 +1024,33 @@ class Control:
             '/ateapi.Control/DeleteActorEgressPolicy',
             ateapi__pb2.DeleteActorEgressPolicyRequest.SerializeToString,
             ateapi__pb2.EgressPolicy.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetEgressPolicyContract(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/ateapi.Control/GetEgressPolicyContract',
+            ateapi__pb2.GetEgressPolicyContractRequest.SerializeToString,
+            ateapi__pb2.EgressPolicyContract.FromString,
             options,
             channel_credentials,
             insecure,

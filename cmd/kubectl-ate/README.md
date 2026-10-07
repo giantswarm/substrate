@@ -279,6 +279,13 @@ rules:
   and `version` for the `EgressPolicy` being updated.
 * `get` exits 1 when the actor does not exist; an actor without a policy prints a
   note on stderr and exits 0.
+* `create` and `update` first compare the egress-policy contract ate-api reports
+  with their own and refuse a server of another one, whose `EgressRule` gives
+  the same field numbers another meaning. A server too old to report one is
+  written to, and the stored policy is read back: when its rules differ from
+  the ones the server accepted, the command fails with the difference. The
+  stored policy is then in force; replace it with the `kubectl-ate` of the
+  server's release.
 
 #### `kubectl ate get egress-policy` output columns
 
