@@ -559,6 +559,7 @@ var resourceNames = []string{
 	"ActorTemplate",
 	"Atespace",
 	"Worker",
+	"EgressPolicyContract",
 }
 
 func resourceForMethodName(methodName string) (string, error) {

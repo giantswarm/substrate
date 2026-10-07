@@ -148,3 +148,13 @@ func TestActorEgressPolicy(t *testing.T) {
 		t.Fatalf("policy after delete status = %v, want NotFound", status.Code(err))
 	}
 }
+
+func TestGetEgressPolicyContract(t *testing.T) {
+	got, err := (&RPCService{}).GetEgressPolicyContract(t.Context(), &ateapipb.GetEgressPolicyContractRequest{})
+	if err != nil {
+		t.Fatalf("GetEgressPolicyContract() error = %v", err)
+	}
+	if got.GetVersion() != ateapipb.EgressPolicyContractVersion {
+		t.Errorf("GetEgressPolicyContract() version = %q, want %q", got.GetVersion(), ateapipb.EgressPolicyContractVersion)
+	}
+}

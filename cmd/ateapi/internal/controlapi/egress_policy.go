@@ -50,6 +50,12 @@ func (s *ServiceImpl) CreateEgressPolicy(ctx context.Context, actorRef resources
 	return mapEgressPolicyWrite(created, err)
 }
 
+// GetEgressPolicyContract reports the egress policy contract this server
+// decodes, so a client of another contract can refuse before it writes.
+func (s *RPCService) GetEgressPolicyContract(context.Context, *ateapipb.GetEgressPolicyContractRequest) (*ateapipb.EgressPolicyContract, error) {
+	return &ateapipb.EgressPolicyContract{Version: ateapipb.EgressPolicyContractVersion}, nil
+}
+
 func (s *RPCService) GetActorEgressPolicy(ctx context.Context, req *ateapipb.GetActorEgressPolicyRequest) (*ateapipb.EgressPolicy, error) {
 	if errs := apivalidation.ValidateGetActorEgressPolicyRequest(ctx, req); len(errs) > 0 {
 		return nil, resources.ToGRPCStatusError(errs)
