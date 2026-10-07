@@ -37,8 +37,9 @@ import (
 // a running actor is checkpointed on its worker, a paused actor's node-local
 // snapshot is uploaded. Idempotent: a re-entered workflow fast-forwards past
 // the steps a previous attempt completed, deriving progress from the
-// persisted actor alone.
-func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef) (_ *ateapipb.Actor, err error) {
+// persisted actor alone. A non-nil token fences the request (see
+// ensureFencingTokenAdmitted).
+func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate
@@ -63,6 +64,9 @@ func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.Act
 
 	actor, actorTemplate, err = w.loadActorForSuspend(leaseCtx, actorRef)
 	if err != nil {
+		return nil, err
+	}
+	if actor, err = w.ensureFencingTokenAdmitted(leaseCtx, actorRef, actor, token); err != nil {
 		return nil, err
 	}
 	if actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {

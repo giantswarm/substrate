@@ -60,8 +60,11 @@ type restoreTelemetry struct {
 
 // ResumeActor executes the workflow to resume a suspended actor. Idempotent:
 // a re-entered workflow fast-forwards past the steps a previous attempt
-// completed, deriving progress from the persisted actor alone.
-func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef) (_ *ateapipb.Actor, resumed bool, err error) {
+// completed, deriving progress from the persisted actor alone. A non-nil
+// token fences the request (see ensureFencingTokenAdmitted); a token newer
+// than the recorded one is recorded even on a running actor, which is how a
+// lease taker fences out the previous holder without changing the actor.
+func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, resumed bool, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate
@@ -88,7 +91,11 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	if err != nil {
 		return nil, false, err
 	}
-	if wasRunning = actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING; wasRunning {
+	recorded := actor.GetStatus().GetFencingToken()
+	if fencingTokenStale(token, recorded) {
+		return nil, false, staleFencingTokenError(actorRef, token, recorded)
+	}
+	if wasRunning = actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING; wasRunning && !fencingTokenNewer(token, recorded) {
 		return actor, false, nil
 	}
 
@@ -101,6 +108,9 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	var src resumeSnapshotSource
 	actor, actorTemplate, src, err = w.loadActorForResume(leaseCtx, actorRef)
 	if err != nil {
+		return nil, false, err
+	}
+	if actor, err = w.ensureFencingTokenAdmitted(leaseCtx, actorRef, actor, token); err != nil {
 		return nil, false, err
 	}
 	if wasRunning = actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING; wasRunning {

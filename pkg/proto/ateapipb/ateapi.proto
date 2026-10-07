@@ -809,6 +809,12 @@ message ActorStatus {
   //
   // +k8s:optional
   ActorCrash crash = 9;
+
+  // fencing_token is the newest fencing token a Suspend, Pause or Resume
+  // request carried. A request with an older token is rejected.
+  //
+  // +k8s:optional
+  FencingToken fencing_token = 10001;
 }
 
 // ActorCrash describes the failure that moved an Actor to CRASHED.
@@ -1624,10 +1630,38 @@ message UpdateActorRequest {
   Actor actor = 1;
 }
 
+// FencingToken identifies one holder of a caller's lease on an Actor's
+// lifecycle, such as the claim of the executor that pauses an idle session.
+// A takeover of the lease mints a token with a higher generation, so the
+// Actor can tell a late request of a superseded holder from a current one.
+// Tokens are ordered by generation; two tokens of one generation are equal
+// only if they name the same holder.
+message FencingToken {
+  // holder identifies the lease holder, such as its executor id.
+  //
+  // +k8s:required
+  // +k8s:maxLength=253
+  string holder = 1;
+
+  // generation of the lease. It increases with every takeover.
+  //
+  // +k8s:required
+  // +k8s:minimum=1
+  int64 generation = 2;
+}
+
 message SuspendActorRequest {
   // +k8s:required
   // +k8s:subfield(atespace)=+k8s:required
   ObjectRef actor = 1;
+
+  // fencing_token fences this request to the current holder of the caller's
+  // lease on the Actor's lifecycle. The Actor records the newest token it
+  // has seen; a request carrying an older one is rejected with
+  // FailedPrecondition and changes nothing. Unset skips the check.
+  //
+  // +k8s:optional
+  FencingToken fencing_token = 10001;
 }
 
 message SuspendActorResponse {
@@ -1638,6 +1672,14 @@ message PauseActorRequest {
   // +k8s:required
   // +k8s:subfield(atespace)=+k8s:required
   ObjectRef actor = 1;
+
+  // fencing_token fences this request to the current holder of the caller's
+  // lease on the Actor's lifecycle. The Actor records the newest token it
+  // has seen; a request carrying an older one is rejected with
+  // FailedPrecondition and changes nothing. Unset skips the check.
+  //
+  // +k8s:optional
+  FencingToken fencing_token = 10001;
 }
 
 message PauseActorResponse {
@@ -1648,6 +1690,14 @@ message ResumeActorRequest {
   // +k8s:required
   // +k8s:subfield(atespace)=+k8s:required
   ObjectRef actor = 1;
+
+  // fencing_token fences this request to the current holder of the caller's
+  // lease on the Actor's lifecycle. The Actor records the newest token it
+  // has seen; a request carrying an older one is rejected with
+  // FailedPrecondition and changes nothing. Unset skips the check.
+  //
+  // +k8s:optional
+  FencingToken fencing_token = 10001;
 }
 
 message ResumeActorResponse {
