@@ -27,8 +27,12 @@ import (
 )
 
 // DeleteActorTemplate executes the workflow to delete an ActorTemplate. The
-// golden actor and tag go first and the row last, so a failed attempt leaves
-// the row for a retry to rediscover them by.
+// row goes first, under the caller's preconditions, and the golden actor and
+// tag after it: a delete the store refuses, or one interrupted between the
+// steps, leaves a template with its golden and never one whose golden is
+// gone, which no actor of it could resume from. A golden the cleanup fails to
+// remove stays in the reserved atespace under the template's uid, named in
+// the error, since no row is left to rediscover it by.
 func (w *ActorWorkflow) DeleteActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (*ateapipb.ActorTemplate, error) {
 	// Serializes against the reconciler, which creates the golden actor and
 	// tag under the same lease.
@@ -38,43 +42,43 @@ func (w *ActorWorkflow) DeleteActorTemplate(ctx context.Context, templateRef res
 	}
 	defer lease.Close()
 
-	tmpl, err := w.loadTemplateForDelete(ctx, templateRef)
+	deleted, err := w.deleteTemplateRow(ctx, templateRef, precondition)
 	if err != nil {
 		return nil, err
 	}
-	// Checked before the golden actor and tag go: a stale caller must not
-	// destroy them.
-	if err := precondition.Check(tmpl.GetMetadata()); err != nil {
-		if errors.Is(err, store.ErrUIDConflict) {
-			return nil, status.Errorf(codes.Aborted, "ActorTemplate %s does not have uid %s", templateRef, precondition.UID)
-		}
-		return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
-	}
 
 	// Both are named after the template's uid, in the reserved atespace.
-	goldenName := tmpl.GetMetadata().GetUid()
+	goldenName := deleted.GetMetadata().GetUid()
 	if err := w.ensureGoldenActorDeleted(ctx, resources.ActorRef{Atespace: resources.GoldenActorAtespace, Name: goldenName}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden actor %s/%s is not: %w", templateRef, resources.GoldenActorAtespace, goldenName, err)
 	}
 	if err := w.ensureGoldenTagDeleted(ctx, resources.TagRef{Atespace: resources.GoldenActorAtespace, Name: goldenName}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden tag %s/%s is not: %w", templateRef, resources.GoldenActorAtespace, goldenName, err)
 	}
-	return w.finalizeTemplateDeleted(ctx, templateRef, precondition)
+	return deleted, nil
 }
 
-// loadTemplateForDelete fetches the current template record.
-func (w *ActorWorkflow) loadTemplateForDelete(ctx context.Context, templateRef resources.ActorTemplateRef) (_ *ateapipb.ActorTemplate, err error) {
-	ctx, done := stepSpan(ctx, "LoadTemplateForDelete")
+// deleteTemplateRow removes the template from the store, checking the
+// caller's preconditions in the same statement, and returns the deleted
+// record.
+func (w *ActorWorkflow) deleteTemplateRow(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (_ *ateapipb.ActorTemplate, err error) {
+	ctx, done := stepSpan(ctx, "DeleteTemplateRow")
 	defer func() { err = done(err) }()
 
-	tmpl, err := w.store.GetActorTemplate(ctx, templateRef)
+	deleted, err := w.store.DeleteActorTemplate(ctx, templateRef, precondition)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, status.Errorf(codes.NotFound, "ActorTemplate %s not found", templateRef)
 		}
-		return nil, fmt.Errorf("while getting actor template %s: %w", templateRef, err)
+		if errors.Is(err, store.ErrUIDConflict) {
+			return nil, status.Errorf(codes.Aborted, "ActorTemplate %s does not have uid %s", templateRef, precondition.UID)
+		}
+		if errors.Is(err, store.ErrVersionConflict) {
+			return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
+		}
+		return nil, fmt.Errorf("while deleting actor template from DB: %w", err)
 	}
-	return tmpl, nil
+	return deleted, nil
 }
 
 // ensureGoldenActorDeleted removes the template's golden actor, whatever state
@@ -108,26 +112,4 @@ func (w *ActorWorkflow) ensureGoldenTagDeleted(ctx context.Context, goldenTagRef
 		return fmt.Errorf("while deleting golden tag: %w", err)
 	}
 	return nil
-}
-
-// finalizeTemplateDeleted removes the template from the store and returns the
-// deleted record.
-func (w *ActorWorkflow) finalizeTemplateDeleted(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (_ *ateapipb.ActorTemplate, err error) {
-	ctx, done := stepSpan(ctx, "FinalizeTemplateDeleted")
-	defer func() { err = done(err) }()
-
-	deleted, err := w.store.DeleteActorTemplate(ctx, templateRef, precondition)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, status.Errorf(codes.NotFound, "ActorTemplate %s not found", templateRef)
-		}
-		if errors.Is(err, store.ErrUIDConflict) {
-			return nil, status.Errorf(codes.Aborted, "ActorTemplate %s does not have uid %s", templateRef, precondition.UID)
-		}
-		if errors.Is(err, store.ErrVersionConflict) {
-			return nil, status.Error(codes.Aborted, "concurrent update conflict, please retry")
-		}
-		return nil, fmt.Errorf("while deleting actor template from DB: %w", err)
-	}
-	return deleted, nil
 }
