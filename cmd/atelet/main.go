@@ -216,9 +216,14 @@ func main() {
 		serverboot.Fatal(ctx, "Failed to open image cache", err)
 	}
 	imageGC := newImageCacheGC(imageCache, *imageCacheDir)
-	if *imageCacheGCPeriod > 0 {
+	switch {
+	case *imageCacheGCPeriod > 0:
 		go imageGC.Run(ctx)
-	} else if len(*imageCachePinned) > 0 {
+	case *imageCachePinnedFile != "":
+		// No pass to root them against, but the pins still follow the file
+		// so the node stays warm for the images listed now.
+		go imageGC.RunPinsOnly(ctx, *imageCachePinnedFilePeriod)
+	case len(*imageCachePinned) > 0:
 		// No pass to root them against, but a pinned image is still pulled
 		// once so the node starts warm.
 		go imageGC.ensurePinned(ctx)

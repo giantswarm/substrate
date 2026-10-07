@@ -23,7 +23,10 @@ tests:
   asserts:
   - lengthEqual:
       path: spec.template.spec.containers[0].args
-      count: 4
+      count: 5
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --image-cache-pinned-images-file=/etc/atelet/image-cache/pinned-images
 
 - it: renders every configured image-cache flag
   documentSelector:
@@ -56,9 +59,6 @@ tests:
   - contains:
       path: spec.template.spec.containers[0].args
       content: --image-cache-max-bytes=21474836480
-  - contains:
-      path: spec.template.spec.containers[0].args
-      content: --image-cache-pinned-images=ghcr.io/example/harness:1.0.0,ghcr.io/example/other@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 - it: renders a single flag on its own
   documentSelector:
@@ -74,4 +74,88 @@ tests:
       content: --image-cache-min-age=1h
   - lengthEqual:
       path: spec.template.spec.containers[0].args
-      count: 5
+      count: 6
+
+- it: lists the pinned images in the ConfigMap atelet reads, one per line
+  documentSelector:
+    path: kind
+    value: ConfigMap
+  set:
+    atelet:
+      imageCache:
+        pinnedImages:
+        - ghcr.io/example/harness:1.0.0
+        - ghcr.io/example/other@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  asserts:
+  - equal:
+      path: metadata.name
+      value: RELEASE-NAME-atelet-pinned-images
+  - equal:
+      path: data["pinned-images"]
+      value: |
+        ghcr.io/example/harness:1.0.0
+        ghcr.io/example/other@sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+- it: mounts the pinned images whole, so kubelet swaps in a changed list
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].volumeMounts
+      content:
+        name: pinned-images
+        mountPath: /etc/atelet/image-cache
+        readOnly: true
+  - contains:
+      path: spec.template.spec.volumes
+      content:
+        name: pinned-images
+        configMap:
+          name: RELEASE-NAME-atelet-pinned-images
+
+# A pinned list follows the images of another chart, which change on every
+# release of it; the atelet pod template must not change with them, or every
+# atelet on every node restarts. Both lists below render the same arguments,
+# annotations and volume, and the snapshots hold the whole template.
+- it: renders the atelet pod template of one pinned image list
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet:
+      imageCache:
+        pinnedImages:
+        - ghcr.io/example/harness@sha256:1111111111111111111111111111111111111111111111111111111111111111
+  asserts:
+  - equal: &args
+      path: spec.template.spec.containers[0].args
+      value:
+      - --gcp-auth-for-image-pulls=false
+      - --grpc-server-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
+      - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
+      - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+      - --image-cache-pinned-images-file=/etc/atelet/image-cache/pinned-images
+  - equal: &annotations
+      path: spec.template.metadata.annotations
+      value:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+  - matchSnapshot:
+      path: spec.template
+
+- it: renders the same atelet pod template for another pinned image list
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet:
+      imageCache:
+        pinnedImages:
+        - ghcr.io/example/harness@sha256:2222222222222222222222222222222222222222222222222222222222222222
+        - ghcr.io/example/other:2.0.0
+  asserts:
+  - equal: *args
+  - equal: *annotations
+  - matchSnapshot:
+      path: spec.template
