@@ -33,8 +33,9 @@ import (
 
 // PauseActor executes the workflow to pause a running actor. Idempotent:
 // a re-entered workflow fast-forwards past the steps a previous attempt
-// completed, deriving progress from the persisted actor alone.
-func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.ActorRef) (_ *ateapipb.Actor, err error) {
+// completed, deriving progress from the persisted actor alone. A non-nil
+// token fences the request (see ensureFencingTokenAdmitted).
+func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate
@@ -59,6 +60,9 @@ func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.Actor
 
 	actor, actorTemplate, err = w.loadActorForPause(leaseCtx, actorRef)
 	if err != nil {
+		return nil, err
+	}
+	if actor, err = w.ensureFencingTokenAdmitted(leaseCtx, actorRef, actor, token); err != nil {
 		return nil, err
 	}
 	if actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_PAUSED {

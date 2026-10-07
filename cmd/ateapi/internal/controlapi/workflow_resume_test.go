@@ -89,7 +89,7 @@ func TestResumeActor_RunningFastPathDoesNotAcquireLease(t *testing.T) {
 	st := &leaseCountingStore{Interface: persistence}
 	w := &ActorWorkflow{store: st}
 
-	got, resumed, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+	got, resumed, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 	if err != nil {
 		t.Fatalf("ResumeActor: %v", err)
 	}
@@ -623,7 +623,7 @@ func TestResumeActorWorkflow_RejectedAndIdempotentPaths(t *testing.T) {
 				}
 			})
 
-			actor, resumed, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+			actor, resumed, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 			if tc.wantErr {
 				if got := status.Code(err); got != codes.FailedPrecondition {
 					t.Fatalf("status.Code(err) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
@@ -708,7 +708,7 @@ func TestResumeActor_MetricSkipsAlreadyRunningNoop(t *testing.T) {
 				}
 			})
 
-			_, _, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+			_, _, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 			if tt.wantRecord && err == nil {
 				t.Fatal("expected resume to fail, got nil error")
 			}
@@ -739,7 +739,7 @@ func TestResumeActor_CrashesOnMissingWorkerAssignment(t *testing.T) {
 		a.Status.WorkerAssignment = nil // RESUMING without a worker: corrupt record
 	})
 
-	_, _, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+	_, _, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 	if got := status.Code(err); got != codes.Aborted {
 		t.Fatalf("status.Code(err) = %v, want %v (err: %v)", got, codes.Aborted, err)
 	}
