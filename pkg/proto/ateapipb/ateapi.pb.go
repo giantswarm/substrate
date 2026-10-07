@@ -5438,6 +5438,8 @@ func (x *DeleteActorEgressPolicyRequest) GetOptions() *DeleteOptions {
 	return nil
 }
 
+// GetEgressPolicyContractRequest asks for the server's egress policy
+// contract. The contract is the server's, not a resource's: it names none.
 type GetEgressPolicyContractRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
