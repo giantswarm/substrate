@@ -43,13 +43,15 @@ import (
 )
 
 var (
-	imageCacheGCPeriod = pflag.Duration("image-cache-gc-period", 5*time.Minute, "How often to run the image cache eviction pass. 0 disables the periodic pass (startup orphan recovery still runs at every atelet start).")
-	imageCacheHighPct  = pflag.Int("image-cache-high-percent", 85, "Cache-volume usage percentage above which eviction starts.")
-	imageCacheLowPct   = pflag.Int("image-cache-low-percent", 80, "Cache-volume usage percentage eviction frees down to. Must be lower than --image-cache-high-percent.")
-	imageCacheMaxBytes = pflag.Int64("image-cache-max-bytes", 0, "Absolute cap on the summed size of cached layers, evicted down to independently of the volume watermarks. 0 means no cap.")
-	imageCacheMinAge   = pflag.Duration("image-cache-min-age", 2*time.Minute, "Layers and image records younger than this are never evicted (protects images pulled but not yet mounted). Governs startup orphan recovery too, so it is live even with the periodic pass disabled.")
-	imageCacheGCDryRun = pflag.Bool("image-cache-gc-dry-run", false, "Compute and log eviction decisions without deleting anything.")
-	imageCachePinned   = pflag.StringSlice("image-cache-pinned-images", nil, "Image references the cache always holds: each is pulled at every eviction pass (once at start when the pass is disabled) and rooted against eviction, so the first actor on the node that needs it finds it unpacked whatever the volume's usage. For the images of a pool's ActorTemplates on nodes whose cache volume sits above --image-cache-high-percent, where the pass would otherwise evict them every period.")
+	imageCacheGCPeriod         = pflag.Duration("image-cache-gc-period", 5*time.Minute, "How often to run the image cache eviction pass. 0 disables the periodic pass (startup orphan recovery still runs at every atelet start).")
+	imageCacheHighPct          = pflag.Int("image-cache-high-percent", 85, "Cache-volume usage percentage above which eviction starts.")
+	imageCacheLowPct           = pflag.Int("image-cache-low-percent", 80, "Cache-volume usage percentage eviction frees down to. Must be lower than --image-cache-high-percent.")
+	imageCacheMaxBytes         = pflag.Int64("image-cache-max-bytes", 0, "Absolute cap on the summed size of cached layers, evicted down to independently of the volume watermarks. 0 means no cap.")
+	imageCacheMinAge           = pflag.Duration("image-cache-min-age", 2*time.Minute, "Layers and image records younger than this are never evicted (protects images pulled but not yet mounted). Governs startup orphan recovery too, so it is live even with the periodic pass disabled.")
+	imageCacheGCDryRun         = pflag.Bool("image-cache-gc-dry-run", false, "Compute and log eviction decisions without deleting anything.")
+	imageCachePinned           = pflag.StringSlice("image-cache-pinned-images", nil, "Image references the cache always holds: each is pulled at every eviction pass (once at start when the pass is disabled) and rooted against eviction, so the first actor on the node that needs it finds it unpacked whatever the volume's usage. For the images of a pool's ActorTemplates on nodes whose cache volume sits above --image-cache-high-percent, where the pass would otherwise evict them every period.")
+	imageCachePinnedFile       = pflag.String("image-cache-pinned-images-file", "", "A file of further pinned image references, one per line (blank lines and lines starting with # are ignored), joined with --image-cache-pinned-images. It is read again at every pass (every --image-cache-pinned-images-file-period when the pass is disabled), and an image that left the list is unpinned, so the list can change — a mounted ConfigMap — without restarting atelet. A missing file is an empty list.")
+	imageCachePinnedFilePeriod = pflag.Duration("image-cache-pinned-images-file-period", 5*time.Minute, "How often the pinned images are refreshed from --image-cache-pinned-images-file while the eviction pass is disabled (--image-cache-gc-period=0).")
 )
 
 const (
@@ -82,6 +84,9 @@ func validateImageCacheGCFlags() error {
 		if _, err := name.ParseReference(ref); err != nil {
 			return fmt.Errorf("--image-cache-pinned-images %q: %w", ref, err)
 		}
+	}
+	if *imageCachePinnedFilePeriod <= 0 {
+		return fmt.Errorf("--image-cache-pinned-images-file-period %v must be > 0", *imageCachePinnedFilePeriod)
 	}
 	if imageCacheDirOutsideBasePath(*imageCacheDir) {
 		slog.Warn("Image cache dir is outside the ateom base path; its volume watermarks are measured separately from actor state",
@@ -148,6 +153,7 @@ type gcStore interface {
 	EvictUnused(ctx context.Context, targetBytes int64, dryRun bool) (imagecache.EvictStats, error)
 	EnsureImage(ctx context.Context, ref string) (*imagecache.Image, error)
 	Pin(img *imagecache.Image)
+	Unpin(digest string)
 }
 
 // imageCacheGC is the loop's state: configuration snapshotted from the
@@ -163,20 +169,27 @@ type imageCacheGC struct {
 	dryRun   bool
 	// pinned are the image references every pass pulls and pins first.
 	pinned []string
+	// pinnedFile, when set, holds more references, read at every pass.
+	pinnedFile string
+	// pinnedDigests maps each listed reference to the digest it pinned, so
+	// an image no reference holds any more (the reference left the list, or
+	// its tag moved) is unpinned.
+	pinnedDigests map[string]string
 
 	consecutiveShortfalls int
 }
 
 func newImageCacheGC(store *imagecache.Store, cacheDir string) *imageCacheGC {
 	return &imageCacheGC{
-		store:    store,
-		cacheDir: cacheDir,
-		period:   *imageCacheGCPeriod,
-		highPct:  *imageCacheHighPct,
-		lowPct:   *imageCacheLowPct,
-		maxBytes: *imageCacheMaxBytes,
-		dryRun:   *imageCacheGCDryRun,
-		pinned:   *imageCachePinned,
+		store:      store,
+		cacheDir:   cacheDir,
+		period:     *imageCacheGCPeriod,
+		highPct:    *imageCacheHighPct,
+		lowPct:     *imageCacheLowPct,
+		maxBytes:   *imageCacheMaxBytes,
+		dryRun:     *imageCacheGCDryRun,
+		pinned:     *imageCachePinned,
+		pinnedFile: *imageCachePinnedFile,
 	}
 }
 
@@ -264,24 +277,116 @@ func (g *imageCacheGC) runPass(ctx context.Context) {
 	g.noteOutcome(ctx, classifyGCPass(err, target, stats.FreedBytes), err, attrs)
 }
 
-// ensurePinned pulls every pinned image that is not cached and pins it.
-// A pull that fails — the registry is down, the tag is gone — is logged and
-// tried again next pass; the pass still runs and roots what did pin. A pull
-// in progress holds the pass up (the store's pull timeout bounds it): the
-// point of a pin is that the image is there before it is needed, and
-// evicting around a pull in flight would be no faster.
-func (g *imageCacheGC) ensurePinned(ctx context.Context) {
+// RunPinsOnly refreshes the pins from the pinned-images file every period
+// until ctx is done: the loop atelet runs instead of Run when the eviction
+// pass is disabled and the pin list can change under it.
+func (g *imageCacheGC) RunPinsOnly(ctx context.Context, period time.Duration) {
+	g.ensurePinned(ctx)
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		g.ensurePinned(ctx)
+	}
+}
+
+// pinnedRefs is the pin list of this pass: the flag's references, then the
+// file's, each once. A file that cannot be read keeps the previous pins in
+// place (ok false) rather than unpinning everything on a transient error; a
+// missing file is an empty list. A malformed line is logged and skipped:
+// the file changes at runtime, so it cannot fail atelet's start the way a
+// malformed flag does.
+func (g *imageCacheGC) pinnedRefs(ctx context.Context) (refs []string, ok bool) {
+	seen := map[string]bool{}
+	add := func(ref string) {
+		if !seen[ref] {
+			seen[ref] = true
+			refs = append(refs, ref)
+		}
+	}
 	for _, ref := range g.pinned {
+		add(ref)
+	}
+	if g.pinnedFile == "" {
+		return refs, true
+	}
+	data, err := os.ReadFile(g.pinnedFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return refs, true
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Pinned images file could not be read; keeping the current pins",
+			slog.String("file", g.pinnedFile), slog.Any("err", err))
+		return refs, false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		ref := strings.TrimSpace(line)
+		if ref == "" || strings.HasPrefix(ref, "#") {
+			continue
+		}
+		if _, err := name.ParseReference(ref); err != nil {
+			slog.WarnContext(ctx, "Pinned images file lists a malformed reference; skipping it",
+				slog.String("file", g.pinnedFile), slog.String("image", ref), slog.Any("err", err))
+			continue
+		}
+		add(ref)
+	}
+	return refs, true
+}
+
+// ensurePinned pulls every pinned image that is not cached and pins it,
+// then unpins the images no listed reference holds any more.
+// A pull that fails — the registry is down, the tag is gone — is logged and
+// tried again next pass, and the reference keeps the image it pinned
+// before; the pass still runs and roots what did pin. A pull in progress
+// holds the pass up (the store's pull timeout bounds it): the point of a
+// pin is that the image is there before it is needed, and evicting around
+// a pull in flight would be no faster.
+func (g *imageCacheGC) ensurePinned(ctx context.Context) {
+	refs, ok := g.pinnedRefs(ctx)
+	prev := g.pinnedDigests
+	next := make(map[string]string, len(refs))
+	for _, ref := range refs {
 		img, err := g.store.EnsureImage(ctx, ref)
 		if err != nil {
 			slog.WarnContext(ctx, "Pinned image could not be pulled; it is unprotected until a pass pulls it",
 				slog.String("image", ref), slog.Any("err", err))
+			if digest, had := prev[ref]; had {
+				next[ref] = digest
+			}
 			continue
 		}
 		g.store.Pin(img)
+		next[ref] = img.Digest.String()
 		slog.DebugContext(ctx, "Pinned image ensured",
 			slog.String("image", ref), slog.String("digest", img.Digest.String()))
 	}
+	if !ok {
+		// The list is unknown this pass: keep every pin the file held.
+		for ref, digest := range prev {
+			if _, listed := next[ref]; !listed {
+				next[ref] = digest
+			}
+		}
+	}
+	held := make(map[string]bool, len(next))
+	for _, digest := range next {
+		held[digest] = true
+	}
+	for ref, digest := range prev {
+		if held[digest] {
+			continue
+		}
+		held[digest] = true // unpin each digest once
+		g.store.Unpin(digest)
+		slog.InfoContext(ctx, "Image left the pinned list; it is evictable again",
+			slog.String("image", ref), slog.String("digest", digest))
+	}
+	g.pinnedDigests = next
 }
 
 // noteOutcome logs one finished pass and advances the shortfall backoff.
