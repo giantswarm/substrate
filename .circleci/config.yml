@@ -268,7 +268,12 @@ workflows:
             - scan
           filters: *publish-filters
 
-  # Every other branch: the same six builds for both platforms, nothing pushed.
+  # Every pull request branch: the same six builds for both platforms, nothing
+  # pushed. The line's branch and its maintenance branches (release-X.Y) are
+  # left out: the auto-release workflow tags their pushed head at once and the
+  # tag's own pipeline builds it, while a branch build of a tagged head stops
+  # on architect's release-version guard, whose failure would stand on the
+  # candidate's commit and refuse its promotion.
   validate:
     jobs:
       - architect/push-to-registries: &validate-push
@@ -283,7 +288,7 @@ workflows:
           annotations: index:io.giantswarm.upstream.version=v0.2.0-beta5
           filters: &validate-filters
             branches:
-              ignore: giantswarm
+              ignore: /^(giantswarm|release-[0-9]+\.[0-9]+)$/
       - architect/push-to-registries:
           <<: *validate-push
           name: build-atecontroller
