@@ -379,7 +379,7 @@ func TestDeleteActorTemplate(t *testing.T) {
 			ctx := t.Context()
 			persistence := newTestPersistence(t)
 			refusing := &refusingTemplateDeleteStore{Interface: persistence}
-			var backend store.Interface = persistence
+			backend := persistence
 			if tt.storeRefuses {
 				backend = refusing
 			}
