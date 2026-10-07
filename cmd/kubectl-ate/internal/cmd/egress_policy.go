@@ -182,6 +182,30 @@ func checkEgressPolicyContract(ctx context.Context, guard egressPolicyGuard, ver
 	return true, nil
 }
 
+// requireEgressRuleHostnames refuses, before a write to a server that reports
+// no egress-policy contract, a rule that names no protocol or no hostname. Every
+// protocol of this contract requires hostnames, so such a rule is invalid here;
+// a server of another contract can decode it as a valid rule of its own that
+// allows every destination, and it reads back unchanged.
+func requireEgressRuleHostnames(policy *ateapipb.EgressPolicy, actor *ateapipb.ObjectRef) error {
+	for i, rule := range policy.GetRules() {
+		var hostnames []string
+		switch {
+		case rule.GetHttp() != nil:
+			hostnames = rule.GetHttp().GetHostnames()
+		case rule.GetHttps() != nil:
+			hostnames = rule.GetHttps().GetHostnames()
+		case rule.GetTlsPassthrough() != nil:
+			hostnames = rule.GetTlsPassthrough().GetHostnames()
+		}
+		if len(hostnames) == 0 {
+			return fmt.Errorf(`refusing to write the egress policy for actor %q in atespace %q: ate-api reports no egress-policy contract, and rules[%d] names no protocol with hostnames, which a server of another contract can store as a rule allowing every destination`,
+				actor.GetName(), actor.GetAtespace(), i)
+		}
+	}
+	return nil
+}
+
 // verifyStoredEgressPolicy reads the stored policy back and refuses when it is
 // not the policy the server answered the write with. A server of another
 // contract echoes the fields it could not decode, but stores the policy
@@ -283,6 +307,11 @@ func (r *createEgressPolicyRunner) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if !reported {
+		if err := requireEgressRuleHostnames(r.policy, r.actor); err != nil {
+			return err
+		}
+	}
 	created, err := r.creator.CreateActorEgressPolicy(ctx, &ateapipb.CreateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if err != nil {
 		return fmt.Errorf("failed to create egress policy for actor %q in atespace %q: %w", r.actor.GetName(), r.actor.GetAtespace(), err)
@@ -343,6 +372,11 @@ func (r *updateEgressPolicyRunner) Run(ctx context.Context) error {
 	reported, err := checkEgressPolicyContract(ctx, r.guard, "update", r.actor)
 	if err != nil {
 		return err
+	}
+	if !reported {
+		if err := requireEgressRuleHostnames(r.policy, r.actor); err != nil {
+			return err
+		}
 	}
 	updated, err := r.updater.UpdateActorEgressPolicy(ctx, &ateapipb.UpdateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if status.Code(err) == codes.NotFound {

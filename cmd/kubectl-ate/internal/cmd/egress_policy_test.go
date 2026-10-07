@@ -929,6 +929,7 @@ func TestEgressPolicyRunners_Guard(t *testing.T) {
 	tests := []struct {
 		name         string
 		guard        *fakeEgressPolicyGuard
+		policy       *ateapipb.EgressPolicy // the manifest when not manifest
 		wantWrite    bool
 		wantReadBack bool
 		wantErr      []string
@@ -969,6 +970,18 @@ func TestEgressPolicyRunners_Guard(t *testing.T) {
 			wantErr:      []string{`changed again before it could be verified (version 1 written, 2 stored)`},
 		},
 		{
+			name:    "a server without a contract gets no rule without hostnames",
+			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{Http: &ateapipb.HTTPRule{Hostnames: []string{"api.example.com"}}}, {TlsPassthrough: &ateapipb.TLSPassthroughRule{}}}},
+			wantErr: []string{`ate-api reports no egress-policy contract, and rules[1] names no protocol with hostnames, which a server of another contract can store as a rule allowing every destination`},
+		},
+		{
+			name:    "a server without a contract gets no rule without a protocol",
+			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{}}},
+			wantErr: []string{`rules[0] names no protocol with hostnames`},
+		},
+		{
 			name:         "a failed read-back is an error",
 			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, storedErr: status.Error(codes.Unavailable, "api-server down")},
 			wantWrite:    true,
@@ -980,6 +993,10 @@ func TestEgressPolicyRunners_Guard(t *testing.T) {
 		for _, verb := range []string{"create", "update"} {
 			t.Run(verb+"/"+test.name, func(t *testing.T) {
 				guard := *test.guard
+				manifest := manifest
+				if test.policy != nil {
+					manifest = test.policy
+				}
 				var stdout bytes.Buffer
 				var runner interface{ Run(context.Context) error }
 				var wrote func() bool
