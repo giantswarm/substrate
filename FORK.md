@@ -96,7 +96,7 @@ such a session waits out every parking budget and can neither be resumed nor del
 a paused session lives and dies with the one node it paused on, and the bounded golden boot, without which
 a workload that exits at start-up is re-booted forever and its cause never reported, and the cross-certified CA rotation, without which
 the egress MITM CA cannot be rotated without failing actor TLS, and the migration of the golden snapshot status a release before golden tags recorded, without which
-every template created on 1.0.x refuses its actors as not resumable after the upgrade, and the egress-policy contract check, without which a `kubectl-ate` of another line stores a policy with another meaning; all seventeen are written for upstream and leave at the first release that carries them. The Postgres Secret patch is upstream's own open pull
+every template created on 1.0.x refuses its actors as not resumable after the upgrade, and the egress-policy contract check, without which a `kubectl-ate` of another line stores a policy with another meaning, and the template delete that takes the row first, without which a refused delete leaves a template whose golden is gone; all eighteen are written for upstream and leave at the first release that carries them. The Postgres Secret patch is upstream's own open pull
 request. Everything else is what upstream has already merged. Giant Swarm specific wiring
 lives elsewhere: the CA/JWT pool bootstrap (`kubectl-ate admin make-ca-pool`/`make-jwt-pool`
 and the `ate-api-authentication` ConfigMap) is created by [agentlab](https://github.com/giantswarm/agentlab)
