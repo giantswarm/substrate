@@ -251,6 +251,8 @@ untrusted caller.
 
 To deliver identity information, including credentials, to a running actor, you can use a SystemInfo volume. Define it in `volumes`, and mount it into each container that needs it.
 
+atelet writes a SystemInfo volume's files on every start and restore, and no snapshot holds them. A suspended actor may therefore be repointed at a template that adds, removes or changes SystemInfo volumes and their mounts; its other volumes and their mounts must stay identical.
+
 Available information sources:
 
 #### actorMetadata
