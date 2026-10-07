@@ -1515,7 +1515,7 @@ func TestValidateSuspendActorRequest(t *testing.T) {
 }
 
 func TestCreateActor_GoldenTagDefault(t *testing.T) {
-	for _, scenario := range []string{"default", "explicit tag", "own snapshot", "missing", "pending", "wrong template", "data scope"} {
+	for _, scenario := range []string{"default", "explicit tag", "own snapshot", "missing", "pending", "wrong template", "data scope", "legacy golden"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := t.Context()
 			persistence := newTestPersistence(t)
@@ -1545,6 +1545,10 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 			case "data scope":
 				tag.Status.Snapshot.ContentScope = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 				wantCode = codes.FailedPrecondition
+			case "legacy golden":
+				// The template's golden snapshot was recorded before golden
+				// tags and awaits its migration: a refusal a retry outlives.
+				wantCode = codes.Unavailable
 			}
 			if scenario != "missing" {
 				if _, err := persistence.CreateTag(ctx, tag); err != nil {
@@ -1552,7 +1556,11 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 				}
 			}
 			if _, err := persistence.UpdateActorTemplate(ctx, resources.ActorTemplateRefFromActorTemplate(tmpl), store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
-				db.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{GoldenTag: ref}}
+				goldenStatus := &ateapipb.GoldenSnapshotStatus{GoldenTag: ref}
+				if scenario == "legacy golden" {
+					goldenStatus = legacyGoldenStatus(t, tag.GetStatus().GetSnapshot().GetSnapshotUri())
+				}
+				db.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: goldenStatus}
 				return nil
 			}); err != nil {
 				t.Fatal(err)

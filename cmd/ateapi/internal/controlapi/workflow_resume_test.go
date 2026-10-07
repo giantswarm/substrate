@@ -924,7 +924,12 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 		// tag with another template's UID.
 		goldenTagGone          bool
 		goldenTagOtherTemplate bool
-		wantCode               codes.Code
+		// goldenLegacy stores the golden snapshot status a release before
+		// golden tags recorded; goldenFailed stores a failed golden build
+		// with this error message.
+		goldenLegacy bool
+		goldenFailed string
+		wantCode     codes.Code
 		// wantReason is the AIP-193 reason the refusal carries; a refusal
 		// without one is an ordinary FailedPrecondition.
 		wantReason    ateerrors.Reason
@@ -1007,6 +1012,26 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			wantCode:     codes.DataLoss,
 		},
 		{
+			// The template's golden snapshot was recorded before golden tags
+			// and the reconciler has not migrated it yet: a refusal a retry
+			// outlives, never the not-resumable one.
+			name:         "waits for the migration of a golden snapshot recorded before golden tags",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenLegacy: true,
+			wantCode:     codes.Unavailable,
+		},
+		{
+			// A failed golden build refuses with its own failure, the lost
+			// golden of a release before golden tags included.
+			name:         "fails with the golden build's failure",
+			fromData:     ateapipb.ResumeSource_RESUME_SOURCE_GOLDEN,
+			contentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+			goldenFailed: "GoldenSnapshotLost: golden snapshot s3://bucket/golden, recorded before golden tags, is lost: neither golden actor ate-golden/uid nor a tag of it exists",
+			wantCode:     codes.FailedPrecondition,
+			wantReason:   ateerrors.ReasonGoldenSnapshotUnavailable,
+		},
+		{
 			// A Full snapshot restores from its own content even under
 			// Golden fromData (e.g. taken before the template switched).
 			name:          "leaves golden location empty for Full snapshot",
@@ -1060,10 +1085,15 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 					OnResume: &ateapipb.OnResumeConfig{FromData: tt.fromData},
 				},
 			}
-			if tt.goldenURI != "" {
+			switch {
+			case tt.goldenURI != "":
 				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{
 					GoldenTag: &ateapipb.ObjectRef{Atespace: "ns", Name: "golden"},
 				}}
+			case tt.goldenLegacy:
+				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: legacyGoldenStatus(t, goldenSnapshotURI)}
+			case tt.goldenFailed != "":
+				tmpl.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{ErrorMessage: tt.goldenFailed}}
 			}
 			stored, err := persistence.CreateActorTemplate(ctx, tmpl)
 			if err != nil {
@@ -1101,6 +1131,9 @@ func TestLoadActorForResume_OnGoldenDataResume(t *testing.T) {
 			}
 			if tt.wantReason != "" && !strings.Contains(status.Convert(err).Message(), "start a new actor") {
 				t.Errorf("message %q does not tell the caller to start a new actor", status.Convert(err).Message())
+			}
+			if tt.goldenFailed != "" && !strings.Contains(status.Convert(err).Message(), tt.goldenFailed) {
+				t.Errorf("message %q does not carry the golden build's failure %q", status.Convert(err).Message(), tt.goldenFailed)
 			}
 			if err != nil {
 				return
