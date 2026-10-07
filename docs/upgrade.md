@@ -551,6 +551,19 @@ Restart it and mint a fresh token if you still need to drain.
 this step is done the old ate-api-server is still serving, so do not
 start using API fields new in this release before upgrade finishes.
 
+An install from a release before golden tags recorded each template's
+golden snapshot as the golden actor's own external snapshot and kept
+that actor suspended on it; since golden tags the same status field
+names the golden tag, so such a status reads as a tag without a name.
+Once the new ate-api-server serves, its ActorTemplate reconciler
+migrates every such template on its first resync
+(`--template-resync-interval`, 20 s by default): the golden actor's
+snapshot is copied into the template's golden tag and the actor is
+released, as a new golden is recorded; a golden whose actor is gone
+fails the template as `GoldenSnapshotLost` with what is missing:
+recreate the template. Until a template is migrated, a create of an
+actor from the template answers `Unavailable`; retry it.
+
 ### After the roll, on GKE
 
 > [!WARNING]
