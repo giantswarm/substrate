@@ -844,6 +844,39 @@ func createActor(ctx context.Context, t *testing.T, clients *e2e.Clients, nsObj 
 	return nil
 }
 
+// fenceOutStalePause plays a lease takeover against a running actor: the new
+// holder's Resume records its newer fencing token without touching the
+// runtime, and the late Pause of the previous holder is then rejected with
+// FailedPrecondition, leaving the actor RUNNING.
+func fenceOutStalePause(ctx context.Context, t *testing.T, clients *e2e.Clients, actorName string) {
+	t.Helper()
+	actor := &ateapipb.ObjectRef{Atespace: demoAtespace, Name: actorName}
+	previous := &ateapipb.FencingToken{Holder: "e2e-executor-a", Generation: 1}
+	taker := &ateapipb.FencingToken{Holder: "e2e-executor-b", Generation: 2}
+
+	t.Logf("Fencing Actor %q with a newer token...", actorName)
+	resumed, err := clients.SubstrateAPI.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: actor, FencingToken: taker})
+	if err != nil {
+		t.Fatalf("failed to resume running Actor with a fencing token: %v", err)
+	}
+	if resumed.GetResumed() {
+		t.Errorf("ResumeActor of a running Actor resumed = true, want false")
+	}
+	if _, err := clients.SubstrateAPI.PauseActor(ctx, &ateapipb.PauseActorRequest{Actor: actor, FencingToken: previous}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("PauseActor with a superseded fencing token: got %v, want FailedPrecondition", err)
+	}
+	got, err := clients.SubstrateAPI.GetActor(ctx, &ateapipb.GetActorRequest{Actor: actor})
+	if err != nil {
+		t.Fatalf("failed to get Actor: %v", err)
+	}
+	if state := got.GetStatus().GetState(); state != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+		t.Fatalf("Actor state after a fenced-out Pause = %v, want RUNNING", state)
+	}
+	if token := got.GetStatus().GetFencingToken(); token.GetHolder() != taker.GetHolder() || token.GetGeneration() != taker.GetGeneration() {
+		t.Fatalf("recorded fencing token = %v, want %v", token, taker)
+	}
+}
+
 func pauseActor(ctx context.Context, t *testing.T, clients *e2e.Clients, nsObj *e2e.Namespace, at *ateapipb.ActorTemplate) error {
 	actorName := "pause-actor-" + nsObj.Name
 
@@ -872,6 +905,8 @@ func pauseActor(ctx context.Context, t *testing.T, clients *e2e.Clients, nsObj *
 	} else {
 		validateCounterResponse(t, resp, "after creation", 1, 1)
 	}
+
+	fenceOutStalePause(ctx, t, clients, actorName)
 
 	// Pausing the actor
 	t.Logf("Pausing Actor %q...", actorName)
