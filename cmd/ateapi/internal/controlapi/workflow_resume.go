@@ -212,7 +212,14 @@ func (w *ActorWorkflow) loadActorForResume(ctx context.Context, actorRef resourc
 			dataOnly = src.Scope == ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 		}
 		if dataOnly {
-			ref := actorTemplate.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
+			goldenStatus := actorTemplate.GetStatus().GetGoldenSnapshotStatus()
+			if msg := goldenStatus.GetErrorMessage(); msg != "" {
+				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "the ActorTemplate golden snapshot failed: "+msg)
+			}
+			if legacyGoldenSnapshot(goldenStatus) {
+				return nil, nil, src, goldenSnapshotAwaitingMigration(actorTemplate)
+			}
+			ref := goldenStatus.GetGoldenTag()
 			if ref == nil {
 				return nil, nil, src, goldenSnapshotUnavailable(ctx, actorTemplate, "a Golden data resume requires the ActorTemplate golden tag, which is not available")
 			}

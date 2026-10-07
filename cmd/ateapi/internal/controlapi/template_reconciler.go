@@ -50,6 +50,10 @@ const (
 	reasonGoldenActorInvalid = "GoldenActorInvalid"
 	reasonGoldenActorCrashed = "GoldenActorCrashed"
 	reasonUnexpectedState    = "GoldenActorUnexpectedState"
+	// reasonGoldenSnapshotLost fails a template whose golden snapshot, recorded
+	// by a release before golden tags, cannot be made into a golden tag: the
+	// golden actor that held it is gone, holds no snapshot, or refuses the copy.
+	reasonGoldenSnapshotLost = "GoldenSnapshotLost"
 )
 
 // maxGoldenErrorMessageLen is the maxLength of
@@ -62,6 +66,9 @@ type templateReconcilerStore interface {
 	GetActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef) (*ateapipb.ActorTemplate, error)
 	ListActorTemplates(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.ActorTemplate], error)
 	UpdateActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.Precondition, mutate func(dbTemplate *ateapipb.ActorTemplate) error) (*ateapipb.ActorTemplate, error)
+	// UpdateActor repairs the golden actor row a release before golden tags
+	// left without the template its snapshot was built under.
+	UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.Actor) error) (*ateapipb.Actor, error)
 	AcquireLease(ctx context.Context, key string) (*store.Lease, error)
 }
 
@@ -209,6 +216,9 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 		if goldenSnapshotStatus.GetErrorMessage() != "" {
 			// The snapshot has already failed.
 			return 0, nil
+		}
+		if legacyGoldenSnapshot(goldenSnapshotStatus) {
+			return 0, r.migrateLegacyGolden(ctx, tmpl, goldenActorRef)
 		}
 		if goldenSnapshotStatus.GetGoldenTag() != nil {
 			// The golden snapshot exists already.
@@ -417,9 +427,121 @@ func truncateUTF8(s string, n int) string {
 }
 
 // goldenSnapshotDone reports whether the golden snapshot build reached a
-// terminal state: the snapshot was recorded, or the build failed.
+// terminal state: the golden tag was recorded, or the build failed. A golden
+// snapshot recorded before golden tags is not done: its migration into a tag
+// is still owed.
 func goldenSnapshotDone(snapshotStatus *ateapipb.GoldenSnapshotStatus) bool {
-	return snapshotStatus.GetGoldenTag() != nil || snapshotStatus.GetErrorMessage() != ""
+	if snapshotStatus.GetErrorMessage() != "" {
+		return true
+	}
+	return snapshotStatus.GetGoldenTag() != nil && !legacyGoldenSnapshot(snapshotStatus)
+}
+
+// migrateLegacyGolden rewrites a golden snapshot status a release before golden
+// tags recorded into the shape a resume reads today. That release pointed the
+// template at the golden actor's own external snapshot and kept the actor
+// suspended on it, so the golden tag is made from that actor: its row is given
+// the template its snapshot was built under, which that release did not record
+// and the tag workflow requires, the snapshot is copied into the tag through
+// CreateTag, and the actor is released and the tag recorded as in the golden
+// flow. Reentrant: a finished tag from an earlier pass is recorded, an
+// unfinished one deleted and made again. A golden that cannot be recovered -
+// the actor and the tag are gone, the actor holds no snapshot, or the copy is
+// refused - fails the template as GoldenSnapshotLost with what is missing, so a
+// reader tells a lost golden from one still awaiting its migration, and the
+// migration runs once per template: its outcome, the named tag or the failure,
+// is terminal.
+func (r *ActorTemplateReconciler) migrateLegacyGolden(ctx context.Context, tmpl *ateapipb.ActorTemplate, goldenActorRef *ateapipb.ObjectRef) error {
+	ref := resources.ActorTemplateRefFromActorTemplate(tmpl)
+	legacyURI := tmpl.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag().GetAtespace()
+	goldenActor := resources.ActorRefFromObjectRef(goldenActorRef)
+	log := slog.With(slog.String("ActorTemplate", ref.String()), slog.String("legacySnapshot", legacyURI), slog.String("goldenActor", goldenActor.String()))
+
+	tag, err := r.control.GetTag(ctx, &ateapipb.GetTagRequest{Tag: goldenActorRef})
+	switch {
+	case err == nil:
+		if tag.GetStatus().GetActorTemplateUid() != tmpl.GetMetadata().GetUid() || resources.ActorRefFromObjectRef(tag.GetSourceActor()) != goldenActor {
+			return r.failLegacyGolden(ctx, tmpl, reasonGoldenTagConflict, "golden tag belongs to another actor or template")
+		}
+		if tag.GetStatus().GetSnapshot().GetSnapshotUri() != "" {
+			return r.saveMigratedGoldenTag(ctx, log, tmpl, goldenActorRef)
+		}
+		// CreateTag cannot resume an incomplete copy. Delete it before retrying.
+		if _, err := r.control.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: goldenActorRef}); err != nil && status.Code(err) != codes.NotFound {
+			return fmt.Errorf("while deleting incomplete golden tag: %w", err)
+		}
+	case status.Code(err) != codes.NotFound:
+		return fmt.Errorf("while getting golden tag: %w", err)
+	}
+
+	actor, err := r.control.GetActor(ctx, &ateapipb.GetActorRequest{Actor: goldenActorRef})
+	if status.Code(err) == codes.NotFound {
+		return r.failLegacyGolden(ctx, tmpl, reasonGoldenSnapshotLost, fmt.Sprintf("golden snapshot %s, recorded before golden tags, is lost: neither golden actor %s nor a tag of it exists", legacyURI, goldenActor))
+	}
+	if err != nil {
+		return fmt.Errorf("while getting golden actor: %w", err)
+	}
+	if actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() == "" {
+		return r.failLegacyGolden(ctx, tmpl, reasonGoldenSnapshotLost, fmt.Sprintf("golden snapshot %s, recorded before golden tags, is lost: golden actor %s is %v and holds no external snapshot", legacyURI, goldenActor, actor.GetStatus().GetState()))
+	}
+	if actor.GetStatus().GetExternalSnapshot().GetActorTemplateUid() != tmpl.GetMetadata().GetUid() {
+		// The golden actor was created from this template and never
+		// repointed, so its snapshot was built under it; the release that
+		// took the snapshot recorded no template on it.
+		if _, err := r.persistence.UpdateActor(ctx, goldenActor, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
+			toUpdate.Status.ExternalSnapshot.ActorTemplateUid = tmpl.GetMetadata().GetUid()
+			return nil
+		}); err != nil {
+			return fmt.Errorf("while recording the template on the golden actor's snapshot: %w", err)
+		}
+	}
+	if _, err := r.control.CreateTag(ctx, &ateapipb.CreateTagRequest{Tag: &ateapipb.Tag{
+		Metadata:    &ateapipb.ResourceMetadata{Atespace: goldenActorRef.GetAtespace(), Name: goldenActorRef.GetName()},
+		SourceActor: goldenActorRef,
+		Scope:       ateapipb.TagScope_TAG_SCOPE_PUBLISHED,
+	}}); err != nil {
+		if goldenCopyRefused(err) {
+			return r.failLegacyGolden(ctx, tmpl, reasonGoldenSnapshotLost, fmt.Sprintf("golden snapshot %s, recorded before golden tags, is lost: copying it from golden actor %s into a golden tag was refused: %v", legacyURI, goldenActor, status.Convert(err).Message()))
+		}
+		return fmt.Errorf("while creating golden tag from the legacy golden snapshot: %w", err)
+	}
+	return r.saveMigratedGoldenTag(ctx, log, tmpl, goldenActorRef)
+}
+
+// saveMigratedGoldenTag records the migrated golden tag the way the golden
+// flow records a new one, and logs the migration once it is recorded.
+func (r *ActorTemplateReconciler) saveMigratedGoldenTag(ctx context.Context, log *slog.Logger, tmpl *ateapipb.ActorTemplate, goldenActorRef *ateapipb.ObjectRef) error {
+	if err := r.saveGoldenTag(ctx, tmpl, goldenActorRef); err != nil {
+		return err
+	}
+	log.InfoContext(ctx, "Migrated the golden snapshot recorded before golden tags into the golden tag",
+		slog.String("goldenTag", resources.ActorRefFromObjectRef(goldenActorRef).String()))
+	return nil
+}
+
+// failLegacyGolden commits the terminal failure of a golden snapshot recorded
+// before golden tags and drops the nameless reference it was read as, so the
+// status holds the failure alone.
+func (r *ActorTemplateReconciler) failLegacyGolden(ctx context.Context, observed *ateapipb.ActorTemplate, reason, msg string) error {
+	ref := resources.ActorTemplateRefFromActorTemplate(observed)
+	slog.WarnContext(ctx, "Golden snapshot recorded before golden tags could not be migrated", slog.String("ActorTemplate", ref.String()), slog.String("reason", reason), slog.String("msg", msg))
+	_, err := r.checkpoint(ctx, observed, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
+		snapshotStatus.GoldenTag = nil
+		snapshotStatus.ErrorMessage = truncateUTF8(reason+": "+msg, maxGoldenErrorMessageLen)
+	})
+	return err
+}
+
+// goldenCopyRefused reports whether CreateTag refused to copy the golden actor's
+// snapshot for a reason no retry outlives: the actor or its snapshot is gone, or
+// the actor is not in a state its snapshot can be tagged from.
+func goldenCopyRefused(err error) bool {
+	switch status.Code(err) {
+	case codes.NotFound, codes.FailedPrecondition, codes.InvalidArgument, codes.DataLoss:
+		return true
+	default:
+		return false
+	}
 }
 
 // goldenSnapshotWarmupFor returns 0 when every container has a wakeup probe
