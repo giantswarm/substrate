@@ -913,9 +913,10 @@ func TestCheckEgressPolicyContract(t *testing.T) {
 
 // TestEgressPolicyRunners_Guard drives create and update against servers of
 // another contract: one that reports it, refused before the write, and one
-// that reports none, whose stored rules are read back. A 1.3 ate-api decodes a
-// tls_passthrough rule as all and stores it without the hostnames it could not
-// decode, which reads back as an empty tls_passthrough rule.
+// that reports none, whose stored rules are read back. A server of another
+// contract can decode a tls_passthrough rule as one allowing every destination
+// and store it without the hostnames it could not decode, which reads back as
+// an empty tls_passthrough rule.
 func TestEgressPolicyRunners_Guard(t *testing.T) {
 	actor := &ateapipb.ObjectRef{Atespace: "team-a", Name: "c1"}
 	sent := []*ateapipb.EgressRule{{TlsPassthrough: &ateapipb.TLSPassthroughRule{Hostnames: []string{"db.example.com"}}}}

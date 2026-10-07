@@ -201,7 +201,7 @@ func verifyStoredEgressPolicy(ctx context.Context, guard egressPolicyGuard, acto
 	if diff == "" {
 		return nil
 	}
-	return fmt.Errorf(`ate-api reports no egress-policy contract and stored the egress policy for actor %q in atespace %q with other rules than it accepted: it speaks another contract than this kubectl-ate's %q and enforces the stored rules (a 1.3 ate-api stores a tls_passthrough rule as all, every destination allowed). The stored policy is in force: replace it with the kubectl-ate of the server's release ("kubectl ate get egress-policy %s -a %s -o yaml", rewrite the rules in that release's shape, "kubectl ate update egress-policy %s -a %s -f <manifest>"). Rules (-accepted +stored):
+	return fmt.Errorf(`ate-api reports no egress-policy contract and stored the egress policy for actor %q in atespace %q with other rules than it accepted: it speaks another contract than this kubectl-ate's %q and enforces the stored rules, which may allow destinations the manifest did not. The stored policy is in force: replace it with the kubectl-ate of the server's release ("kubectl ate get egress-policy %s -a %s -o yaml", rewrite the rules in that release's shape, "kubectl ate update egress-policy %s -a %s -f <manifest>"). Rules (-accepted +stored):
 %s`,
 		actor.GetName(), actor.GetAtespace(), ateapipb.EgressPolicyContractVersion,
 		actor.GetName(), actor.GetAtespace(), actor.GetName(), actor.GetAtespace(), diff)
