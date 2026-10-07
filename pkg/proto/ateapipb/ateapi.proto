@@ -71,6 +71,11 @@ service Control {
   // Delete the egress policy resource nested under an Actor.
   rpc DeleteActorEgressPolicy(DeleteActorEgressPolicyRequest) returns (EgressPolicy) {}
 
+  // Get the version of the egress policy contract this server speaks: the
+  // shape in which it decodes EgressPolicy and EgressRule. A client compares
+  // it with its own before it writes an egress policy.
+  rpc GetEgressPolicyContract(GetEgressPolicyContractRequest) returns (EgressPolicyContract) {}
+
   // Create a Substrate-issued JWT asserting the actor identity.
   //
   // * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -1689,6 +1694,16 @@ message DeleteActorEgressPolicyRequest {
   //
   // +k8s:optional
   DeleteOptions options = 2;
+}
+
+message GetEgressPolicyContractRequest {}
+
+// EgressPolicyContract names the egress policy contract a server speaks.
+message EgressPolicyContract {
+  // The contract version: the upstream release whose EgressPolicy and
+  // EgressRule shape the server decodes, such as "v0.3.0-alpha3". Two
+  // versions that differ encode the same field numbers with another meaning.
+  string version = 1;
 }
 
 message GetTagRequest {

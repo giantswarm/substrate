@@ -24,11 +24,13 @@ import (
 	"github.com/agent-substrate/substrate/cmd/kubectl-ate/internal/printer"
 	"github.com/agent-substrate/substrate/internal/ateclient"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/testing/protocmp"
 	yamlv3 "gopkg.in/yaml.v3"
 	"sigs.k8s.io/yaml"
 )
@@ -152,6 +154,59 @@ func loadEgressPolicyManifest(in io.Reader, filename string) (*ateapipb.EgressPo
 	return policy, nil
 }
 
+// egressPolicyGuard abstracts the RPCs that keep a write from reaching a server
+// of another egress policy contract: the contract the server reports, and the
+// read-back that verifies a write to a server too old to report one.
+type egressPolicyGuard interface {
+	GetEgressPolicyContract(ctx context.Context, req *ateapipb.GetEgressPolicyContractRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicyContract, error)
+	GetActorEgressPolicy(ctx context.Context, req *ateapipb.GetActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error)
+}
+
+// checkEgressPolicyContract refuses a server whose egress policy contract is
+// not this client's: it decodes the same field numbers with another meaning
+// and would store the policy as something else, without an error on either
+// side. It reports false for a server that predates the contract RPC; the
+// caller then verifies the write with verifyStoredEgressPolicy.
+func checkEgressPolicyContract(ctx context.Context, guard egressPolicyGuard, verb string, actor *ateapipb.ObjectRef) (bool, error) {
+	contract, err := guard.GetEgressPolicyContract(ctx, &ateapipb.GetEgressPolicyContractRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to read the egress-policy contract of ate-api: %w", err)
+	}
+	if got := contract.GetVersion(); got != ateapipb.EgressPolicyContractVersion {
+		return true, fmt.Errorf(`refusing to %s the egress policy for actor %q in atespace %q: ate-api speaks egress-policy contract %q, this kubectl-ate speaks %q, and the two give the rules' fields another meaning; use the kubectl-ate of the server's release`,
+			verb, actor.GetName(), actor.GetAtespace(), got, ateapipb.EgressPolicyContractVersion)
+	}
+	return true, nil
+}
+
+// verifyStoredEgressPolicy reads the stored policy back and refuses when it is
+// not the policy the server answered the write with. A server of another
+// contract echoes the fields it could not decode, but stores the policy
+// without them: the read-back shows the rules it enforces. It deletes
+// nothing: the operator decides what replaces the stored policy.
+func verifyStoredEgressPolicy(ctx context.Context, guard egressPolicyGuard, actor *ateapipb.ObjectRef, written *ateapipb.EgressPolicy) error {
+	stored, err := guard.GetActorEgressPolicy(ctx, &ateapipb.GetActorEgressPolicyRequest{Actor: actor})
+	if err != nil {
+		return fmt.Errorf(`ate-api reports no egress-policy contract, and reading back the egress policy for actor %q in atespace %q to verify it failed; check it with "kubectl ate get egress-policy": %w`,
+			actor.GetName(), actor.GetAtespace(), err)
+	}
+	if stored.GetMetadata().GetVersion() != written.GetMetadata().GetVersion() {
+		return fmt.Errorf(`ate-api reports no egress-policy contract, and the egress policy for actor %q in atespace %q changed again before it could be verified (version %d written, %d stored); check it with "kubectl ate get egress-policy"`,
+			actor.GetName(), actor.GetAtespace(), written.GetMetadata().GetVersion(), stored.GetMetadata().GetVersion())
+	}
+	diff := cmp.Diff(written.GetRules(), stored.GetRules(), protocmp.Transform())
+	if diff == "" {
+		return nil
+	}
+	return fmt.Errorf(`ate-api reports no egress-policy contract and stored the egress policy for actor %q in atespace %q with other rules than it accepted: it speaks another contract than this kubectl-ate's %q and enforces the stored rules (a 1.3 ate-api stores a tls_passthrough rule as all, every destination allowed). The stored policy is in force: replace it with the kubectl-ate of the server's release ("kubectl ate get egress-policy %s -a %s -o yaml", rewrite the rules in that release's shape, "kubectl ate update egress-policy %s -a %s -f <manifest>"). Rules (-accepted +stored):
+%s`,
+		actor.GetName(), actor.GetAtespace(), ateapipb.EgressPolicyContractVersion,
+		actor.GetName(), actor.GetAtespace(), actor.GetName(), actor.GetAtespace(), diff)
+}
+
 // egressPolicyGetter abstracts the RPCs get egress-policy makes: the policy
 // read, and the actor read that tells a missing actor from a missing policy.
 type egressPolicyGetter interface {
@@ -216,6 +271,7 @@ type egressPolicyCreator interface {
 // createEgressPolicyRunner executes the create egress-policy command logic.
 type createEgressPolicyRunner struct {
 	creator   egressPolicyCreator
+	guard     egressPolicyGuard
 	actor     *ateapipb.ObjectRef
 	policy    *ateapipb.EgressPolicy
 	outputFmt string
@@ -223,9 +279,18 @@ type createEgressPolicyRunner struct {
 }
 
 func (r *createEgressPolicyRunner) Run(ctx context.Context) error {
+	reported, err := checkEgressPolicyContract(ctx, r.guard, "create", r.actor)
+	if err != nil {
+		return err
+	}
 	created, err := r.creator.CreateActorEgressPolicy(ctx, &ateapipb.CreateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if err != nil {
 		return fmt.Errorf("failed to create egress policy for actor %q in atespace %q: %w", r.actor.GetName(), r.actor.GetAtespace(), err)
+	}
+	if !reported {
+		if err := verifyStoredEgressPolicy(ctx, r.guard, r.actor, created); err != nil {
+			return err
+		}
 	}
 	return printer.PrintEgressPolicyTo(r.stdout, r.actor.GetName(), created, r.outputFmt)
 }
@@ -248,6 +313,7 @@ func runCreateEgressPolicy(cmd *cobra.Command, args []string) error {
 
 	runner := &createEgressPolicyRunner{
 		creator:   apiClient,
+		guard:     apiClient,
 		actor:     &ateapipb.ObjectRef{Atespace: egressPolicyFlags.atespace, Name: args[0]},
 		policy:    policy,
 		outputFmt: outputFmt,
@@ -266,6 +332,7 @@ type egressPolicyUpdater interface {
 // updateEgressPolicyRunner executes the update egress-policy command logic.
 type updateEgressPolicyRunner struct {
 	updater   egressPolicyUpdater
+	guard     egressPolicyGuard
 	actor     *ateapipb.ObjectRef
 	policy    *ateapipb.EgressPolicy
 	outputFmt string
@@ -273,6 +340,10 @@ type updateEgressPolicyRunner struct {
 }
 
 func (r *updateEgressPolicyRunner) Run(ctx context.Context) error {
+	reported, err := checkEgressPolicyContract(ctx, r.guard, "update", r.actor)
+	if err != nil {
+		return err
+	}
 	updated, err := r.updater.UpdateActorEgressPolicy(ctx, &ateapipb.UpdateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if status.Code(err) == codes.NotFound {
 		// The server answers NotFound for a missing actor too, so read the actor
@@ -292,6 +363,11 @@ func (r *updateEgressPolicyRunner) Run(ctx context.Context) error {
 	}
 	if err != nil {
 		return fmt.Errorf("failed to update egress policy for actor %q in atespace %q: %w", r.actor.GetName(), r.actor.GetAtespace(), err)
+	}
+	if !reported {
+		if err := verifyStoredEgressPolicy(ctx, r.guard, r.actor, updated); err != nil {
+			return err
+		}
 	}
 	return printer.PrintEgressPolicyTo(r.stdout, r.actor.GetName(), updated, r.outputFmt)
 }
@@ -330,6 +406,7 @@ func runUpdateEgressPolicy(cmd *cobra.Command, args []string) error {
 
 	runner := &updateEgressPolicyRunner{
 		updater:   apiClient,
+		guard:     apiClient,
 		actor:     actor,
 		policy:    policy,
 		outputFmt: outputFmt,
