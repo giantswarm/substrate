@@ -447,6 +447,7 @@ func TestSecretLikeFieldsAreLabeled(t *testing.T) {
 		"next_page_token":                        "opaque list cursor",
 		"ateapi.CredentialHeader.credential_uri": "ate-secret:// reference to a credential, not the value",
 		"ateapi.CredentialHeader.actor_jwt":      "ActorJWTSource: audiences and lifetime for minting, not a token",
+		"fencing_token":                          "the ordinal of an actor lease, which orders requests and grants nothing",
 	}
 	forEachField(func(fd protoreflect.FieldDescriptor) {
 		if !secretLikeName.MatchString(string(fd.Name())) || isDebugRedact(fd) {

@@ -518,7 +518,7 @@ func TestSuspendActor_PausedWithDurableCopyCommitsIt(t *testing.T) {
 		status.LocalSnapshot.DurableCopy = durableCopyOf(copyURI.String())
 	})
 
-	suspended, err := w.SuspendActor(ctx, actorRef)
+	suspended, err := w.SuspendActor(ctx, actorRef, nil)
 	if err != nil {
 		t.Fatalf("SuspendActor: %v", err)
 	}

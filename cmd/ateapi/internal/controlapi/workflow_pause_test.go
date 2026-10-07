@@ -255,7 +255,7 @@ func TestPauseActorWorkflow_RejectedAndIdempotentPaths(t *testing.T) {
 
 			seedWorkflowActor(t, ctx, st, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "ns", "tmpl1", tc.seedState)
 
-			actor, err := w.PauseActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+			actor, err := w.PauseActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 			if tc.wantErr {
 				if got := apierror.Code(err); got != codes.FailedPrecondition {
 					t.Fatalf("apierror.Code(err) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
@@ -381,7 +381,7 @@ func TestPauseActor_CrashesWhenPausingActorMissingWorkerPod(t *testing.T) {
 
 	seedWorkflowActor(t, ctx, st, resources.ActorRef{Atespace: "team-a", Name: "id1"}, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_PAUSING)
 
-	_, err := w.PauseActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+	_, err := w.PauseActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 	if got := apierror.Code(err); got != codes.FailedPrecondition {
 		t.Fatalf("apierror.Code(err) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
 	}

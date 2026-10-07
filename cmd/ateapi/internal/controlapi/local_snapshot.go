@@ -29,8 +29,13 @@ import (
 )
 
 // localSnapshotNodes returns the node a PAUSED actor's local snapshot is on:
-// the actor's assigned node, or none when it is unset.
+// the node the pause recorded on the snapshot, else the actor's assigned node,
+// or none. The snapshot's own record outlives a resume that placed the actor
+// on another node, which moves the assigned node.
 func localSnapshotNodes(actor *ateapipb.Actor) []string {
+	if node := actor.GetStatus().GetLocalSnapshot().GetNodeName(); node != "" {
+		return []string{node}
+	}
 	if node := actor.GetStatus().GetAssignedNode(); node != "" {
 		return []string{node}
 	}

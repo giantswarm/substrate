@@ -174,6 +174,18 @@ func (w *ActorWorkflow) ensureAteletTerminated(ctx context.Context, actorRef res
 
 	conn, err := w.dialer.DialForAteletOnNode(nodeName)
 	if err != nil {
+		if errors.Is(err, ErrNoAteletOnNode) {
+			// A node that has left the cluster took the workload with it:
+			// nothing is left to terminate.
+			gone, lerr := w.localSnapshotNodesGone([]string{nodeName})
+			if lerr != nil {
+				return lerr
+			}
+			if gone {
+				slog.InfoContext(ctx, "assigned node has left the cluster, skipping atelet terminate request", slog.Any("actor", actorRef), slog.String("node", nodeName))
+				return nil
+			}
+		}
 		return fmt.Errorf("while connecting to atelet on node %q: %w", nodeName, err)
 	}
 

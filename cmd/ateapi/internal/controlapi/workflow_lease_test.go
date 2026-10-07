@@ -21,9 +21,9 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type leaseStore struct{ store.Interface }
@@ -118,7 +118,7 @@ func TestAcquireActorLeaseWaitsOutABriefHolder(t *testing.T) {
 		defer held.Close()
 
 		_, _, err = w.acquireActorLease(ctx, actorRef)
-		if got := status.Code(err); got != codes.Aborted {
+		if got := apierror.Code(err); got != codes.Aborted {
 			t.Fatalf("acquireActorLease under a held lease = %v, want Aborted", err)
 		}
 	})

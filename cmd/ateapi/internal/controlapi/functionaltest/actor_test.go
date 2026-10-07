@@ -4020,6 +4020,7 @@ func TestPauseActor(t *testing.T) {
 			AssignedNode: "node1",
 			LocalSnapshot: &ateapipb.LocalSnapshot{
 				ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL,
+				NodeName:     "node1",
 			},
 			ExternalSnapshot: &ateapipb.ExternalSnapshot{SnapshotUri: goldenSnapshotURI(t), ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL, ActorTemplateUid: tmpl.GetMetadata().GetUid()},
 		},

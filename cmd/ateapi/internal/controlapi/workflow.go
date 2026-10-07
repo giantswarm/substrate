@@ -35,8 +35,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	grpcCodes "google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
@@ -286,7 +284,7 @@ func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resource
 	if err != nil {
 		cancel()
 		if wait.Interrupted(err) {
-			return nil, nil, status.Errorf(grpcCodes.Aborted, "another operation is in progress for this actor")
+			return nil, nil, apierror.Aborted("another operation is in progress for this actor")
 		}
 		return nil, nil, fmt.Errorf("while acquiring lease: %w", err)
 	}
