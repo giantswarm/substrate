@@ -163,20 +163,12 @@ func (s *RPCService) DeleteActorTemplate(ctx context.Context, req *ateapipb.Dele
 		return nil, err
 	}
 	defer lease.Close()
-	tmpl, err := s.impl.GetActorTemplate(ctx, templateRef)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, status.Errorf(codes.NotFound, "ActorTemplate %s not found", templateRef)
-	}
-	if err != nil {
-		return nil, err
-	}
-	goldenRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: tmpl.GetMetadata().GetUid()}
-	if _, err := s.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
-		return nil, fmt.Errorf("while deleting golden actor: %w", err)
-	}
-	if _, err := s.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: goldenRef}); err != nil && status.Code(err) != codes.NotFound {
-		return nil, fmt.Errorf("while deleting golden tag: %w", err)
-	}
+	// The row goes first and the golden actor and tag after it: a delete the
+	// store refuses, or one interrupted between the steps, leaves a template
+	// with its golden and never one whose golden is gone, which no actor of
+	// it could resume from. A golden the cleanup fails to remove stays in the
+	// reserved atespace under the template's uid, named in the error, since
+	// no row is left to rediscover it by.
 	deleted, err := s.impl.DeleteActorTemplate(ctx, templateRef)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -187,7 +179,13 @@ func (s *RPCService) DeleteActorTemplate(ctx context.Context, req *ateapipb.Dele
 		}
 		return nil, fmt.Errorf("while deleting actor template from DB: %w", err)
 	}
-
+	goldenRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: deleted.GetMetadata().GetUid()}
+	if _, err := s.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden actor %s/%s is not: %w", templateRef, goldenRef.GetAtespace(), goldenRef.GetName(), err)
+	}
+	if _, err := s.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: goldenRef}); err != nil && status.Code(err) != codes.NotFound {
+		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden tag %s/%s is not: %w", templateRef, goldenRef.GetAtespace(), goldenRef.GetName(), err)
+	}
 	return deleted, nil
 }
 

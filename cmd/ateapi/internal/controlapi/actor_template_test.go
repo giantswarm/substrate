@@ -359,6 +359,8 @@ func TestDeleteActorTemplate(t *testing.T) {
 		// failPrefix makes object storage fail cleanup for this resource kind.
 		failPrefix            string
 		wantActorAfterFailure bool
+		// storeRefuses fails the first delete at the row, in the store.
+		storeRefuses bool
 	}{
 		{name: "golden actor and tag"},
 		{name: "golden actor already deleted", actorDeleted: true},
@@ -367,11 +369,17 @@ func TestDeleteActorTemplate(t *testing.T) {
 		{name: "incomplete golden tag", pendingTag: true},
 		{name: "actor cleanup failure", failPrefix: "/actors/", wantActorAfterFailure: true},
 		{name: "tag cleanup failure", failPrefix: "/tags/"},
+		{name: "row delete refused by the store", storeRefuses: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
 			persistence := newTestPersistence(t)
+			refusing := &refusingTemplateDeleteStore{Interface: persistence}
+			var backend store.Interface = persistence
+			if tt.storeRefuses {
+				backend = refusing
+			}
 			tmpl := seedSubstrateTemplate(t, ctx, persistence, "tmpl")
 			templateRef := resources.ActorTemplateRefFromActorTemplate(tmpl)
 			goldenRef := resources.ActorRef{Atespace: resources.GoldenActorAtespace, Name: tmpl.GetMetadata().GetUid()}
@@ -380,7 +388,7 @@ func TestDeleteActorTemplate(t *testing.T) {
 				ActorTemplate: templateRef.ToObjectRef(),
 				Status:        &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
 			})
-			workflow, objects := newFinalizeWorkflow(persistence)
+			workflow, objects := newFinalizeWorkflow(backend)
 			actorURI := mustActorSnapshotURI(t, tmpl, actor, "snapshot")
 			objects.PutSnapshot(t, actorURI, "manifest.json")
 			actor = mustUpdateActorStatus(t, ctx, persistence, actor, func(s *ateapipb.ActorStatus) {
@@ -400,7 +408,7 @@ func TestDeleteActorTemplate(t *testing.T) {
 			tagRef := resources.TagRefFromTag(tag)
 			tagURI := mustReservedTagSnapshotURI(t, tag)
 			objects.PutSnapshot(t, tagURI, "manifest.json")
-			svc := &RPCService{impl: newServiceImpl(persistence, nil), actorWorkflow: workflow, objectStore: objects}
+			svc := &RPCService{impl: newServiceImpl(backend, nil), actorWorkflow: workflow, objectStore: objects}
 			// The handler must request AnyState to clean up an active golden actor.
 			mustUpdateActorStatus(t, ctx, persistence, actor, func(s *ateapipb.ActorStatus) {
 				s.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
@@ -424,13 +432,45 @@ func TestDeleteActorTemplate(t *testing.T) {
 				}
 			}
 			req := &ateapipb.DeleteActorTemplateRequest{ActorTemplate: templateRef.ToObjectRef()}
+			if tt.storeRefuses {
+				// A delete the store refuses destroys nothing: the template
+				// keeps its golden actor and tag.
+				current, err := persistence.GetActorTemplate(ctx, templateRef)
+				if err != nil {
+					t.Fatal(err)
+				}
+				refusing.err = errStoreRefused
+				if _, err := svc.DeleteActorTemplate(ctx, req); !errors.Is(err, errStoreRefused) {
+					t.Fatalf("DeleteActorTemplate with the store refusing = %v, want the store's error", err)
+				}
+				refusing.err = nil
+				after, err := persistence.GetActorTemplate(ctx, templateRef)
+				if err != nil {
+					t.Fatalf("template after the refused delete: %v", err)
+				}
+				if diff := cmp.Diff(current, after, protocmp.Transform()); diff != "" {
+					t.Fatalf("template changed by the refused delete (-before +after):\n%s", diff)
+				}
+				if _, err := persistence.GetActor(ctx, goldenRef); err != nil {
+					t.Fatalf("golden actor after the refused delete: %v", err)
+				}
+				if _, err := persistence.GetTag(ctx, tagRef); err != nil {
+					t.Fatalf("golden tag after the refused delete: %v", err)
+				}
+			}
 			deleted, err := svc.DeleteActorTemplate(ctx, req)
 			if tt.failPrefix != "" {
+				// The row went first: a cleanup that fails after it leaves
+				// the golden without its template, named in the error,
+				// never the template without its golden.
 				if !errors.Is(err, errObjectStore) {
 					t.Fatalf("DeleteActorTemplate = %v, want object storage error", err)
 				}
-				if _, err := persistence.GetActorTemplate(ctx, templateRef); err != nil {
-					t.Fatalf("template lost after cleanup failure: %v", err)
+				if !strings.Contains(err.Error(), goldenRef.Name) {
+					t.Fatalf("DeleteActorTemplate = %v, want the golden %s named", err, goldenRef.Name)
+				}
+				if _, err := persistence.GetActorTemplate(ctx, templateRef); !errors.Is(err, store.ErrNotFound) {
+					t.Fatalf("GetActorTemplate after cleanup failure = %v, want NotFound", err)
 				}
 				if _, err := persistence.GetTag(ctx, tagRef); err != nil {
 					t.Fatalf("tag lost after cleanup failure: %v", err)
@@ -439,14 +479,27 @@ func TestDeleteActorTemplate(t *testing.T) {
 				if tt.wantActorAfterFailure && actorErr != nil || !tt.wantActorAfterFailure && !errors.Is(actorErr, store.ErrNotFound) {
 					t.Fatalf("GetActor after failure = %v, want present %v", actorErr, tt.wantActorAfterFailure)
 				}
+				if _, err := svc.DeleteActorTemplate(ctx, req); status.Code(err) != codes.NotFound {
+					t.Fatalf("retry after cleanup failure = %v, want NotFound", err)
+				}
+				// What the cleanup left is deleted on its own once object
+				// storage is back.
 				objects.OnDelete = nil
-				deleted, err = svc.DeleteActorTemplate(ctx, req)
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if diff := cmp.Diff(tmpl, deleted, protocmp.Transform()); diff != "" {
-				t.Fatalf("deleted template mismatch (-want +got):\n%s", diff)
+				if tt.wantActorAfterFailure {
+					if _, err := workflow.DeleteActor(ctx, goldenRef, true); err != nil {
+						t.Fatalf("deleting the golden actor left behind: %v", err)
+					}
+				}
+				if _, err := svc.DeleteTag(ctx, &ateapipb.DeleteTagRequest{Tag: tagRef.ToObjectRef()}); err != nil {
+					t.Fatalf("deleting the golden tag left behind: %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if diff := cmp.Diff(tmpl, deleted, protocmp.Transform()); diff != "" {
+					t.Fatalf("deleted template mismatch (-want +got):\n%s", diff)
+				}
 			}
 			if _, err := persistence.GetActorTemplate(ctx, templateRef); !errors.Is(err, store.ErrNotFound) {
 				t.Fatalf("GetActorTemplate after delete = %v, want NotFound", err)
