@@ -317,7 +317,7 @@ func TestResumeActor_PausedOnGoneNodeCrashes(t *testing.T) {
 	wc := startedWorkerCache(t, ctx, st, []*ateapipb.Worker{activeWorker("w2", "gvisor", "node2")})
 	w.workerCache, w.scheduler, w.nodeLister = wc, scheduling.New(wc), nodeListerOf(t)
 
-	_, _, err := w.ResumeActor(ctx, actorRef)
+	_, _, err := w.ResumeActor(ctx, actorRef, nil)
 	if got := status.Code(err); got != codes.DataLoss {
 		t.Fatalf("ResumeActor error = %v, want DataLoss", err)
 	}
@@ -332,7 +332,7 @@ func TestResumeActor_PausedOnGoneNodeCrashes(t *testing.T) {
 		t.Fatalf("stored state = %v, want CRASHED", got)
 	}
 
-	_, _, err = w.ResumeActor(ctx, actorRef)
+	_, _, err = w.ResumeActor(ctx, actorRef, nil)
 	if got := status.Code(err); got != codes.FailedPrecondition {
 		t.Errorf("second ResumeActor error = %v, want FailedPrecondition on the CRASHED state", err)
 	}
