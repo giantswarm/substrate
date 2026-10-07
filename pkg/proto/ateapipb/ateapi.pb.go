@@ -502,9 +502,14 @@ type ExternalSnapshot struct {
 	// LocalSnapshot.durable_copy, and on the external_snapshot a suspend
 	// committed from that copy.
 	//
+	// A field of the Giant Swarm line, numbered far above upstream's range so
+	// a re-pin onto upstream never gives its number a second meaning. Older
+	// releases numbered it 3 (1.3) and 4 (1.4.0 to 1.5.0-rc.1); the store
+	// migrates those records when it reads them.
+	//
 	// +k8s:optional
 	// +k8s:format=k8s-short-name
-	SourceLocalSnapshotName string `protobuf:"bytes,4,opt,name=source_local_snapshot_name,json=sourceLocalSnapshotName,proto3" json:"source_local_snapshot_name,omitempty"`
+	SourceLocalSnapshotName string `protobuf:"bytes,10001,opt,name=source_local_snapshot_name,json=sourceLocalSnapshotName,proto3" json:"source_local_snapshot_name,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -7737,12 +7742,12 @@ var File_ateapi_proto protoreflect.FileDescriptor
 
 const file_ateapi_proto_rawDesc = "" +
 	"\n" +
-	"\fateapi.proto\x12\x06ateapi\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe3\x01\n" +
+	"\fateapi.proto\x12\x06ateapi\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe4\x01\n" +
 	"\x10ExternalSnapshot\x12!\n" +
 	"\fsnapshot_uri\x18\x01 \x01(\tR\vsnapshotUri\x12A\n" +
 	"\rcontent_scope\x18\x02 \x01(\x0e2\x1c.ateapi.SnapshotContentScopeR\fcontentScope\x12,\n" +
-	"\x12actor_template_uid\x18\x03 \x01(\tR\x10actorTemplateUid\x12;\n" +
-	"\x1asource_local_snapshot_name\x18\x04 \x01(\tR\x17sourceLocalSnapshotName\"\xf6\x01\n" +
+	"\x12actor_template_uid\x18\x03 \x01(\tR\x10actorTemplateUid\x12<\n" +
+	"\x1asource_local_snapshot_name\x18\x91N \x01(\tR\x17sourceLocalSnapshotName\"\xf6\x01\n" +
 	"\rLocalSnapshot\x12#\n" +
 	"\rsnapshot_name\x18\x01 \x01(\tR\fsnapshotName\x12@\n" +
 	"\x1dnode_vms_with_local_snapshots\x18\x02 \x03(\tR\x19nodeVmsWithLocalSnapshots\x12A\n" +
