@@ -14,8 +14,8 @@
 
 // Package childreap reaps orphaned children without racing subprocess waits.
 // A subprocess run through RunCommand is tracked by its PID and never reaped
-// here, so its exit status stays with os/exec, and orphans are collected while
-// it runs. A subprocess run under Enter is not known to the reaper, so reaping
+// by any Reaper of the process, so its exit status stays with os/exec, and
+// orphans are collected while it runs. A subprocess run under Enter is not known to the reaper, so reaping
 // waits for it to finish.
 //go:build unix
 
@@ -51,8 +51,6 @@ type Reaper struct {
 	// inFlight counts subprocesses run under Enter, whose PIDs the reaper
 	// does not know.
 	inFlight int
-	// tracked counts the RunCommand subprocesses by PID; a reap skips them.
-	tracked map[int]int
 	// reaping blocks new subprocesses while wait4 runs.
 	reaping bool
 	// draining blocks new subprocesses until inFlight reaches zero.
@@ -66,7 +64,7 @@ type Reaper struct {
 }
 
 func New() *Reaper {
-	r := &Reaper{retry: make(chan struct{}, 1), tracked: map[int]int{}}
+	r := &Reaper{retry: make(chan struct{}, 1)}
 	r.cond = sync.NewCond(&r.mu)
 	return r
 }
@@ -108,23 +106,32 @@ func (r *Reaper) CombinedOutput(cmd *exec.Cmd) ([]byte, error) {
 	return out.Bytes(), err
 }
 
+// tracked counts the RunCommand subprocesses by PID; a reap skips them. A
+// child belongs to the process, not to a Reaper, so the set is shared: a
+// second Reaper, or one still finishing its last round after its context
+// ended, must not take a status another Reaper's caller waits for.
+var tracked = struct {
+	sync.Mutex
+	pids map[int]int
+}{pids: map[int]int{}}
+
 // start starts cmd under the lock a reap holds while it collects, so no reap
 // sees the new process before it is tracked.
 func (r *Reaper) start(cmd *exec.Cmd) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	tracked.Lock()
+	defer tracked.Unlock()
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	r.tracked[cmd.Process.Pid]++
+	tracked.pids[cmd.Process.Pid]++
 	return nil
 }
 
 func (r *Reaper) untrack(pid int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.tracked[pid]--; r.tracked[pid] <= 0 {
-		delete(r.tracked, pid)
+	tracked.Lock()
+	defer tracked.Unlock()
+	if tracked.pids[pid]--; tracked.pids[pid] <= 0 {
+		delete(tracked.pids, pid)
 	}
 }
 
@@ -202,10 +209,10 @@ func (r *Reaper) reapOnce(ctx context.Context) {
 		slog.WarnContext(ctx, "Listing children to reap failed", slog.Any("err", err))
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	tracked.Lock()
+	defer tracked.Unlock()
 	for _, pid := range children {
-		if r.tracked[pid] > 0 {
+		if tracked.pids[pid] > 0 {
 			continue
 		}
 		if err := reap(pid); err != nil {

@@ -17,8 +17,10 @@
 package childreap
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -368,6 +370,43 @@ func TestCommandsKeepTheirExitStatus(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// TestAnotherReaperLeavesACommandItsExitStatus is a reaper whose round outlives
+// its context, or a second one in the process: it must not take the exit
+// status of a command it did not start.
+func TestAnotherReaperLeavesACommandItsExitStatus(t *testing.T) {
+	r, other := New(), New()
+	cmd := exec.Command("/bin/sh", "-c", "exit 3")
+	if err := r.start(cmd); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer r.untrack(cmd.Process.Pid)
+
+	// Exited and not yet waited for: the window the other reaper races.
+	stat := "/proc/" + strconv.Itoa(cmd.Process.Pid) + "/stat"
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		b, err := os.ReadFile(stat)
+		if err != nil {
+			t.Fatalf("read %s: %v", stat, err)
+		}
+		if end := bytes.LastIndexByte(b, ')'); end >= 0 && bytes.HasPrefix(b[end+1:], []byte(" Z")) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("command %d never exited", cmd.Process.Pid)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	other.reapOnce(t.Context())
+
+	err := cmd.Wait()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("Wait = %v, want exit status 3", err)
+	}
 }
 
 func TestCombinedOutput(t *testing.T) {
