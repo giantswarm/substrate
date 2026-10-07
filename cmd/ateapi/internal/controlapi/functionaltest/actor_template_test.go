@@ -222,6 +222,34 @@ func TestGoldenTagLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertSnapshotPresent(t, tc, uri)
+	// A delete refused on a stale version leaves the golden tag, and an actor
+	// of the template still resumes.
+	current, err := tc.client.GetActorTemplate(ctx, &ateapipb.GetActorTemplateRequest{ActorTemplate: templateRef.ToObjectRef()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = tc.client.DeleteActorTemplate(ctx, &ateapipb.DeleteActorTemplateRequest{
+		ActorTemplate: templateRef.ToObjectRef(),
+		Options:       &ateapipb.DeleteOptions{Version: current.GetMetadata().GetVersion() + 1},
+	})
+	assertGrpcError(t, err, codes.Aborted, "concurrent update conflict, please retry")
+	if _, err := tc.client.GetTag(ctx, &ateapipb.GetTagRequest{Tag: goldenRef}); err != nil {
+		t.Fatalf("golden tag after the refused delete: %v", err)
+	}
+	assertSnapshotPresent(t, tc, uri)
+	waitForWorkerAvailable(t, tc, workerName)
+	tc.fakeAtelet.Lock.Lock()
+	tc.fakeAtelet.RestoreCalled = false
+	tc.fakeAtelet.Lock.Unlock()
+	if _, err := tc.client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: resources.ActorRefFromActor(late).ToObjectRef()}); err != nil {
+		t.Fatalf("resuming after the refused delete: %v", err)
+	}
+	if !tc.fakeAtelet.RestoreCalled {
+		t.Fatal("actor did not restore after the refused delete")
+	}
+	if _, err := tc.client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: resources.ActorRefFromActor(late).ToObjectRef()}); err != nil {
+		t.Fatal(err)
+	}
 	for _, actor := range []*ateapipb.Actor{early, late} {
 		if _, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: resources.ActorRefFromActor(actor).ToObjectRef(), AnyState: true}); err != nil {
 			t.Fatal(err)
