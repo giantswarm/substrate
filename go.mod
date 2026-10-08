@@ -1,8 +1,6 @@
 module github.com/agent-substrate/substrate
 
-go 1.27.0
-
-toolchain go1.27.2
+go 1.27.2
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
