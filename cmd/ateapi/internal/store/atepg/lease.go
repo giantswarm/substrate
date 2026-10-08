@@ -30,7 +30,7 @@ import (
 // can reclaim it.
 const defaultLeaseTTL = 30 * time.Second
 
-func (p *Persistence) AcquireLease(ctx context.Context, key string) (*store.Lease, error) {
+func (p *Persistence) AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error) {
 	ttl := p.leaseTTL
 	token := uuid.NewString()
 	// Acquisition runs before any workflow step span opens, so log the two
@@ -43,19 +43,28 @@ func (p *Persistence) AcquireLease(ctx context.Context, key string) (*store.Leas
 	dCleanup := time.Since(t)
 
 	t = time.Now()
-	acquired, err := p.acquireLease(ctx, key, token, ttl)
+	held, err := acquireLease(ctx, p.pool, key, token, holder, ttl)
 	dAcquire := time.Since(t)
-	slog.InfoContext(ctx, "PostgreSQL lease acquisition finished",
+	attrs := []any{
 		slog.String("key", key),
-		slog.Bool("acquired", acquired && err == nil),
+		slog.String("holder", holder),
+		slog.Bool("acquired", err == nil && held == nil),
 		slog.Duration("cleanup_expired", dCleanup),
-		slog.Duration("acquire", dAcquire))
+		slog.Duration("acquire", dAcquire),
+	}
+	if held != nil {
+		// The lease stays with its holder: the caller decides whether to wait,
+		// and this line says what for.
+		attrs = append(attrs, slog.String("held_by", held.Holder), slog.Duration("held_for", time.Since(held.Since)))
+	}
+	slog.InfoContext(ctx, "PostgreSQL lease acquisition finished", attrs...)
 	if err != nil {
 		return nil, err
 	}
-	if !acquired {
-		return nil, store.ErrLeaseConflict
+	if held != nil {
+		return nil, held
 	}
+	acquiredAt := time.Now()
 
 	leaseCtx, cancel := context.WithCancel(ctx)
 	renewalDone := make(chan struct{})
@@ -79,10 +88,12 @@ func (p *Persistence) AcquireLease(ctx context.Context, key string) (*store.Leas
 		defer releaseCancel()
 		t = time.Now()
 		if err := p.releaseLease(releaseCtx, key, token); err != nil {
-			slog.WarnContext(releaseCtx, "failed to release PostgreSQL lease, relying on TTL to reclaim it", "key", key, "error", err)
+			slog.WarnContext(releaseCtx, "failed to release PostgreSQL lease, relying on TTL to reclaim it", "key", key, "holder", holder, "error", err)
 		}
 		slog.InfoContext(releaseCtx, "PostgreSQL lease released",
 			slog.String("key", key),
+			slog.String("holder", holder),
+			slog.Duration("held", time.Since(acquiredAt)),
 			slog.Duration("renewal_stop", dRenewalStop),
 			slog.Duration("release", time.Since(t)))
 	}
@@ -96,23 +107,63 @@ func (p *Persistence) cleanupExpiredLeases(ctx context.Context) error {
 	return nil
 }
 
-func (p *Persistence) acquireLease(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
-	var returnedKey string
-	err := p.pool.QueryRow(ctx, `
-		INSERT INTO leases (key, token, expires_at)
-		VALUES ($1, $2, clock_timestamp() + make_interval(secs => $3))
-		ON CONFLICT (key) DO UPDATE
-		SET token = EXCLUDED.token,
-		    expires_at = EXCLUDED.expires_at
-		WHERE leases.expires_at <= clock_timestamp()
-		RETURNING key`, key, token, ttl.Seconds()).Scan(&returnedKey)
+// acquireLease takes the lease named by key for holder, under token, unless a
+// live holder has it: then it returns that holder as held. One statement: the
+// attempt is a conditional upsert, and the row the statement reads beside it
+// is the one that existed before the attempt, which on a conflict is the live
+// holder's. err is a failure of the statement itself.
+func acquireLease(ctx context.Context, q querier, key, token, holder string, ttl time.Duration) (held *store.LeaseConflictError, err error) {
+	var acquired bool
+	var heldBy *string
+	var heldSince *time.Time
+	err = q.QueryRow(ctx, `
+		WITH attempt AS (
+			INSERT INTO leases (key, token, holder, acquired_at, expires_at)
+			VALUES ($1, $2, $3, clock_timestamp(), clock_timestamp() + make_interval(secs => $4))
+			ON CONFLICT (key) DO UPDATE
+			SET token = EXCLUDED.token,
+			    holder = EXCLUDED.holder,
+			    acquired_at = EXCLUDED.acquired_at,
+			    expires_at = EXCLUDED.expires_at
+			WHERE leases.expires_at <= clock_timestamp()
+			RETURNING key
+		)
+		SELECT EXISTS (SELECT 1 FROM attempt), l.holder, l.acquired_at
+		FROM (SELECT $1::text AS key) AS wanted
+		LEFT JOIN leases AS l ON l.key = wanted.key`,
+		key, token, holder, ttl.Seconds()).Scan(&acquired, &heldBy, &heldSince)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, fmt.Errorf("acquiring lease for %q: %w", key, err)
+		return nil, fmt.Errorf("acquiring lease for %q: %w", key, err)
 	}
-	return true, nil
+	if acquired {
+		return nil, nil
+	}
+	held = &store.LeaseConflictError{Key: key}
+	if heldBy != nil {
+		held.Holder = *heldBy
+	}
+	if heldSince != nil {
+		held.Since = *heldSince
+	}
+	return held, nil
+}
+
+// fenceLease takes the lease named by key for the rest of the transaction tx
+// runs: the row is inserted here and deleted by the returned func before the
+// commit, so no other client ever sees it, and one that tries to acquire the
+// lease meanwhile waits on the uncommitted row until the transaction ends. A
+// lease a live holder has refuses the fence with the holder's
+// *store.LeaseConflictError.
+func (p *Persistence) fenceLease(ctx context.Context, tx pgx.Tx, key, holder string) (release func() error, err error) {
+	token := uuid.NewString()
+	held, err := acquireLease(ctx, tx, key, token, holder, p.leaseTTL)
+	if err != nil {
+		return nil, err
+	}
+	if held != nil {
+		return nil, held
+	}
+	return func() error { return releaseLease(ctx, tx, key, token) }, nil
 }
 
 const (
@@ -194,7 +245,11 @@ func (p *Persistence) renewLease(ctx context.Context, key, token string, ttl tim
 }
 
 func (p *Persistence) releaseLease(ctx context.Context, key, token string) error {
-	if _, err := p.pool.Exec(ctx, `DELETE FROM leases WHERE key = $1 AND token = $2`, key, token); err != nil {
+	return releaseLease(ctx, p.pool, key, token)
+}
+
+func releaseLease(ctx context.Context, q querier, key, token string) error {
+	if _, err := q.Exec(ctx, `DELETE FROM leases WHERE key = $1 AND token = $2`, key, token); err != nil {
 		return fmt.Errorf("releasing lease for %q: %w", key, err)
 	}
 	return nil

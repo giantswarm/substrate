@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -40,7 +41,9 @@ var (
 	// ErrFailedPrecondition indicates the object is not in the required state for the operation.
 	ErrFailedPrecondition = errors.New("persistence: failed precondition")
 
-	// ErrLeaseConflict indicates that a distributed lease is already held by another client.
+	// ErrLeaseConflict indicates that a distributed lease is already held by
+	// another client. The store returns it as a LeaseConflictError naming the
+	// holder when it knows one.
 	ErrLeaseConflict = errors.New("persistence: lease conflict")
 
 	// ErrInvalidPageToken indicates that a list page token is malformed or was
@@ -273,20 +276,49 @@ type Interface interface {
 	// must Close the watch to release its subscription.
 	WatchWorkers(ctx context.Context) (*WorkerWatch, error)
 
-	// AcquireLease attempts to acquire a distributed lease for key. The lease is
-	// held and renewed automatically until the returned Lease is closed.
+	// AcquireLease attempts to acquire a distributed lease for key on behalf of
+	// holder, a short name of the operation taking it (the store records and
+	// logs it, and names it to a client that finds the lease held). The lease
+	// is held and renewed automatically until the returned Lease is closed.
 	// Returns ErrLeaseConflict if the lease is already held by another client.
-	AcquireLease(ctx context.Context, key string) (*Lease, error)
+	AcquireLease(ctx context.Context, key, holder string) (*Lease, error)
 }
+
+// LeaseConflictError is the ErrLeaseConflict a store answers when it knows who
+// holds the lease: the holder's name and when it took the lease.
+type LeaseConflictError struct {
+	Key    string
+	Holder string
+	Since  time.Time
+}
+
+func (e *LeaseConflictError) Error() string {
+	if e.Holder == "" {
+		return fmt.Sprintf("%v: %s is held", ErrLeaseConflict, e.Key)
+	}
+	return fmt.Sprintf("%v: %s is held by %s for %s", ErrLeaseConflict, e.Key, e.Holder, time.Since(e.Since).Round(time.Millisecond))
+}
+
+// Is makes errors.Is(err, ErrLeaseConflict) true.
+func (e *LeaseConflictError) Is(target error) bool { return target == ErrLeaseConflict }
 
 // Precondition guards an update with the uid and version the caller observed:
 // the write lands only if the stored object still matches both. Both fields are
-// required.
+// required. Unleased is optional.
 type Precondition struct {
 	// UID is the incarnation the write is for.
 	UID string
 	// Version is the revision the write is against.
 	Version int64
+	// Unleased names a lease no operation may hold while the write lands. The
+	// write takes that lease for its own transaction and nothing longer: an
+	// AcquireLease that arrives meanwhile waits for the transaction and then
+	// reads what it wrote, and a write that arrives while an operation holds
+	// the lease is refused with ErrLeaseConflict, which a background writer
+	// turns into a retry. This is how a writer that holds no lease stays
+	// ordered against the operations that do, without ever making one of them
+	// wait for more than a transaction. Empty requires nothing.
+	Unleased string
 }
 
 // DeletePreconditions pins the object incarnation a delete may act on. Unlike

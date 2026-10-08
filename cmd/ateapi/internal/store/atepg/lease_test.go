@@ -33,7 +33,7 @@ func TestAcquireLease_CleansExpiredLeases(t *testing.T) {
 		('active', 'live', clock_timestamp() + interval '1 hour')`); err != nil {
 		t.Fatalf("seeding leases: %v", err)
 	}
-	lease, err := s.AcquireLease(ctx, "new")
+	lease, err := s.AcquireLease(ctx, "new", "test")
 	if err != nil {
 		t.Fatalf("AcquireLease: %v", err)
 	}
@@ -51,11 +51,44 @@ func TestAcquireLease_CleansExpiredLeases(t *testing.T) {
 	}
 }
 
+func TestAcquireLease_RecordsHolder(t *testing.T) {
+	s := setupPostgresPersistence(t)
+	ctx := context.Background()
+	before := time.Now()
+	lease, err := s.AcquireLease(ctx, "actor-1", "resume")
+	if err != nil {
+		t.Fatalf("AcquireLease: %v", err)
+	}
+	defer lease.Close()
+
+	var holder string
+	var acquiredAt time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT holder, acquired_at FROM leases WHERE key = 'actor-1'`).Scan(&holder, &acquiredAt); err != nil {
+		t.Fatalf("reading the lease row: %v", err)
+	}
+	if holder != "resume" {
+		t.Errorf("holder = %q, want resume", holder)
+	}
+	if acquiredAt.Before(before.Add(-time.Second)) || acquiredAt.After(time.Now().Add(time.Second)) {
+		t.Errorf("acquired_at = %v, want about %v", acquiredAt, before)
+	}
+
+	// A row an older release wrote carries the defaults: no holder, seen now.
+	if _, err := s.pool.Exec(ctx, `INSERT INTO leases (key, token, expires_at) VALUES ('legacy', 'old', clock_timestamp() + interval '1 hour')`); err != nil {
+		t.Fatalf("seeding a legacy lease: %v", err)
+	}
+	_, err = s.AcquireLease(ctx, "legacy", "pause")
+	var held *store.LeaseConflictError
+	if !errors.As(err, &held) || held.Holder != "" || held.Since.IsZero() {
+		t.Errorf("AcquireLease on a legacy row = %v, want a conflict with an empty holder and the time it was seen", err)
+	}
+}
+
 func TestAcquireLease_ExpiresAfterHolderStops(t *testing.T) {
 	s := setupPostgresPersistence(t)
 	s.leaseTTL = 200 * time.Millisecond
 	holderCtx, cancelHolder := context.WithCancel(context.Background())
-	lease, err := s.AcquireLease(holderCtx, "test-lease")
+	lease, err := s.AcquireLease(holderCtx, "test-lease", "holder")
 	if err != nil {
 		t.Fatalf("AcquireLease failed: %v", err)
 	}
@@ -70,7 +103,7 @@ func TestAcquireLease_ExpiresAfterHolderStops(t *testing.T) {
 	// process that disappeared and left its lease to expire.
 	time.Sleep(s.leaseTTL + 500*time.Millisecond)
 
-	newLease, err := s.AcquireLease(context.Background(), "test-lease")
+	newLease, err := s.AcquireLease(context.Background(), "test-lease", "taker")
 	if err != nil {
 		t.Fatalf("AcquireLease after lease expiration failed: %v", err)
 	}
@@ -86,7 +119,7 @@ func TestAcquireLease_ConcurrentTakeover(t *testing.T) {
 	s := setupPostgresPersistence(t)
 	s.leaseTTL = time.Millisecond
 	holderCtx, cancelHolder := context.WithCancel(context.Background())
-	initial, err := s.AcquireLease(holderCtx, "contested-lease")
+	initial, err := s.AcquireLease(holderCtx, "contested-lease", "holder")
 	if err != nil {
 		t.Fatalf("seeding initial lease failed: %v", err)
 	}
@@ -102,7 +135,7 @@ func TestAcquireLease_ConcurrentTakeover(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			lease, err := s.AcquireLease(context.Background(), "contested-lease")
+			lease, err := s.AcquireLease(context.Background(), "contested-lease", "racer")
 			if err != nil {
 				if !errors.Is(err, store.ErrLeaseConflict) {
 					t.Errorf("AcquireLease racer %d failed: %v", i, err)

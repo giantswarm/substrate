@@ -36,7 +36,7 @@ import (
 func (w *ActorWorkflow) DeleteActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (*ateapipb.ActorTemplate, error) {
 	// Serializes against the reconciler, which creates the golden actor and
 	// tag under the same lease.
-	ctx, lease, err := acquireLease(ctx, w.store, "lease:actortemplate:"+templateRef.Atespace+":"+templateRef.Name, "ActorTemplate "+templateRef.String())
+	ctx, lease, err := acquireLease(ctx, w.store, "lease:actortemplate:"+templateRef.Atespace+":"+templateRef.Name, "template-delete", "ActorTemplate "+templateRef.String())
 	if err != nil {
 		return nil, err
 	}

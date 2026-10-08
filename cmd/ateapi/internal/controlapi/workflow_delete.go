@@ -32,7 +32,7 @@ import (
 
 // DeleteActor executes the workflow to delete an actor. Idempotent.
 func (w *ActorWorkflow) DeleteActor(ctx context.Context, actorRef resources.ActorRef, anyState bool, precondition store.DeletePreconditions) (*ateapipb.Actor, error) {
-	ctx, lease, err := w.acquireActorLease(ctx, actorRef)
+	ctx, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationDelete)
 	if err != nil {
 		return nil, err
 	}
