@@ -19,4 +19,4 @@ package ateapipb
 // shape they carry. A change of either message's field numbers or meaning
 // changes it. ate-api reports it from GetEgressPolicyContract; kubectl-ate
 // refuses to write an egress policy to a server that reports another one.
-const EgressPolicyContractVersion = "v0.3.0-alpha3"
+const EgressPolicyContractVersion = "v0.4.0-alpha1"
