@@ -42,6 +42,7 @@
 # build — while a classic personal access token without the `workflow` scope
 # cannot push commits that touch .github/workflows, which every mirror and
 # re-pin does.
+# yamllint disable rule:line-length
 name: sync-upstream
 
 on:
