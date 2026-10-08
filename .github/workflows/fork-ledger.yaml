@@ -1,0 +1,56 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork (giantswarm/substrate): every pull request against a line names its
+# own number in FORK.md's ledger, or carries the label no-ledger with a
+# "no-ledger: <reason>" line in its description; on a maintenance branch,
+# every pull request merged into it is in the branch's own copy. A workflow
+# of its own beside pr-workflow, so a label or a description edit re-runs
+# this check alone, not the suites.
+name: fork-ledger
+on:
+  pull_request:
+    branches: [giantswarm, "release-*"]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  fork-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      BASE: ${{ github.base_ref }}
+      FIELDS: number,title,body,labels,files,headRefName,author
+    steps:
+      # The merge of the pull request into its line: FORK.md as it would land.
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Fixture runs of the check
+        run: .github/scripts/fork-ledger-test.sh
+      - name: This pull request's row
+        run: |
+          gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" --json "${FIELDS}" >"${RUNNER_TEMP}/pr.json"
+          .github/scripts/fork-ledger.sh pr "${RUNNER_TEMP}/pr.json" FORK.md
+      - name: Every merged pull request's row
+        if: startsWith(github.base_ref, 'release-')
+        run: |
+          gh pr list --repo "${GITHUB_REPOSITORY}" --base "${BASE}" --state merged --limit 1000 \
+            --json "${FIELDS}" >"${RUNNER_TEMP}/merged.json"
+          .github/scripts/fork-ledger.sh line "${RUNNER_TEMP}/merged.json" FORK.md
