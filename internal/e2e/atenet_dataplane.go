@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
 )
 
 // AtenetDataplaneEnv selects the dataplane exercised by an e2e lane.
@@ -39,6 +41,7 @@ type AtenetDataplane interface {
 	PlatformMetricPrefixes([]string) []string
 	RouteDurationSeen(context.Context, string) (bool, error)
 	SupportsIngressProtocolDowngrade() bool
+	MissingActorGRPCCode() codes.Code
 }
 
 // CurrentAtenetDataplane returns the implementation selected for this test
@@ -83,7 +86,16 @@ func (envoyAtenetDataplane) RouteDurationSeen(_ context.Context, collectorScrape
 
 func (envoyAtenetDataplane) SupportsIngressProtocolDowngrade() bool { return true }
 
+// MissingActorGRPCCode is the code a gRPC call to a missing Actor gets: the
+// router answers it with the resume's own status.
+func (envoyAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.NotFound }
+
 type agentGatewayAtenetDataplane struct{}
+
+// MissingActorGRPCCode: AgentGateway answers its own ingress denial to a gRPC
+// call by gRPC's HTTP-to-status fallback table, which maps 404 to Unimplemented.
+// TODO: carry the resume's own status to gRPC callers in AgentGateway.
+func (agentGatewayAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.Unimplemented }
 
 func (agentGatewayAtenetDataplane) NewParkingObserver(context.Context) (ParkingObserver, error) {
 	return agentGatewayParkingObserver{}, nil
