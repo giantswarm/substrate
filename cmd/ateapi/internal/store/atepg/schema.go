@@ -43,9 +43,19 @@ const (
 	// pinnedOpenFGAMigrationVersion is the OpenFGA PostgreSQL migration whose
 	// schema migrations/000002_openfga.sql reproduces.
 	pinnedOpenFGAMigrationVersion = 6
+
+	// forkMigrationTableName is the Goose ledger of migrations_fork/, the
+	// schema changes this line carries beside upstream's migrations/. Upstream
+	// migrations keep upstream's versions in schema_migrations, so a re-pin
+	// carries them unchanged.
+	forkMigrationTableName = "fork_schema_migrations"
+	// leaseHolderMigrationVersion is the version 1.5.x of this line recorded
+	// migrations_fork/000001_lease_holder.sql under in schema_migrations,
+	// where upstream's 000003_access_policies.sql belongs.
+	leaseHolderMigrationVersion = 3
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql migrations_fork/*.sql
 var migrationFiles embed.FS
 
 func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {
@@ -69,19 +79,35 @@ func applyMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := adoptOpenFGASchema(ctx, pool); err != nil {
 		return err
 	}
-
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		return fmt.Errorf("open embedded PostgreSQL migrations: %w", err)
-	}
-	provider, err := openMigrationProvider(ctx, pool, migrations)
-	if err != nil {
+	if err := splitForkLedger(ctx, pool); err != nil {
 		return err
 	}
-	return errors.Join(migrateToLatest(ctx, provider), provider.Close())
+
+	// Fork migrations run after upstream's: they change upstream's tables.
+	for _, ledger := range []struct{ dir, table string }{
+		{dir: "migrations", table: migrationTableName},
+		{dir: "migrations_fork", table: forkMigrationTableName},
+	} {
+		migrations, err := fs.Sub(migrationFiles, ledger.dir)
+		if err != nil {
+			return fmt.Errorf("open embedded PostgreSQL migrations %s: %w", ledger.dir, err)
+		}
+		provider, err := openLedgerProvider(ctx, pool, migrations, ledger.table)
+		if err != nil {
+			return err
+		}
+		if err := errors.Join(migrateToLatest(ctx, provider, ledger.table), provider.Close()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func openMigrationProvider(ctx context.Context, pool *pgxpool.Pool, migrations fs.FS) (*goose.Provider, error) {
+	return openLedgerProvider(ctx, pool, migrations, migrationTableName)
+}
+
+func openLedgerProvider(ctx context.Context, pool *pgxpool.Pool, migrations fs.FS, table string) (*goose.Provider, error) {
 	lockID, err := migrationLockID(ctx, pool)
 	if err != nil {
 		return nil, err
@@ -98,7 +124,7 @@ func openMigrationProvider(ctx context.Context, pool *pgxpool.Pool, migrations f
 		goose.DialectPostgres,
 		db,
 		migrations,
-		goose.WithTableName(migrationTableName),
+		goose.WithTableName(table),
 		goose.WithSessionLocker(locker),
 	)
 	if err != nil {
@@ -202,7 +228,82 @@ func adoptOpenFGASchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-func migrateToLatest(ctx context.Context, provider *goose.Provider) (migrationErr error) {
+// splitForkLedger moves migrations_fork/000001_lease_holder.sql, which 1.5.x
+// of this line applied as version 3 of schema_migrations, to the fork ledger,
+// so Goose applies upstream's 000003_access_policies.sql as version 3. A
+// database whose leases have no holder column has not applied it and needs no
+// move; one whose fork ledger exists has been moved.
+func splitForkLedger(ctx context.Context, pool *pgxpool.Pool) error {
+	lockID, err := migrationLockID(ctx, pool)
+	if err != nil {
+		return err
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin fork migration ledger split: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	// Serialize with Goose's session lock on the same key, so a concurrent
+	// startup neither applies upstream's version 3 nor moves the row twice.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+		return fmt.Errorf("lock PostgreSQL migrations for the fork migration ledger split: %w", err)
+	}
+
+	var hasLedger, hasForkLedger, hasLeaseHolder, hasAccessPolicies bool
+	if err := tx.QueryRow(ctx, `
+		SELECT
+			to_regclass($1) IS NOT NULL,
+			to_regclass($2) IS NOT NULL,
+			EXISTS (
+				SELECT 1 FROM information_schema.columns
+				WHERE table_schema = current_schema() AND table_name = 'leases' AND column_name = 'holder'
+			),
+			to_regclass('global_access_policy') IS NOT NULL`,
+		migrationTableName, forkMigrationTableName).Scan(&hasLedger, &hasForkLedger, &hasLeaseHolder, &hasAccessPolicies); err != nil {
+		return fmt.Errorf("check fork migration ledger: %w", err)
+	}
+	if !hasLedger || hasForkLedger || !hasLeaseHolder {
+		return nil
+	}
+	var current int64
+	if err := tx.QueryRow(ctx, fmt.Sprintf(`SELECT COALESCE(max(version_id), 0) FROM %s WHERE is_applied`,
+		migrationTableName)).Scan(&current); err != nil {
+		return fmt.Errorf("read PostgreSQL migration version: %w", err)
+	}
+	if current != leaseHolderMigrationVersion || hasAccessPolicies {
+		return fmt.Errorf("unsupported PostgreSQL schema: leases.holder exists without %s, at %s version %d; only a database of this line's 1.5.x, at version %d without the access-policy tables, is moved",
+			forkMigrationTableName, migrationTableName, current, leaseHolderMigrationVersion)
+	}
+
+	// The fork ledger is created as Goose creates a ledger, with its version 0
+	// row, so Goose reads it as its own.
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE %s (
+			id integer PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY,
+			version_id bigint NOT NULL,
+			is_applied boolean NOT NULL,
+			tstamp timestamp NOT NULL DEFAULT now()
+		)`, forkMigrationTableName)); err != nil {
+		return fmt.Errorf("create fork migration ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s (version_id, is_applied) VALUES (0, true), (1, true)`,
+		forkMigrationTableName)); err != nil {
+		return fmt.Errorf("record the lease holder migration in the fork migration ledger: %w", err)
+	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s WHERE version_id = $1`, migrationTableName),
+		leaseHolderMigrationVersion); err != nil {
+		return fmt.Errorf("remove the lease holder migration from %s: %w", migrationTableName, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit fork migration ledger split: %w", err)
+	}
+	slog.InfoContext(ctx, "Moved the lease holder migration to the fork migration ledger",
+		slog.Int64("migration_version", leaseHolderMigrationVersion),
+		slog.String("ledger", forkMigrationTableName))
+	return nil
+}
+
+func migrateToLatest(ctx context.Context, provider *goose.Provider, ledger string) (migrationErr error) {
 	started := time.Now()
 	current, latest, err := provider.GetVersions(ctx)
 	if err != nil {
@@ -213,6 +314,7 @@ func migrateToLatest(ctx context.Context, provider *goose.Provider) (migrationEr
 	applied := 0
 	defer func() {
 		attributes := []any{
+			slog.String("ledger", ledger),
 			slog.Int64("starting_version", starting),
 			slog.Int64("current_version", current),
 			slog.Int64("latest_version", latest),
