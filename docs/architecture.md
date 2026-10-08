@@ -476,6 +476,20 @@ Triggered by an explicit `SuspendActor` call.
   5. **State**: State transitions back to `ACTOR_STATE_SUSPENDED`, and the Actor's
      `status.externalSnapshot` names the external snapshot it resumes from.
 
+### Lost requests
+
+`SUSPENDING` and `PAUSING` are committed before the `atelet` call, and each
+step of the workflow is reentrant, deriving its progress from the stored Actor.
+A retried `SuspendActor` or `PauseActor` therefore picks up where the previous
+attempt stopped. When the `ate-api-server` replica handling the request dies
+instead, no caller may ever retry, so every replica scans for Actors that have
+sat in either state, unchanged, for longer than `--actor-workflow-deadline`
+(no live request can still own them: the actor lease bounds a workflow to that
+deadline) and re-enters the same workflow under the actor lease. The Actor
+ends `SUSPENDED` or `PAUSED` once its `atelet` answers, or `CRASHED`, with the
+reason in `status.crash`, when the `atelet` reports the workload gone. The scan
+runs every `--actor-transition-resync-interval`.
+
 Snapshots may be given tags owned and addressed by an Atespace. The same tag 
 name may exist in different Atespaces. A tag is an immutable alias and retention pin:
 it holds its own copy of the external snapshot, made at creation, so it outlives the 

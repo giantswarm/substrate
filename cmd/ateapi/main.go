@@ -103,6 +103,8 @@ var (
 	templateResyncInterval = pflag.Duration("template-resync-interval", 20*time.Second, fmt.Sprintf("Interval between actor template resyncs. Must be at least %s.", minResyncInterval))
 	actorWorkflowDeadline  = pflag.Duration("actor-workflow-deadline", 5*time.Minute, "Maximum wall-clock duration of a single Resume/Suspend workflow; raise it for slow image registries.")
 
+	actorTransitionResyncInterval = pflag.Duration("actor-transition-resync-interval", 30*time.Second, fmt.Sprintf("Interval between scans for Actors left SUSPENDING or PAUSING by a lost request; such an Actor is finished once it is older than --actor-workflow-deadline. Must be at least %s.", minResyncInterval))
+
 	showVersion  = pflag.Bool("version", false, "Print version and exit.")
 	logLevelFlag = pflag.String("log-level", "info", "Minimum log level: debug, info, warn, or error.")
 )
@@ -124,6 +126,9 @@ func main() {
 	slog.InfoContext(ctx, "ateapi starting", slog.String("version", version.Version))
 	if *templateResyncInterval < minResyncInterval {
 		serverboot.Fatal(ctx, "Invalid --template-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
+	}
+	if *actorTransitionResyncInterval < minResyncInterval {
+		serverboot.Fatal(ctx, "Invalid --actor-transition-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
 	}
 	resolvedActorJWTIssuer, err := resolveActorJWTIssuer(*actorJWTIssuer, installdefaults.NamespaceFromPodEnv())
 	if err != nil {
@@ -308,6 +313,10 @@ func main() {
 	workerAssignmentReconciler := controlapi.NewWorkerAssignmentReconciler(persistence, workerCache)
 	workerAssignmentReconciler.Start(shutdownCtx)
 
+	// Finish the suspends and pauses whose ate-api request was lost.
+	actorTransitionReconciler := controlapi.NewActorTransitionReconciler(persistence, controlSrv, *actorTransitionResyncInterval, *actorWorkflowDeadline)
+	actorTransitionReconciler.Start(shutdownCtx)
+
 	lisCfg := &net.ListenConfig{}
 	lis, err := lisCfg.Listen(ctx, "tcp", *listenAddr)
 	if err != nil {
@@ -443,6 +452,7 @@ func logFlagValues(ctx context.Context) {
 		slog.Duration("drain-delay", *drainDelay),
 		slog.Duration("drain-timeout", *drainTimeout),
 		slog.Duration("actor-workflow-deadline", *actorWorkflowDeadline),
+		slog.Duration("actor-transition-resync-interval", *actorTransitionResyncInterval),
 	)
 }
 
