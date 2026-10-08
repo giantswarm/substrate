@@ -17,6 +17,7 @@ package atepg
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"regexp"
@@ -81,7 +82,7 @@ func TestOpenFGAMigrationVersionGuard(t *testing.T) {
 }
 
 func TestMigrationPolicy(t *testing.T) {
-	err := fs.WalkDir(migrationFiles, "migrations", func(path string, entry fs.DirEntry, err error) error {
+	err := fs.WalkDir(migrationFiles, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() {
 			return err
 		}
@@ -158,6 +159,16 @@ func TestMigrationsConcurrentStartup(t *testing.T) {
 	}
 	if applied != len(want) {
 		t.Fatalf("applied migration rows = %d, want %d", applied, len(want))
+	}
+	wantFork, err := fs.Glob(migrationFiles, "migrations_fork/*.sql")
+	if err != nil {
+		t.Fatalf("listing fork migrations: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM "concurrent-startup".fork_schema_migrations WHERE version_id > 0 AND is_applied`).Scan(&applied); err != nil {
+		t.Fatalf("reading applied fork migrations: %v", err)
+	}
+	if applied != len(wantFork) {
+		t.Fatalf("applied fork migration rows = %d, want %d", applied, len(wantFork))
 	}
 }
 
@@ -413,7 +424,7 @@ func TestMigrationFailureLeavesCompletedPrefixAndResumes(t *testing.T) {
 	if _, err := provider.UpTo(ctx, 1); err != nil {
 		t.Fatalf("applying pre-run migration: %v", err)
 	}
-	migrationErr := migrateToLatest(ctx, provider)
+	migrationErr := migrateToLatest(ctx, provider, migrationTableName)
 	if migrationErr == nil {
 		t.Fatal("migration succeeded, want version 3 failure")
 	}
@@ -462,7 +473,7 @@ func TestMigrationFailureLeavesCompletedPrefixAndResumes(t *testing.T) {
 			t.Errorf("closing resumed migration provider: %v", err)
 		}
 	})
-	if err := migrateToLatest(ctx, resumedProvider); err != nil {
+	if err := migrateToLatest(ctx, resumedProvider, migrationTableName); err != nil {
 		t.Fatalf("resuming migrations: %v", err)
 	}
 	if diff := cmp.Diff([]int64{1, 2, 3}, appliedMigrationVersions(t, migrationPool)); diff != "" {
@@ -479,12 +490,151 @@ func TestMigrationFailureLeavesCompletedPrefixAndResumes(t *testing.T) {
 
 func appliedMigrationVersions(t *testing.T, pool *pgxpool.Pool) []int64 {
 	t.Helper()
+	return ledgerVersions(t, pool, migrationTableName)
+}
+
+func ledgerVersions(t *testing.T, pool *pgxpool.Pool, table string) []int64 {
+	t.Helper()
 	var versions []int64
-	if err := pool.QueryRow(t.Context(), `
+	if err := pool.QueryRow(t.Context(), fmt.Sprintf(`
 		SELECT COALESCE(array_agg(version_id ORDER BY version_id), '{}'::bigint[])
-		FROM schema_migrations
-		WHERE version_id > 0 AND is_applied`).Scan(&versions); err != nil {
-		t.Fatalf("reading applied migration versions: %v", err)
+		FROM %s
+		WHERE version_id > 0 AND is_applied`, table)).Scan(&versions); err != nil {
+		t.Fatalf("reading applied migration versions of %s: %v", table, err)
 	}
 	return versions
+}
+
+// embeddedVersions lists 1..n for the n migrations of an embedded directory.
+func embeddedVersions(t *testing.T, dir string) []int64 {
+	t.Helper()
+	files, err := fs.Glob(migrationFiles, dir+"/*.sql")
+	if err != nil {
+		t.Fatalf("listing %s: %v", dir, err)
+	}
+	versions := make([]int64, len(files))
+	for i := range files {
+		versions[i] = int64(i + 1)
+	}
+	return versions
+}
+
+// TestMigrationsSplitForkLedger upgrades databases of this line's 1.5.x, which
+// applied migrations_fork/000001_lease_holder.sql as version 3 of
+// schema_migrations, and refuses a schema the split cannot place.
+func TestMigrationsSplitForkLedger(t *testing.T) {
+	pool := requirePool(t)
+	const schema = "migration-fork-split"
+
+	openSchema := func(t *testing.T) *pgxpool.Pool {
+		t.Helper()
+		ctx := t.Context()
+		if _, err := pool.Exec(ctx, `DROP SCHEMA IF EXISTS "migration-fork-split" CASCADE; CREATE SCHEMA "migration-fork-split"`); err != nil {
+			t.Fatalf("resetting schema: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = pool.Exec(context.Background(), `DROP SCHEMA IF EXISTS "migration-fork-split" CASCADE`)
+		})
+		migrationPool, err := pgxpool.New(ctx, containerDSN+"&search_path="+schema)
+		if err != nil {
+			t.Fatalf("opening migration pool: %v", err)
+		}
+		t.Cleanup(migrationPool.Close)
+		return migrationPool
+	}
+
+	// release15 is the migrations directory of this line's 1.5.x.
+	release15 := func(t *testing.T) fstest.MapFS {
+		t.Helper()
+		files := fstest.MapFS{}
+		for name, path := range map[string]string{
+			"000001_initial.sql":      "migrations/000001_initial.sql",
+			"000002_openfga.sql":      "migrations/000002_openfga.sql",
+			"000003_lease_holder.sql": "migrations_fork/000001_lease_holder.sql",
+		} {
+			data, err := fs.ReadFile(migrationFiles, path)
+			if err != nil {
+				t.Fatalf("reading %s: %v", path, err)
+			}
+			files[name] = &fstest.MapFile{Data: data}
+		}
+		return files
+	}
+
+	t.Run("release 1.5", func(t *testing.T) {
+		ctx := t.Context()
+		migrationPool := openSchema(t)
+		provider, err := openMigrationProvider(ctx, migrationPool, release15(t))
+		if err != nil {
+			t.Fatalf("creating 1.5 migration provider: %v", err)
+		}
+		if _, err := provider.Up(ctx); err != nil {
+			t.Fatalf("applying 1.5 migrations: %v", err)
+		}
+		if err := provider.Close(); err != nil {
+			t.Fatalf("closing 1.5 migration provider: %v", err)
+		}
+		if _, err := migrationPool.Exec(ctx, `INSERT INTO leases (key, token, expires_at, holder) VALUES ('held', 'token', now() + interval '1 hour', 'resume')`); err != nil {
+			t.Fatalf("writing a 1.5 lease: %v", err)
+		}
+
+		if err := applyMigrations(ctx, migrationPool); err != nil {
+			t.Fatalf("applyMigrations on a 1.5 database: %v", err)
+		}
+		// A restart finds both ledgers current and moves nothing again.
+		if err := applyMigrations(ctx, migrationPool); err != nil {
+			t.Fatalf("applyMigrations after the split: %v", err)
+		}
+		if diff := cmp.Diff(embeddedVersions(t, "migrations"), ledgerVersions(t, migrationPool, migrationTableName)); diff != "" {
+			t.Fatalf("schema_migrations after the split (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(embeddedVersions(t, "migrations_fork"), ledgerVersions(t, migrationPool, forkMigrationTableName)); diff != "" {
+			t.Fatalf("fork_schema_migrations after the split (-want +got):\n%s", diff)
+		}
+		var holder string
+		if err := migrationPool.QueryRow(ctx, `SELECT holder FROM leases WHERE key = 'held'`).Scan(&holder); err != nil || holder != "resume" {
+			t.Fatalf("lease holder after the split = %q, %v; want resume", holder, err)
+		}
+		if _, err := migrationPool.Exec(ctx, `INSERT INTO global_access_policy (id, uid, version, proto) VALUES (true, 'uid', 1, '\x')`); err != nil {
+			t.Fatalf("writing the global access policy after the split: %v", err)
+		}
+	})
+
+	t.Run("fresh", func(t *testing.T) {
+		ctx := t.Context()
+		migrationPool := openSchema(t)
+		if err := applyMigrations(ctx, migrationPool); err != nil {
+			t.Fatalf("applyMigrations on an empty schema: %v", err)
+		}
+		if diff := cmp.Diff(embeddedVersions(t, "migrations"), ledgerVersions(t, migrationPool, migrationTableName)); diff != "" {
+			t.Fatalf("schema_migrations (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(embeddedVersions(t, "migrations_fork"), ledgerVersions(t, migrationPool, forkMigrationTableName)); diff != "" {
+			t.Fatalf("fork_schema_migrations (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("holder without fork ledger past 1.5", func(t *testing.T) {
+		ctx := t.Context()
+		migrationPool := openSchema(t)
+		if err := applyMigrations(ctx, migrationPool); err != nil {
+			t.Fatalf("applyMigrations on an empty schema: %v", err)
+		}
+		if _, err := migrationPool.Exec(ctx, `DROP TABLE fork_schema_migrations`); err != nil {
+			t.Fatalf("dropping the fork ledger: %v", err)
+		}
+		before := appliedMigrationVersions(t, migrationPool)
+
+		err := applyMigrations(ctx, migrationPool)
+		if err == nil || !strings.Contains(err.Error(), "leases.holder exists without fork_schema_migrations") {
+			t.Fatalf("applyMigrations error = %v, want unsupported schema error", err)
+		}
+		if diff := cmp.Diff(before, appliedMigrationVersions(t, migrationPool)); diff != "" {
+			t.Fatalf("schema_migrations after a refused split (-want +got):\n%s", diff)
+		}
+		var hasForkLedger bool
+		if err := migrationPool.QueryRow(ctx, `SELECT to_regclass('fork_schema_migrations') IS NOT NULL`).Scan(&hasForkLedger); err != nil || hasForkLedger {
+			t.Fatalf("fork ledger after a refused split = %v, %v; want none", hasForkLedger, err)
+		}
+	})
 }
