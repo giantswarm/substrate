@@ -97,8 +97,8 @@ func TestUnmarshalStoredMigratesLegacySnapshots(t *testing.T) {
 		written: legacyTestActor(withUnknownString(&ateapipb.ActorStatus{
 			State: ateapipb.ActorState_ACTOR_STATE_PAUSED,
 			LocalSnapshot: &ateapipb.LocalSnapshot{
-				SnapshotName:              legacyTestLocalName,
-				NodeVmsWithLocalSnapshots: []string{"node-a"},
+				SnapshotName: legacyTestLocalName,
+				NodeName:     "node-a",
 				DurableCopy: &ateapipb.ExternalSnapshot{
 					SnapshotUri: pauseURI, ContentScope: full, ActorTemplateUid: legacyTestLocalName,
 				},
@@ -107,9 +107,9 @@ func TestUnmarshalStoredMigratesLegacySnapshots(t *testing.T) {
 		want: &ateapipb.ActorStatus{
 			State: ateapipb.ActorState_ACTOR_STATE_PAUSED,
 			LocalSnapshot: &ateapipb.LocalSnapshot{
-				SnapshotName:              legacyTestLocalName,
-				NodeVmsWithLocalSnapshots: []string{"node-a"},
-				DurableCopy:               migratedCopy,
+				SnapshotName: legacyTestLocalName,
+				NodeName:     "node-a",
+				DurableCopy:  migratedCopy,
 			},
 		},
 	}, {

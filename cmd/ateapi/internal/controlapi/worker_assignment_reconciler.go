@@ -115,7 +115,7 @@ func (r *WorkerAssignmentReconciler) processNextWorkItem(ctx context.Context) bo
 // reconcileOne reconciles one Worker's assignments, holding the Worker's lease
 // so concurrent replicas don't sweep it at once.
 func (r *WorkerAssignmentReconciler) reconcileOne(ctx context.Context, name string) error {
-	lease, err := r.persistence.AcquireLease(ctx, workerAssignmentLeaseKey(name))
+	lease, err := r.persistence.AcquireLease(ctx, workerAssignmentLeaseKey(name), "worker-assignment-reconcile")
 	if err != nil {
 		if errors.Is(err, store.ErrLeaseConflict) {
 			// Retried in case that replica does not finish; once it has, the

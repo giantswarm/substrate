@@ -65,6 +65,9 @@ const (
 	// checkpoint, so a node that stopped answering cannot stall the commit
 	// that no longer needs it.
 	localCheckpointPruneTimeout = 10 * time.Second
+	// pauseCommitRetryInterval is how often a commit that found the actor
+	// under a lifecycle operation reads it again.
+	pauseCommitRetryInterval = 250 * time.Millisecond
 )
 
 // durablePauseCopy returns the uploaded copy of the local snapshot the actor
@@ -288,15 +291,10 @@ func (w *ActorWorkflow) uploadPauseSnapshot(ctx context.Context, actorRef resour
 
 // recordDurablePauseCopy commits an uploaded pause snapshot as the durable
 // copy of the local snapshot it was uploaded from, if the actor is still
-// paused on it. The commit runs under the actor's lease, held for the two
-// store round trips only: the lifecycle workflows read the record when they
-// take the lease and update it under a version precondition, so a write that
-// slipped in between would fail their update with a conflict the caller sees
-// as Aborted. A lease another operation holds is a retry, not an error to act
-// on. An upload the actor has outrun (resumed, suspended, deleted meanwhile)
-// is deleted again, after the lease is released: nothing references it, and
-// deleting its objects takes as long as the object store does, longer than a
-// client's next operation on the actor waits for the lease.
+// paused on it. The commit holds no lease (commitDurablePauseCopy): a client's
+// next operation on the actor never finds the lease taken by this background
+// work. An upload the actor has outrun (resumed, suspended, deleted meanwhile)
+// is deleted again: nothing references it.
 func (w *ActorWorkflow) recordDurablePauseCopy(ctx context.Context, actorRef resources.ActorRef, uploaded *ateapipb.ExternalSnapshot) error {
 	outcome, err := w.commitDurablePauseCopy(ctx, actorRef, uploaded)
 	if err != nil {
@@ -326,34 +324,59 @@ const (
 	pauseCopyStale
 )
 
-// commitDurablePauseCopy is the leased part of recordDurablePauseCopy.
+// commitDurablePauseCopy is the store part of recordDurablePauseCopy. It takes
+// no lease: the record is read, and the copy written under a version
+// precondition with the actor's lease as the write's fence
+// (store.Precondition.Unleased). The lifecycle workflows read the record once
+// they hold the lease and update it under a version precondition, so a copy
+// written between their read and their update would turn their operation into
+// Aborted; the fence orders the write against them instead. A lifecycle
+// operation that holds the lease refuses the write: the commit waits for it
+// and reads again, since the operation moves the actor on, or leaves it
+// paused for the next read to record. One that arrives during the write waits
+// for the write's transaction and reads the copy.
 func (w *ActorWorkflow) commitDurablePauseCopy(ctx context.Context, actorRef resources.ActorRef, uploaded *ateapipb.ExternalSnapshot) (pauseCopyOutcome, error) {
-	leaseCtx, lease, err := acquireLease(ctx, w.store, actorLeaseKey(actorRef), "actor")
-	if err != nil {
-		return 0, err
-	}
-	defer lease.Close()
-
-	actor, err := w.store.GetActor(leaseCtx, actorRef)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
+	waiting := false
+	for {
+		actor, err := w.store.GetActor(ctx, actorRef)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return pauseCopyStale, nil
+			}
+			return 0, err
+		}
+		if !needsDurablePauseCopy(actor) || actor.GetStatus().GetLocalSnapshot().GetSnapshotName() != uploaded.GetSourceLocalSnapshotName() {
+			if durablePauseCopy(actor).GetSnapshotUri() == uploaded.GetSnapshotUri() {
+				return pauseCopyRecorded, nil
+			}
 			return pauseCopyStale, nil
 		}
-		return 0, err
-	}
-	if !needsDurablePauseCopy(actor) || actor.GetStatus().GetLocalSnapshot().GetSnapshotName() != uploaded.GetSourceLocalSnapshotName() {
-		if durablePauseCopy(actor).GetSnapshotUri() == uploaded.GetSnapshotUri() {
-			return pauseCopyRecorded, nil
+		precondition := store.PreconditionFrom(actor)
+		precondition.Unleased = actorLeaseKey(actorRef)
+		_, err = w.store.UpdateActor(ctx, actorRef, precondition, func(toUpdate *ateapipb.Actor) error {
+			toUpdate.Status.LocalSnapshot.DurableCopy = proto.CloneOf(uploaded)
+			return nil
+		})
+		switch {
+		case err == nil:
+			return pauseCopyCommitted, nil
+		case errors.Is(err, store.ErrVersionConflict):
+			// The record moved under the read; the next read decides.
+		case errors.Is(err, store.ErrLeaseConflict):
+			if !waiting {
+				slog.LogAttrs(ctx, slog.LevelInfo, "Pause snapshot upload waits for the operation holding the actor",
+					append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("lease", err))...)
+				waiting = true
+			}
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(pauseCommitRetryInterval):
+			}
+		default:
+			return 0, err
 		}
-		return pauseCopyStale, nil
 	}
-	if _, err := w.store.UpdateActor(leaseCtx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
-		toUpdate.Status.LocalSnapshot.DurableCopy = proto.CloneOf(uploaded)
-		return nil
-	}); err != nil {
-		return 0, err
-	}
-	return pauseCopyCommitted, nil
 }
 
 // releaseDurablePauseCopy deletes the durable copy of a pause snapshot the

@@ -371,7 +371,7 @@ func TestReconcileAssignments_WaitsForBusyActor(t *testing.T) {
 	}
 	mustRaiseEpoch(t, ctx, svc, persistence, 2)
 
-	lease, err := persistence.AcquireLease(ctx, actorLeaseKey(apiActorRef))
+	lease, err := persistence.AcquireLease(ctx, actorLeaseKey(apiActorRef), "test")
 	if err != nil {
 		t.Fatalf("AcquireLease() failed: %v", err)
 	}
@@ -417,9 +417,9 @@ func runOnce(hook *func()) {
 	}
 }
 
-func (s *hookedStore) AcquireLease(ctx context.Context, key string) (*store.Lease, error) {
+func (s *hookedStore) AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error) {
 	runOnce(&s.beforeLease)
-	return s.Interface.AcquireLease(ctx, key)
+	return s.Interface.AcquireLease(ctx, key, holder)
 }
 
 func (s *hookedStore) UpdateWorker(ctx context.Context, name string, precondition store.Precondition, mutate func(*ateapipb.Worker) error) (*ateapipb.Worker, error) {

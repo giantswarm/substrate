@@ -72,7 +72,7 @@ func TestWorkerAssignmentReconciler_SkipsWorkerLeasedElsewhere(t *testing.T) {
 	seedRunningActor(t, ctx, persistence)
 	mustRaiseEpoch(t, ctx, svc, persistence, 2)
 
-	lease, err := persistence.AcquireLease(ctx, workerAssignmentLeaseKey(apiWorkerName))
+	lease, err := persistence.AcquireLease(ctx, workerAssignmentLeaseKey(apiWorkerName), "test")
 	if err != nil {
 		t.Fatalf("AcquireLease() failed: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestWorkerAssignmentReconciler_RetriesAfterLeaseFrees(t *testing.T) {
 	seedEpochWorker(t, ctx, persistence, 1, 1)
 	seedRunningActor(t, ctx, persistence)
 
-	lease, err := persistence.AcquireLease(ctx, workerAssignmentLeaseKey(apiWorkerName))
+	lease, err := persistence.AcquireLease(ctx, workerAssignmentLeaseKey(apiWorkerName), "test")
 	if err != nil {
 		t.Fatalf("AcquireLease() failed: %v", err)
 	}

@@ -167,7 +167,7 @@ func (w *WorkerWorkflow) releaseEarlierAssignment(ctx context.Context, worker *a
 		return release()
 	}
 	actorRef := resources.ActorRefFromObjectRef(assignment.GetActor())
-	lease, err := w.store.AcquireLease(ctx, actorLeaseKey(actorRef))
+	lease, err := w.store.AcquireLease(ctx, actorLeaseKey(actorRef), "worker-assignment-release")
 	if errors.Is(err, store.ErrLeaseConflict) {
 		return errActorBusy
 	}
