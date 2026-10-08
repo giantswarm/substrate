@@ -5596,7 +5596,7 @@ func (*GetEgressPolicyContractRequest) Descriptor() ([]byte, []int) {
 type EgressPolicyContract struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The contract version: the upstream release whose EgressPolicy and
-	// EgressRule shape the server decodes, such as "v0.3.0-alpha3". Two
+	// EgressRule shape the server decodes, such as "v0.4.0-alpha1". Two
 	// versions that differ encode the same field numbers with another meaning.
 	Version       string `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
 	unknownFields protoimpl.UnknownFields
