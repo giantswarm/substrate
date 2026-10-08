@@ -52,7 +52,7 @@ func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.Actor
 		w.instruments.recordLifecycleOp(ctx, ateattr.OperationPause, start, err, attrs...)
 	}()
 
-	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef)
+	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationPause)
 	if err != nil {
 		return nil, err
 	}

@@ -27,6 +27,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// The operations the tag workflows hold leases for, as the leases record them.
+const (
+	opTagSnapshot = "tag"
+	opTagDelete   = "tag-delete"
+)
+
 // TagActorSnapshot tags the external snapshot held by the suspended actor the
 // tag's source_actor names.
 // The tag is given its own copy of that snapshot, so suspending the actor again
@@ -50,7 +56,7 @@ func (w *ActorWorkflow) TagActorSnapshot(ctx context.Context, tag *ateapipb.Tag)
 
 	// Serializes against a suspend of the same actor, which would otherwise
 	// collect the snapshot out from under the copy.
-	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef)
+	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, opTagSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +65,7 @@ func (w *ActorWorkflow) TagActorSnapshot(ctx context.Context, tag *ateapipb.Tag)
 	// Serializes against a delete of the tag this creates, which would
 	// otherwise collect the copy while it is being written.
 	tagRef := resources.TagRef{Atespace: actorRef.Atespace, Name: tag.GetMetadata().GetName()}
-	leaseCtx, tagLease, err := acquireTagLease(leaseCtx, w.store, tagRef)
+	leaseCtx, tagLease, err := acquireTagLease(leaseCtx, w.store, tagRef, opTagSnapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +114,7 @@ func (w *ActorWorkflow) TagActorSnapshot(ctx context.Context, tag *ateapipb.Tag)
 func (w *ActorWorkflow) DeleteTag(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions) (*ateapipb.Tag, error) {
 	// Serializes against a create of the same tag, whose copy would otherwise
 	// keep writing into the prefix this is collecting.
-	ctx, lease, err := acquireTagLease(ctx, w.store, tagRef)
+	ctx, lease, err := acquireTagLease(ctx, w.store, tagRef, opTagDelete)
 	if err != nil {
 		return nil, err
 	}

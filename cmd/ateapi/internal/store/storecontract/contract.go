@@ -3033,7 +3033,7 @@ func runLeaseContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 		s := setup(t)
 		ctx := context.Background()
 
-		lease, err := s.AcquireLease(ctx, "test-lease")
+		lease, err := s.AcquireLease(ctx, "test-lease", "test")
 		if err != nil {
 			t.Fatalf("AcquireLease failed: %v", err)
 		}
@@ -3050,28 +3050,168 @@ func runLeaseContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 		s := setup(t)
 		ctx := context.Background()
 
-		lease, err := s.AcquireLease(ctx, "test-lease")
+		before := time.Now()
+		lease, err := s.AcquireLease(ctx, "test-lease", "resume")
 		if err != nil {
 			t.Fatalf("first AcquireLease failed: %v", err)
 		}
 		defer lease.Close()
 
-		if _, err := s.AcquireLease(ctx, "test-lease"); !errors.Is(err, store.ErrLeaseConflict) {
-			t.Errorf("second AcquireLease error = %v, want ErrLeaseConflict", err)
+		_, err = s.AcquireLease(ctx, "test-lease", "pause")
+		if !errors.Is(err, store.ErrLeaseConflict) {
+			t.Fatalf("second AcquireLease error = %v, want ErrLeaseConflict", err)
 		}
+		var held *store.LeaseConflictError
+		if !errors.As(err, &held) {
+			t.Fatalf("second AcquireLease error = %T, want *store.LeaseConflictError naming the holder", err)
+		}
+		if held.Key != "test-lease" || held.Holder != "resume" {
+			t.Errorf("conflict names %q held by %q, want test-lease held by resume", held.Key, held.Holder)
+		}
+		if held.Since.Before(before.Add(-time.Second)) || held.Since.After(time.Now().Add(time.Second)) {
+			t.Errorf("conflict says held since %v, want about %v", held.Since, before)
+		}
+	})
+
+	t.Run("UpdateActor_Unleased", func(t *testing.T) {
+		// A write fenced by a lease (store.Precondition.Unleased): refused
+		// while an operation holds the lease, landed while nobody does, and
+		// then an operation that arrives during the write waits for it and
+		// reads it.
+		newActor := func(t *testing.T, s store.Interface) (*ateapipb.Actor, resources.ActorRef) {
+			t.Helper()
+			mustCreateAtespace(t, s, testAtespace)
+			created, err := s.CreateActor(context.Background(), &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Name: "session-1", Atespace: testAtespace},
+				ActorTemplate: &ateapipb.ObjectRef{Atespace: "default", Name: "test-template"},
+				Status:        &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_PAUSED},
+			}, nil)
+			if err != nil {
+				t.Fatalf("CreateActor failed: %v", err)
+			}
+			return created, resources.ActorRefFromActor(created)
+		}
+		fenced := func(created *ateapipb.Actor) store.Precondition {
+			precondition := store.PreconditionFrom(created)
+			precondition.Unleased = "lease:actor:" + testAtespace + ":session-1"
+			return precondition
+		}
+		toRunning := func(dbActor *ateapipb.Actor) error {
+			dbActor.Status.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
+			return nil
+		}
+
+		t.Run("refused while the lease is held", func(t *testing.T) {
+			s := setup(t)
+			ctx := context.Background()
+			created, actorRef := newActor(t, s)
+			lease, err := s.AcquireLease(ctx, fenced(created).Unleased, "resume")
+			if err != nil {
+				t.Fatalf("AcquireLease failed: %v", err)
+			}
+			defer lease.Close()
+
+			_, err = s.UpdateActor(ctx, actorRef, fenced(created), toRunning)
+			var held *store.LeaseConflictError
+			if !errors.Is(err, store.ErrLeaseConflict) || !errors.As(err, &held) || held.Holder != "resume" {
+				t.Fatalf("fenced UpdateActor under a held lease = %v, want ErrLeaseConflict held by resume", err)
+			}
+			got, err := s.GetActor(ctx, actorRef)
+			if err != nil {
+				t.Fatalf("GetActor failed: %v", err)
+			}
+			if got.GetMetadata().GetVersion() != created.GetMetadata().GetVersion() || got.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_PAUSED {
+				t.Errorf("actor = version %d state %v, want unchanged", got.GetMetadata().GetVersion(), got.GetStatus().GetState())
+			}
+		})
+
+		t.Run("lands while the lease is free and leaves it free", func(t *testing.T) {
+			s := setup(t)
+			ctx := context.Background()
+			created, actorRef := newActor(t, s)
+
+			updated, err := s.UpdateActor(ctx, actorRef, fenced(created), toRunning)
+			if err != nil {
+				t.Fatalf("fenced UpdateActor failed: %v", err)
+			}
+			if updated.GetMetadata().GetVersion() != created.GetMetadata().GetVersion()+1 || updated.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+				t.Errorf("updated = version %d state %v, want version %d RUNNING", updated.GetMetadata().GetVersion(), updated.GetStatus().GetState(), created.GetMetadata().GetVersion()+1)
+			}
+			lease, err := s.AcquireLease(ctx, fenced(created).Unleased, "pause")
+			if err != nil {
+				t.Fatalf("AcquireLease after the fenced write failed: %v", err)
+			}
+			lease.Close()
+			if _, err := s.UpdateActor(ctx, actorRef, fenced(created), toRunning); !errors.Is(err, store.ErrVersionConflict) {
+				t.Errorf("fenced UpdateActor on the stale version = %v, want ErrVersionConflict", err)
+			}
+		})
+
+		t.Run("an operation arriving during the write waits for it", func(t *testing.T) {
+			s := setup(t)
+			ctx := context.Background()
+			created, actorRef := newActor(t, s)
+
+			inWrite := make(chan struct{})
+			finish := make(chan struct{})
+			written := make(chan error, 1)
+			go func() {
+				_, err := s.UpdateActor(ctx, actorRef, fenced(created), func(dbActor *ateapipb.Actor) error {
+					close(inWrite)
+					<-finish
+					return toRunning(dbActor)
+				})
+				written <- err
+			}()
+			<-inWrite
+
+			acquired := make(chan error, 1)
+			go func() {
+				lease, err := s.AcquireLease(ctx, fenced(created).Unleased, "pause")
+				if err == nil {
+					defer lease.Close()
+					// The lease is taken after the write landed: a read under it
+					// sees the write.
+					got, gerr := s.GetActor(ctx, actorRef)
+					if gerr != nil {
+						err = gerr
+					} else if got.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+						err = fmt.Errorf("read under the lease sees state %v, want the write's RUNNING", got.GetStatus().GetState())
+					}
+				}
+				acquired <- err
+			}()
+			select {
+			case err := <-acquired:
+				t.Fatalf("AcquireLease returned (%v) during the fenced write, want to wait for it", err)
+			case <-time.After(200 * time.Millisecond):
+			}
+			close(finish)
+			if err := <-written; err != nil {
+				t.Fatalf("fenced UpdateActor failed: %v", err)
+			}
+			select {
+			case err := <-acquired:
+				if err != nil {
+					t.Fatalf("AcquireLease after the fenced write: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("AcquireLease did not return after the fenced write landed")
+			}
+		})
 	})
 
 	t.Run("AcquireLease_NonReentry", func(t *testing.T) {
 		s := setup(t)
 		ctx := context.Background()
 
-		lease, err := s.AcquireLease(ctx, "test-lease")
+		lease, err := s.AcquireLease(ctx, "test-lease", "test")
 		if err != nil {
 			t.Fatalf("first AcquireLease failed: %v", err)
 		}
 		defer lease.Close()
 
-		if _, err := s.AcquireLease(ctx, "test-lease"); !errors.Is(err, store.ErrLeaseConflict) {
+		if _, err := s.AcquireLease(ctx, "test-lease", "test"); !errors.Is(err, store.ErrLeaseConflict) {
 			t.Errorf("reentrant AcquireLease error = %v, want ErrLeaseConflict", err)
 		}
 	})
@@ -3080,13 +3220,13 @@ func runLeaseContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 		s := setup(t)
 		ctx := context.Background()
 
-		lease, err := s.AcquireLease(ctx, "test-lease")
+		lease, err := s.AcquireLease(ctx, "test-lease", "test")
 		if err != nil {
 			t.Fatalf("AcquireLease failed: %v", err)
 		}
 		lease.Close()
 
-		newLease, err := s.AcquireLease(ctx, "test-lease")
+		newLease, err := s.AcquireLease(ctx, "test-lease", "test")
 		if err != nil {
 			t.Fatalf("AcquireLease after Close failed: %v", err)
 		}
@@ -3097,7 +3237,7 @@ func runLeaseContractTests(t *testing.T, setup func(t *testing.T) store.Interfac
 		s := setup(t)
 		ctx := context.Background()
 
-		lease, err := s.AcquireLease(ctx, "test-lease")
+		lease, err := s.AcquireLease(ctx, "test-lease", "test")
 		if err != nil {
 			t.Fatalf("AcquireLease failed: %v", err)
 		}

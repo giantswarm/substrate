@@ -621,13 +621,11 @@ func runActorLifecycleTestCase(t *testing.T, prefix string, createTemplate func(
 	//
 	// Pausing the actor
 	//
-	// The pause's background upload commits under the actor's lease, so the
-	// next operation may meet it held: pause and suspend wait it out.
+	// The pause's background upload holds no lease on the actor: the next
+	// operation, however soon, is never Aborted by it.
 	actorRef := &ateapipb.ObjectRef{Atespace: demoAtespace, Name: actorID}
 	pause := func() error {
-		_, err := e2e.AwaitActorLease(t, ctx, "PauseActor", actorRef, func() (*ateapipb.PauseActorResponse, error) {
-			return clients.SubstrateAPI.PauseActor(ctx, &ateapipb.PauseActorRequest{Actor: actorRef})
-		})
+		_, err := clients.SubstrateAPI.PauseActor(ctx, &ateapipb.PauseActorRequest{Actor: actorRef})
 		return err
 	}
 	t.Logf("Pausing Actor %q...", actorID)
@@ -665,9 +663,7 @@ func runActorLifecycleTestCase(t *testing.T, prefix string, createTemplate func(
 		waitForActorState(ctx, t, clients, actorID, ateapipb.ActorState_ACTOR_STATE_PAUSED)
 	}
 	t.Logf("Suspending Actor %q...", actorID)
-	if _, err := e2e.AwaitActorLease(t, ctx, "SuspendActor", actorRef, func() (*ateapipb.SuspendActorResponse, error) {
-		return clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: actorRef})
-	}); err != nil {
+	if _, err := clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: actorRef}); err != nil {
 		t.Fatalf("failed to suspend Actor: %v", err)
 	}
 	waitForActorState(ctx, t, clients, actorID, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)

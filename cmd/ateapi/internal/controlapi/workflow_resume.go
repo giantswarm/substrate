@@ -99,7 +99,7 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 		return actor, false, nil
 	}
 
-	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef)
+	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationResume)
 	if err != nil {
 		return nil, false, err
 	}

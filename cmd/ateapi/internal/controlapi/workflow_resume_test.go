@@ -71,9 +71,9 @@ type leaseCountingStore struct {
 	acquireCalls int
 }
 
-func (s *leaseCountingStore) AcquireLease(ctx context.Context, key string) (*store.Lease, error) {
+func (s *leaseCountingStore) AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error) {
 	s.acquireCalls++
-	return s.Interface.AcquireLease(ctx, key)
+	return s.Interface.AcquireLease(ctx, key, holder)
 }
 
 func TestResumeActor_RunningFastPathDoesNotAcquireLease(t *testing.T) {

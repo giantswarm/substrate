@@ -293,7 +293,7 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 
 		// The client's next operation on the actor: it must not wait for the
 		// object store, and must not turn into Aborted because of it.
-		_, lease, err := w.acquireActorLease(ctx, actorRef)
+		_, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationResume)
 		close(slow.unblock)
 		if err != nil {
 			t.Fatalf("acquireActorLease while the stale upload is deleted = %v, want the lease", err)
@@ -310,14 +310,17 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 	t.Run("waits for a workflow holding the actor's lease", func(t *testing.T) {
 		ctx := context.Background()
 		w, persistence, objects, actor, uploaded := seed(t)
-		held, err := persistence.AcquireLease(ctx, actorLeaseKey(actorRef))
+		held, err := persistence.AcquireLease(ctx, actorLeaseKey(actorRef), ateattr.OperationResume)
 		if err != nil {
 			t.Fatalf("AcquireLease: %v", err)
 		}
 
-		err = w.recordDurablePauseCopy(ctx, actorRef, uploaded)
-		if got := status.Code(err); got != codes.Aborted {
-			t.Fatalf("recordDurablePauseCopy under a held lease = %v, want Aborted (retried later)", err)
+		recorded := make(chan error, 1)
+		go func() { recorded <- w.recordDurablePauseCopy(ctx, actorRef, uploaded) }()
+		select {
+		case err := <-recorded:
+			t.Fatalf("recordDurablePauseCopy returned %v while the lease is held, want to wait for the holder", err)
+		case <-time.After(3 * pauseCommitRetryInterval):
 		}
 		stored, err := persistence.GetActor(ctx, actorRef)
 		if err != nil {
@@ -331,7 +334,7 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		}
 		held.Close()
 
-		if err := w.recordDurablePauseCopy(ctx, actorRef, uploaded); err != nil {
+		if err := <-recorded; err != nil {
 			t.Fatalf("recordDurablePauseCopy after the lease was released: %v", err)
 		}
 		stored, err = persistence.GetActor(ctx, actorRef)
@@ -340,6 +343,50 @@ func TestRecordDurablePauseCopy(t *testing.T) {
 		}
 		if durablePauseCopy(stored) == nil {
 			t.Error("durablePauseCopy = nil after the lease was released")
+		}
+	})
+
+	t.Run("the actor's next operation is not Aborted by a slow commit", func(t *testing.T) {
+		// The client's pause or suspend right after a resume from PAUSED: the
+		// commit of the pause's upload is in flight, its store round trips
+		// slower than any wait a client has for the actor's lease. The
+		// operation takes the lease at once; the commit then finds the actor
+		// under it, waits, and records the copy once the operation is done.
+		ctx := context.Background()
+		w, persistence, _, _, uploaded := seed(t)
+		w.store = slowReads{Interface: persistence, delay: 400 * time.Millisecond}
+
+		started := make(chan struct{})
+		recorded := make(chan error, 1)
+		go func() {
+			close(started)
+			recorded <- w.recordDurablePauseCopy(ctx, actorRef, uploaded)
+		}()
+		<-started
+		time.Sleep(50 * time.Millisecond)
+
+		start := time.Now()
+		_, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationPause)
+		if err != nil {
+			t.Fatalf("acquireActorLease while the commit is in flight = %v, want the lease", err)
+		}
+		if waited := time.Since(start); waited > 200*time.Millisecond {
+			t.Errorf("the lease took %s, want at once: the commit holds none", waited)
+		}
+		// The operation runs for longer than the commit's wait and keeps
+		// the actor paused, which is what the commit then records.
+		time.Sleep(2 * pauseCommitRetryInterval)
+		lease.Close()
+
+		if err := <-recorded; err != nil {
+			t.Fatalf("recordDurablePauseCopy: %v", err)
+		}
+		stored, err := persistence.GetActor(ctx, actorRef)
+		if err != nil {
+			t.Fatalf("GetActor: %v", err)
+		}
+		if durablePauseCopy(stored) == nil {
+			t.Error("durablePauseCopy = nil after the operation released the actor")
 		}
 	})
 
@@ -656,6 +703,18 @@ func mustParsePrefix(t *testing.T, uri string) resources.StoragePrefix {
 		t.Fatalf("ParseSnapshotURI(%q): %v", uri, err)
 	}
 	return parsed.Prefix()
+}
+
+// slowReads is a store whose actor reads take delay, the way a loaded
+// database answers.
+type slowReads struct {
+	store.Interface
+	delay time.Duration
+}
+
+func (s slowReads) GetActor(ctx context.Context, actorRef resources.ActorRef) (*ateapipb.Actor, error) {
+	time.Sleep(s.delay)
+	return s.Interface.GetActor(ctx, actorRef)
 }
 
 // blockingDeletes is an object store whose deletes wait for unblock, the way

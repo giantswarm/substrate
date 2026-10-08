@@ -158,7 +158,7 @@ func (s *fakeTemplateStore) UpdateActor(_ context.Context, ref resources.ActorRe
 	return actor, nil
 }
 
-func (s *fakeTemplateStore) AcquireLease(ctx context.Context, _ string) (*store.Lease, error) {
+func (s *fakeTemplateStore) AcquireLease(ctx context.Context, _, _ string) (*store.Lease, error) {
 	if s.leaseErr != nil {
 		return nil, s.leaseErr
 	}
