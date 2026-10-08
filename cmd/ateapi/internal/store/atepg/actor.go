@@ -103,11 +103,38 @@ func (p *Persistence) UpdateActor(ctx context.Context, actorRef resources.ActorR
 	if err := precondition.Validate(); err != nil {
 		return nil, err
 	}
+	if precondition.Unleased == "" {
+		return updateActor(ctx, p.pool, actorRef, precondition, mutate)
+	}
+	// The write takes the lease for its transaction (store.Precondition.Unleased).
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("starting the fenced update of actor %s: %w", actorRef, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	releaseFence, err := p.fenceLease(ctx, tx, precondition.Unleased, "update")
+	if err != nil {
+		return nil, err
+	}
+	updated, err := updateActor(ctx, tx, actorRef, precondition, mutate)
+	if err != nil {
+		return nil, err
+	}
+	if err := releaseFence(); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("committing the fenced update of actor %s: %w", actorRef, err)
+	}
+	return updated, nil
+}
+
+func updateActor(ctx context.Context, q querier, actorRef resources.ActorRef, precondition store.Precondition, mutate func(*ateapipb.Actor) error) (*ateapipb.Actor, error) {
 	atespace, name := actorRef.Atespace, actorRef.Name
 	var currentUID string
 	var currentVersion int64
 	var currentBytes []byte
-	if err := p.pool.QueryRow(ctx, `
+	if err := q.QueryRow(ctx, `
 			SELECT uid, version, proto FROM actors
 			WHERE atespace = $1 AND name = $2`, atespace, name).Scan(&currentUID, &currentVersion, &currentBytes); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -138,7 +165,7 @@ func (p *Persistence) UpdateActor(ctx context.Context, actorRef resources.ActorR
 	if err != nil {
 		return nil, fmt.Errorf("marshaling actor: %w", err)
 	}
-	commandTag, err := p.pool.Exec(ctx, `
+	commandTag, err := q.Exec(ctx, `
 			UPDATE actors
 			SET version = $1, proto = $2
 			WHERE atespace = $3 AND name = $4 AND uid = $5 AND version = $6`,

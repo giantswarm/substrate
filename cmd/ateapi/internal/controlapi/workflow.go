@@ -36,7 +36,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	grpcCodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/apimachinery/pkg/util/wait"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
@@ -193,7 +192,7 @@ type actorWorkflowStore interface {
 	DeleteTag(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions) (*ateapipb.Tag, error)
 	GetActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef) (*ateapipb.ActorTemplate, error)
 	DeleteActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (*ateapipb.ActorTemplate, error)
-	AcquireLease(ctx context.Context, key string) (*store.Lease, error)
+	AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error)
 }
 
 // WorkerWorkflow handles the multi-step operations on a Worker.
@@ -224,16 +223,18 @@ type workerWorkflowStore interface {
 // leaseHolder takes the distributed leases that serialize the operations on one
 // resource.
 type leaseHolder interface {
-	AcquireLease(ctx context.Context, key string) (*store.Lease, error)
+	AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error)
 }
 
-// acquireLease takes the lease named by key and returns the context to run
-// under: it is cancelled if the lease is lost. subject names what the lease
-// covers, for the message a caller that loses the race gets.
-func acquireLease(ctx context.Context, holder leaseHolder, key, subject string) (context.Context, *store.Lease, error) {
-	lease, err := holder.AcquireLease(ctx, key)
+// acquireLease takes the lease named by key for the operation named by op and
+// returns the context to run under: it is cancelled if the lease is lost.
+// subject names what the lease covers, for the message a caller that loses
+// the race gets; the operation that holds the lease is logged, not answered.
+func acquireLease(ctx context.Context, leases leaseHolder, key, op, subject string) (context.Context, *store.Lease, error) {
+	lease, err := leases.AcquireLease(ctx, key, op)
 	if err != nil {
 		if errors.Is(err, store.ErrLeaseConflict) {
+			slog.InfoContext(ctx, "Operation refused: the lease is held", slog.String("op", op), slog.String("key", key), slog.Any("err", err))
 			return nil, nil, status.Errorf(grpcCodes.Aborted, "another operation is in progress for this %s", subject)
 		}
 		return nil, nil, fmt.Errorf("while acquiring lease: %w", err)
@@ -242,45 +243,26 @@ func acquireLease(ctx context.Context, holder leaseHolder, key, subject string) 
 	return lease.Context(), lease, nil
 }
 
-// actorLeaseBackoff bounds how long a workflow waits for the actor's lease
-// when another holder has it: six attempts over about a second. The
-// background commit of a pause snapshot's durable copy holds the lease for two
-// store round trips, and a client's next operation on the actor must not turn
-// into Aborted because of it; two operations of the same kind still get
-// Aborted, a moment later than before.
-var actorLeaseBackoff = wait.Backoff{Steps: 6, Duration: 20 * time.Millisecond, Factor: 2.0, Jitter: 0.2, Cap: 400 * time.Millisecond}
-
-// acquireActorLease takes the actor's lease and returns the context the
-// workflow runs under: bounded by the workflow deadline and the lease, but not
-// by the caller's cancellation. A lifecycle workflow runs to completion once
-// it holds the lease. A caller that gives up part-way — a router whose
-// parking budget elapsed, a client whose RPC deadline passed — used to cancel
-// the restore or the checkpoint in flight, after the workflow had durably
-// claimed the worker and moved the actor to RESUMING or SUSPENDING; nothing
-// reclaims either, and every retry restarted the same work from scratch to
-// die the same way at the same budget. The caller's values (peer, trace)
-// travel on; only its cancellation is left behind. A lease another holder has
-// is retried per actorLeaseBackoff before it counts as a conflict.
-func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resources.ActorRef) (context.Context, *store.Lease, error) {
+// acquireActorLease takes the actor's lease for the lifecycle operation named
+// by op and returns the context the workflow runs under: bounded by the
+// workflow deadline and the lease, but not by the caller's cancellation. A
+// lifecycle workflow runs to completion once it holds the lease. A caller that
+// gives up part-way — a router whose parking budget elapsed, a client whose
+// RPC deadline passed — used to cancel the restore or the checkpoint in
+// flight, after the workflow had durably claimed the worker and moved the
+// actor to RESUMING or SUSPENDING; nothing reclaims either, and every retry
+// restarted the same work from scratch to die the same way at the same
+// budget. The caller's values (peer, trace) travel on; only its cancellation
+// is left behind. A lease another operation holds is Aborted at once: only
+// lifecycle operations hold it (the durable pause's background commit writes
+// under a transaction-scoped fence instead, store.Precondition.Unleased), and
+// two of them on one actor are a conflict the caller resolves.
+func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resources.ActorRef, op string) (context.Context, *store.Lease, error) {
 	workflowCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.workflowDeadline)
-	var lease *store.Lease
-	err := wait.ExponentialBackoffWithContext(workflowCtx, actorLeaseBackoff, func(ctx context.Context) (bool, error) {
-		acquired, err := w.store.AcquireLease(ctx, actorLeaseKey(actorRef))
-		if errors.Is(err, store.ErrLeaseConflict) {
-			return false, nil
-		}
-		if err != nil {
-			return false, err
-		}
-		lease = acquired
-		return true, nil
-	})
+	_, lease, err := acquireLease(workflowCtx, w.store, actorLeaseKey(actorRef), op, "actor")
 	if err != nil {
 		cancel()
-		if wait.Interrupted(err) {
-			return nil, nil, status.Errorf(grpcCodes.Aborted, "another operation is in progress for this actor")
-		}
-		return nil, nil, fmt.Errorf("while acquiring lease: %w", err)
+		return nil, nil, err
 	}
 	context.AfterFunc(lease.Context(), cancel)
 	return lease.Context(), lease, nil
@@ -291,6 +273,6 @@ func actorLeaseKey(actorRef resources.ActorRef) string {
 	return "lease:actor:" + actorRef.Atespace + ":" + actorRef.Name
 }
 
-func acquireTagLease(ctx context.Context, holder leaseHolder, tagRef resources.TagRef) (context.Context, *store.Lease, error) {
-	return acquireLease(ctx, holder, "lease:tag:"+tagRef.Atespace+":"+tagRef.Name, "Tag")
+func acquireTagLease(ctx context.Context, leases leaseHolder, tagRef resources.TagRef, op string) (context.Context, *store.Lease, error) {
+	return acquireLease(ctx, leases, "lease:tag:"+tagRef.Atespace+":"+tagRef.Name, op, "Tag")
 }

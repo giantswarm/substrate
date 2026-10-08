@@ -69,7 +69,7 @@ type templateReconcilerStore interface {
 	// UpdateActor repairs the golden actor row a release before golden tags
 	// left without the template its snapshot was built under.
 	UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.Actor) error) (*ateapipb.Actor, error)
-	AcquireLease(ctx context.Context, key string) (*store.Lease, error)
+	AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error)
 }
 
 // goldenActorControl is the in-process slice of the Control service the
@@ -177,7 +177,7 @@ func (r *ActorTemplateReconciler) processNextWorkItem(ctx context.Context) bool 
 // reentrant. A positive requeueAfter asks the caller to revisit the template
 // once its snapshot deadline (or a transitional actor state) passes.
 func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resources.ActorTemplateRef) (requeueAfter time.Duration, err error) {
-	lease, err := r.persistence.AcquireLease(ctx, "lease:actortemplate:"+ref.Atespace+":"+ref.Name)
+	lease, err := r.persistence.AcquireLease(ctx, "lease:actortemplate:"+ref.Atespace+":"+ref.Name, "template-reconcile")
 	if err != nil {
 		if errors.Is(err, store.ErrLeaseConflict) {
 			// Another replica owns this template for now.

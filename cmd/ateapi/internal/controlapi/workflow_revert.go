@@ -63,7 +63,7 @@ func (w *ActorWorkflow) RevertActor(ctx context.Context, actorRef resources.Acto
 		w.instruments.recordLifecycleOp(ctx, ateattr.OperationRevert, start, err, attrs...)
 	}()
 
-	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef)
+	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationRevert)
 	if err != nil {
 		return nil, err
 	}
