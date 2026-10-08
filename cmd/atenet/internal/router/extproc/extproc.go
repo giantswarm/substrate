@@ -25,7 +25,6 @@ package extproc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -163,11 +162,7 @@ func (s *Server) processRequestHeaders(
 			slog.String("err", err.Error()))
 		s.recorder.AddRouterRequest(start, elapsed, "Error", "-", md)
 
-		var reqErr *ReqError
-		if errors.As(err, &reqErr) {
-			return ImmediateResponse(envoy_type.StatusCode(reqErr.StatusCode), reqErr.Error())
-		}
-		return ImmediateResponse(envoy_type.StatusCode_InternalServerError, err.Error())
+		return denialResponse(md, err)
 	}
 
 	s.recorder.AddRouterRequest(start, elapsed, "Route ok", res.Target, md)
