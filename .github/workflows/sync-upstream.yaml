@@ -25,10 +25,13 @@
 #      `sync/<date>-<pin>` — whose push runs the line's required checks on it
 #      — and opens a pull request against the line; when a patch conflicts, the
 #      candidate holds what applied before it and the pull request names the
-#      rest, to be finished by hand on the same branch;
+#      rest, to be finished by hand on the same branch; the new candidate
+#      supersedes every other `sync/*` branch that no other line's open pull
+#      request holds: their pull requests are closed and the branches deleted;
 #   4. on `workflow_dispatch` with `land`, lands a candidate: once the line's
 #      required checks passed on the candidate's head, pushes exactly that
-#      commit to the line and closes the pull request. A re-pin rewrites the
+#      commit to the line, closes the pull request and deletes the candidate
+#      branch. A re-pin rewrites the
 #      line, so no merge method of the pull request can land it; the gate is
 #      the required checks on the pushed commit.
 # Pushes are made as the org's HeraldBot GitHub App (a token minted per run
@@ -200,6 +203,7 @@ jobs:
           git checkout --quiet "${HEAD_SHA}"
 
       - name: Re-pin
+        id: repin
         if: steps.line.outputs.new != steps.line.outputs.current
         env:
           CURRENT: ${{ steps.line.outputs.current }}
@@ -264,12 +268,50 @@ jobs:
             echo
             echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
+          url=""
           if [ "${DRY_RUN}" != true ]; then
             git push --force origin "HEAD:refs/heads/${branch}"
-            gh pr create --repo "${GITHUB_REPOSITORY}" --base "${LINE_BRANCH}" --head "${branch}" \
-              --title "${title}" --body-file "${RUNNER_TEMP}/body.md" >> "$GITHUB_STEP_SUMMARY"
+            url=$(gh pr create --repo "${GITHUB_REPOSITORY}" --base "${LINE_BRANCH}" --head "${branch}" \
+              --title "${title}" --body-file "${RUNNER_TEMP}/body.md")
+            echo "${url}" >> "$GITHUB_STEP_SUMMARY"
           fi
+          {
+            echo "branch=${branch}"
+            echo "url=${url}"
+          } >> "$GITHUB_OUTPUT"
           [ "${failed}" = false ]
+
+      - name: Prune the candidates the new one supersedes
+        # A candidate that conflicted still supersedes the older ones: it is
+        # the one to finish. Every other sync/* branch goes unless an open pull
+        # request against another line holds it; a branch without an open pull
+        # request cannot be landed, one against this line is replaced.
+        if: always() && steps.repin.outputs.branch != ''
+        env:
+          BRANCH: ${{ steps.repin.outputs.branch }}
+          URL: ${{ steps.repin.outputs.url }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          for candidate in $(git ls-remote --heads origin 'refs/heads/sync/*' | sed 's|.*refs/heads/||'); do
+            [ "${candidate}" != "${BRANCH}" ] || continue
+            open=$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${candidate}" --state open --json number,baseRefName)
+            other=$(jq -r --arg line "${LINE_BRANCH}" '[.[] | select(.baseRefName != $line) | "#\(.number) → \(.baseRefName)"] | join(", ")' <<<"${open}")
+            if [ -n "${other}" ]; then
+              echo "- keep \`${candidate}\`: open on another line (${other})" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            prs=$(jq -r '.[].number' <<<"${open}")
+            closes=$(jq -r 'map(", close #\(.number)") | join("")' <<<"${open}")
+            echo "- superseded \`${candidate}\`: delete${closes}" >> "$GITHUB_STEP_SUMMARY"
+            if [ "${DRY_RUN}" != true ]; then
+              for number in ${prs}; do
+                gh pr close "${number}" --repo "${GITHUB_REPOSITORY}" --comment "Superseded by the re-pin candidate \`${BRANCH}\` (${URL})."
+              done
+              git push origin --delete "${candidate}"
+            fi
+          done
 
   land:
     if: inputs.land != ''
@@ -326,4 +368,5 @@ jobs:
           if [ "${DRY_RUN}" != true ]; then
             git push --force-with-lease="refs/heads/${LINE_BRANCH}:${line}" origin "${sha}:refs/heads/${LINE_BRANCH}"
             gh pr close "${number}" --repo "${GITHUB_REPOSITORY}" --comment "Landed: \`${LINE_BRANCH}\` is now \`${sha}\`, the head the required checks passed on."
+            git push origin --delete "${CANDIDATE}"
           fi
