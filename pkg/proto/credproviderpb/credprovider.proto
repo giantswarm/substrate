@@ -16,6 +16,8 @@ syntax = "proto3";
 
 package credprovider;
 
+import "google/protobuf/duration.proto";
+
 option go_package = "github.com/agent-substrate/substrate/pkg/proto/credproviderpb";
 
 // CredentialProvider is the plugin API a secret backend implements so Substrate
@@ -66,4 +68,10 @@ message FetchSecretRequest {
 message FetchSecretResponse {
   // The raw bytes contains the secret.
   bytes opaque_bytes = 1 [ debug_redact = true ];
+
+  // How long the injector may reuse the secret for the same actor and URI.
+  // Unset keeps the injector's default; zero makes it fetch the secret again
+  // for every request. An injector never reuses a secret longer than its own
+  // default, whatever the provider answers.
+  google.protobuf.Duration max_age = 2;
 }
