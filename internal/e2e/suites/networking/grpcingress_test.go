@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/agent-substrate/substrate/internal/ateclient"
 	"github.com/agent-substrate/substrate/internal/atenet"
@@ -254,6 +255,64 @@ func TestIngressGRPC(t *testing.T) {
 		}
 		if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
 			t.Errorf("EchoBidi Recv after CloseSend = %v, want io.EOF", err)
+		}
+	})
+}
+
+// TestIngressDenialProtocol pins how the router answers a request it denies:
+// in the caller's own protocol. A gRPC call gets a gRPC status a standard
+// client reads (the code and the router's reason, in grpc-status and
+// grpc-message beside content-type application/grpc), never a text body it
+// cannot parse; a plain HTTP request keeps its status code and text.
+//
+// A missing Actor is the denial here because it is deterministic; an Actor
+// whose lease another operation holds takes the same path with the Aborted
+// code (cmd/atenet/internal/router/extproc), and no e2e can hold an Actor's
+// lease past the router's resume budget on demand.
+func TestIngressDenialProtocol(t *testing.T) {
+	ctx := context.Background()
+	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: "no-such-actor"}
+	address := routerAddress(t, ctx)
+
+	t.Run("gRPC call gets a gRPC status", func(t *testing.T) {
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("creating the gRPC client: %v", err)
+		}
+		defer conn.Close()
+		rpcCtx, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, atenet.TargetActorHeader, actorRef.String()), 30*time.Second)
+		defer cancel()
+
+		_, err = grpcechopb.NewEchoClient(conn).Echo(rpcCtx, &grpcechopb.EchoRequest{Message: "anyone there?"})
+		st, ok := status.FromError(err)
+		if err == nil || !ok {
+			t.Fatalf("Echo to missing actor %s = %v, want a gRPC status", actorRef, err)
+		}
+		if want := e2e.CurrentAtenetDataplane().MissingActorGRPCCode(); st.Code() != want {
+			t.Errorf("Echo to missing actor %s: code = %v (message %q), want %v", actorRef, st.Code(), st.Message(), want)
+		}
+		if !strings.Contains(st.Message(), "not found") {
+			t.Errorf("Echo to missing actor %s: message = %q, want the router's reason", actorRef, st.Message())
+		}
+	})
+
+	t.Run("HTTP request keeps its status and text", func(t *testing.T) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+"/readyz", http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(atenet.TargetActorHeader, actorRef.String())
+		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("GET to missing actor %s: %v", actorRef, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(body), "not found") {
+			t.Errorf("GET to missing actor %s = %d %q, want 404 saying it is not found", actorRef, resp.StatusCode, body)
+		}
+		if got := resp.Header.Get("Grpc-Status"); got != "" {
+			t.Errorf("GET to missing actor %s carries grpc-status %q, want none", actorRef, got)
 		}
 	})
 }
