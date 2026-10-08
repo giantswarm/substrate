@@ -104,6 +104,8 @@ var (
 	actorWorkflowDeadline  = pflag.Duration("actor-workflow-deadline", 5*time.Minute, "Maximum wall-clock duration of a single Resume/Suspend workflow; raise it for slow image registries.")
 	actorRestoreBudget     = pflag.Duration("actor-restore-budget", 90*time.Second, "Budget of one atelet restore attempt within a Resume workflow, a cold image pull and unpack included. An attempt that exceeds it is retried, up to 3 attempts within --actor-workflow-deadline; an actor whose restore keeps exceeding it is crashed with the budget named in its crash message. 0 leaves an attempt bounded by the workflow deadline alone.")
 
+	actorTransitionResyncInterval = pflag.Duration("actor-transition-resync-interval", 30*time.Second, fmt.Sprintf("Interval between scans for Actors left SUSPENDING or PAUSING by a lost request; such an Actor is finished once it is older than --actor-workflow-deadline. Must be at least %s.", minResyncInterval))
+
 	showVersion  = pflag.Bool("version", false, "Print version and exit.")
 	logLevelFlag = pflag.String("log-level", "info", "Minimum log level: debug, info, warn, or error.")
 )
@@ -125,6 +127,9 @@ func main() {
 	slog.InfoContext(ctx, "ateapi starting", slog.String("version", version.Version))
 	if *templateResyncInterval < minResyncInterval {
 		serverboot.Fatal(ctx, "Invalid --template-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
+	}
+	if *actorTransitionResyncInterval < minResyncInterval {
+		serverboot.Fatal(ctx, "Invalid --actor-transition-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
 	}
 	resolvedActorJWTIssuer, err := resolveActorJWTIssuer(*actorJWTIssuer, installdefaults.NamespaceFromPodEnv())
 	if err != nil {
@@ -317,6 +322,10 @@ func main() {
 	workerAssignmentReconciler := controlapi.NewWorkerAssignmentReconciler(persistence, workerCache)
 	workerAssignmentReconciler.Start(shutdownCtx)
 
+	// Finish the suspends and pauses whose ate-api request was lost.
+	actorTransitionReconciler := controlapi.NewActorTransitionReconciler(persistence, controlSrv, *actorTransitionResyncInterval, *actorWorkflowDeadline)
+	actorTransitionReconciler.Start(shutdownCtx)
+
 	lisCfg := &net.ListenConfig{}
 	lis, err := lisCfg.Listen(ctx, "tcp", *listenAddr)
 	if err != nil {
@@ -453,6 +462,7 @@ func logFlagValues(ctx context.Context) {
 		slog.Duration("drain-timeout", *drainTimeout),
 		slog.Duration("actor-workflow-deadline", *actorWorkflowDeadline),
 		slog.Duration("actor-restore-budget", *actorRestoreBudget),
+		slog.Duration("actor-transition-resync-interval", *actorTransitionResyncInterval),
 	)
 }
 
