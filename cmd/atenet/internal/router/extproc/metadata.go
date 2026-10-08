@@ -100,3 +100,12 @@ func (m *RequestMetadata) Attribute(name string) string {
 	}
 	return ""
 }
+
+// IsGRPC reports whether the request is a gRPC call: its content-type is
+// application/grpc, alone or with a "+format" suffix or parameters, which is
+// how the dataplane itself tells a gRPC request (and answers one in kind).
+func (m *RequestMetadata) IsGRPC() bool {
+	contentType := strings.ToLower(m.Headers["content-type"])
+	rest, ok := strings.CutPrefix(contentType, "application/grpc")
+	return ok && (rest == "" || rest[0] == '+' || rest[0] == ';')
+}

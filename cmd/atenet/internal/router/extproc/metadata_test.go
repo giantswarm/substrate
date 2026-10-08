@@ -168,3 +168,23 @@ func TestRequestMetadataAttributeNumber(t *testing.T) {
 		t.Errorf("Attribute() for a number = %q, want %q", got, want)
 	}
 }
+
+func TestRequestMetadataIsGRPC(t *testing.T) {
+	t.Parallel()
+
+	for contentType, want := range map[string]bool{
+		"application/grpc":                true,
+		"Application/GRPC":                true,
+		"application/grpc+proto":          true,
+		"application/grpc;charset=utf-8":  true,
+		"application/grpc-web":            false,
+		"application/grpc-web-text+proto": false,
+		"application/json":                false,
+		"":                                false,
+	} {
+		md := &RequestMetadata{Headers: map[string]string{"content-type": contentType}}
+		if got := md.IsGRPC(); got != want {
+			t.Errorf("IsGRPC() for content-type %q = %v, want %v", contentType, got, want)
+		}
+	}
+}
