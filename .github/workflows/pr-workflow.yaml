@@ -253,24 +253,52 @@ jobs:
         name: test-results-e2e-${{ matrix.dataplane }}
         path: ${{ env.ARTIFACTS }}
         if-no-files-found: error
+    # Each pod's whole log goes to the diagnostics artifact: a tail covers only
+    # the last seconds of a busy control plane, long after the test failed. The
+    # inline output stays a first look: the failed tests with the time they
+    # failed, the pods, and the end of each log.
     - name: Dump diagnostics on failure
       if: failure()
+      env:
+        DIAGNOSTICS: ${{ runner.temp }}/diagnostics
+        DIAGNOSTICS_ARTIFACT: diagnostics-e2e-${{ matrix.dataplane }}
       run: |
-        kubectl --context kind-kind get workerpool,pods -A -o wide || true
+        k() { kubectl --context kind-kind "$@"; }
+        mkdir -p "${DIAGNOSTICS}"
+        echo "=== failed tests (from each lane's go test event stream) ==="
+        for f in "${ARTIFACTS}"/e2e-*.json; do
+          [ -f "$f" ] || continue
+          jq -r --arg lane "$(basename "$f" .json)" \
+            'select(.Action == "fail" and .Test) | "\(.Time) \($lane) \(.Test)"' "$f" || true
+        done | tee "${DIAGNOSTICS}/failed-tests.txt"
+        k get workerpool,pods -A -o wide 2>&1 | tee "${DIAGNOSTICS}/pods.txt" || true
+        k get events -A --sort-by=.lastTimestamp > "${DIAGNOSTICS}/events.txt" 2>&1 || true
         dump() {
-          echo "=== logs: $1/$2 ==="
-          kubectl --context kind-kind logs -n "$1" "$2" --all-containers --tail=300 2>/dev/null || true
+          local log="${DIAGNOSTICS}/$1/$2.log"
+          mkdir -p "${DIAGNOSTICS}/$1"
+          k logs -n "$1" "$2" --all-containers --timestamps > "${log}" 2>&1 || true
+          # A restarted container's earlier run is often where the failure is.
+          k logs -n "$1" "$2" --all-containers --timestamps --previous \
+            > "${log%.log}.previous.log" 2>/dev/null || rm -f "${log%.log}.previous.log"
+          echo "=== logs: $1/$2 (last 50 lines) ==="
+          tail -n 50 "${log}"
         }
-        for p in $(kubectl --context kind-kind get pods -n ate-system -o name 2>/dev/null); do
-          dump ate-system "$p"
-        done
-        # Every worker pod in any namespace: the demo pools plus the e2e suites'
-        # randomly-named per-test namespaces, which the suites keep on failure.
-        # The failing actor runs in one of these, so this is where its ateom logs
-        # (and, for a micro-VM worker, the guest console tail) live.
-        kubectl --context kind-kind get pods -A -l ate.dev/worker-pool \
-          -o 'custom-columns=:.metadata.namespace,:.metadata.name' --no-headers 2>/dev/null \
+        pods() { k get pods "$@" -o 'custom-columns=:.metadata.namespace,:.metadata.name' --no-headers 2>/dev/null || true; }
+        # The control plane, then every worker pod in any namespace: the demo
+        # pools plus the e2e suites' randomly-named per-test namespaces, which
+        # the suites keep on failure. The failing actor runs in one of these, so
+        # this is where its ateom logs (and, for a micro-VM worker, the guest
+        # console tail) live.
+        { pods -n ate-system; pods -A -l ate.dev/worker-pool; } \
           | while read -r ns name; do dump "$ns" "$name"; done
+        echo "Whole logs, events and pods: artifact ${DIAGNOSTICS_ARTIFACT} of this run."
+    - name: Upload diagnostics
+      if: failure()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: diagnostics-e2e-${{ matrix.dataplane }}
+        path: ${{ runner.temp }}/diagnostics
+        if-no-files-found: warn
   # Preserve the required-check name for the dataplane matrix above.
   e2e-test:
     name: e2e-test
