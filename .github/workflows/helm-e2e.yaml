@@ -31,167 +31,167 @@ jobs:
       E2E_CREDENTIAL_PROVIDER: "1"
       ARTIFACTS: ${{ github.workspace }}/_artifacts
     steps:
-    - name: Checkout
-      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-    - name: Setup Go
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-      with:
-        go-version-file: go.mod
-    - name: Setup Helm
-      uses: azure/setup-helm@v4
-    - name: Test Helm chart
-      run: |
-        helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.0.3 --verify=false
-        make helm-test
-    - name: Cache micro-VM assets
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: bin/microvm-assets/amd64
-        key: microvm-assets-amd64-${{ hashFiles('hack/microvm-assets/assemble.sh') }}
-    - name: Enable KVM
-      run: |
-        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-        sudo udevadm control --reload-rules
-        sudo udevadm trigger --name-match=kvm
-    - name: Create cluster
-      run: hack/create-kind-cluster.sh
-    - name: Label nodes with the installed version
-      run: kubectl label nodes --all ate.dev/substrate-version=${VERSION}
-    - name: Create install namespace
-      run: kubectl create namespace ate-system
-    - name: Install observability fixtures
-      run: |
-        kubectl apply -f manifests/ate-install/kind/otel-collector.yaml
-        kubectl apply -f manifests/ate-install/kind/prometheus.yaml
-    - name: Build chart images
-      run: |
-        # Pushed under the image's real path (kagent-dev/substrate/<component>):
-        # the chart composes {registry}/{repository}/{component}, so the local
-        # registry serves each image where the default repository expects it --
-        # the same path-preserving rule a production mirror follows.
-        for component in ateapi atecontroller atelet ateom-gvisor podcertcontroller atenet credential-provider/kubernetes-secrets; do
-          KO_DOCKER_REPO="localhost:5001/kagent-dev/substrate/${component##*/}" \
-            ./hack/run-tool.sh ko build --bare --tags helm-e2e \
-              --platform linux/amd64 "./cmd/${component}"
-        done
-    - name: Install Agent Substrate with Helm
-      run: |
-        helm upgrade --install substrate-crds charts/substrate-crds
-        helm upgrade --install substrate charts/substrate \
-          --namespace ate-system \
-          --create-namespace \
-          -f internal/e2e/suites/credentials/values.yaml \
-          --set image.registry=localhost:5001 \
-          --set image.tag=helm-e2e \
-          --set 'atelet.extraArgs[0]=--localhost-registry-replacement=kind-registry:5000' \
-          --set otel.endpoint=http://opentelemetry-collector.otel-system.svc:4317 \
-          --set postgres.resources.requests.cpu=500m \
-          --set atenetRouter.requestParking.budget=5s
-    - name: Bootstrap mTLS authorities
-      run: |
-        hack/install-ate-kind.sh --create-podcertificate-controller-cas
-        hack/install-ate-kind.sh --create-jwt-authority-pool-secret
-        hack/install-ate-kind.sh --create-actor-id-ca-pool-secret
-        hack/install-ate-kind.sh --create-actor-id-ca-certs-secret
-        hack/install-ate-kind.sh --create-api-authentication-config
-        hack/install-ate-kind.sh --create-egress-mitm-ca-pool-secret
-    - name: Wait for Helm install
-      run: |
-        helm upgrade substrate charts/substrate \
-          --namespace ate-system \
-          --reuse-values \
-          --wait --timeout=10m
-    - name: Enable NFS
-      run: |
-        sudo modprobe nfs || true
-        sudo modprobe nfsd || true
-    - name: Install CSI NFS driver
-      run: hack/install-ate-kind.sh --setup-csi=nfs
-    - name: Deploy micro-VM counter demo
-      # The deploy creates the substrate ActorTemplate and waits for its golden
-      # snapshot internally; the ActorTemplate CRD (and its Ready condition)
-      # no longer exists to wait on.
-      run: hack/run-microvm-demo-kind.sh --skip-control-plane
-    - name: Deploy gVisor counter demo
-      run: hack/install-ate-kind.sh --deploy-demo-counter
-    - name: Deploy egress demo
-      run: hack/install-ate-kind.sh --deploy-demo-egress
-    - name: Keep a gVisor pool that names an older worker on this release's
-      # The shape of an installation whose WorkerPool names the worker of the
-      # Substrate release it was rendered for while a newer release runs
-      # atelet: the pool must still run this build, or the actors the gVisor
-      # suites below start on it meet an ateom of another protocol version.
-      run: |
-        want=localhost:5001/kagent-dev/substrate/ateom-gvisor:${VERSION}
-        kubectl -n ate-demo-counter patch workerpool counter --type merge \
-          -p '{"spec":{"workerImage":"gsoci.azurecr.io/giantswarm/substrate/ateom-gvisor:1.3.0"}}'
-        kubectl -n ate-demo-counter rollout status deployment/counter --timeout=5m
-        got=$(kubectl -n ate-demo-counter get deployment counter \
-          -o jsonpath='{.spec.template.spec.containers[?(@.name=="ateom")].image}')
-        if [[ "${got}" != "${want}" ]]; then
-          echo "counter workers run ${got}, want ${want}" >&2
-          exit 1
-        fi
-    - name: Run E2E tests (gVisor)
-      # Identity rotates the cluster-wide egress CA. Run it last so HTTPS
-      # tests keep a stable trust bundle and gateway signing certificate.
-      env:
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-gvisor.xml
-      run: hack/run-e2e-kind.sh -v -skip '^TestActorIdentity_' -args --no-color
-    - name: Run E2E tests (micro-VM)
-      env:
-        E2E_SANDBOX_CLASS: microvm
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-microvm.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/demo -v -args --no-color
-    - name: Run E2E tests (atelet restart)
-      # Deletes the atelet pod of a running actor's node and requires the next
-      # suspend to commit a snapshot within a client's 30 s budget, as after a
-      # DaemonSet roll. Its own step: nothing may use that atelet beside it.
-      env:
-        E2E_ATELET_RESTART: "1"
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-atelet-restart.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/ateletrestart -v -args --no-color
-    - name: Run E2E tests (identity and trust rotation)
-      env:
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-identity.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
-    - name: Run E2E tests (egress MITM CA rotation)
-      # Rotates the egress MITM CA (add-ca, activate-ca, retire-ca) while
-      # long-running, resumed and new actors fetch through the gateway, and
-      # requires that no fetch fails. Here rather than in pr-workflow because
-      # it proves the chart's data plane: the gateway has to reload tls.crt and
-      # tls.key as one pair. Its own step: it changes the pool every other MITM
-      # test depends on, so nothing may run beside it.
-      env:
-        E2E_EGRESS_MITM_ROTATION: "1"
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-mitm-rotation.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
-    - name: Run E2E tests (egress MITM CA rotation, micro-VM)
-      # The same rotation on the micro-VM runtime, which delivers the bundle
-      # over the virtio-fs share and restores actors with the snapshot's clock.
-      env:
-        E2E_EGRESS_MITM_ROTATION: "1"
-        E2E_SANDBOX_CLASS: microvm
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-mitm-rotation-microvm.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
-    - name: Require every lane to have run tests
-      if: always()
-      run: |
-        make build-junittool
-        bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: test-results-helm-e2e
-        path: ${{ env.ARTIFACTS }}
-        if-no-files-found: error
-    - name: Dump diagnostics on failure
-      if: failure()
-      run: |
-        kubectl --context kind-kind get workerpool,pods -A -o wide || true
-        for p in $(kubectl --context kind-kind get pods -n ate-system -o name 2>/dev/null); do
-          echo "=== logs: ate-system/${p} ==="
-          kubectl --context kind-kind logs -n ate-system "$p" --all-containers --tail=300 || true
-        done
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+      - name: Test Helm chart
+        run: |
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.0.3 --verify=false
+          make helm-test
+      - name: Cache micro-VM assets
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: bin/microvm-assets/amd64
+          key: microvm-assets-amd64-${{ hashFiles('hack/microvm-assets/assemble.sh') }}
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Create cluster
+        run: hack/create-kind-cluster.sh
+      - name: Label nodes with the installed version
+        run: kubectl label nodes --all ate.dev/substrate-version=${VERSION}
+      - name: Create install namespace
+        run: kubectl create namespace ate-system
+      - name: Install observability fixtures
+        run: |
+          kubectl apply -f manifests/ate-install/kind/otel-collector.yaml
+          kubectl apply -f manifests/ate-install/kind/prometheus.yaml
+      - name: Build chart images
+        run: |
+          # Pushed under the image's real path (kagent-dev/substrate/<component>):
+          # the chart composes {registry}/{repository}/{component}, so the local
+          # registry serves each image where the default repository expects it --
+          # the same path-preserving rule a production mirror follows.
+          for component in ateapi atecontroller atelet ateom-gvisor podcertcontroller atenet credential-provider/kubernetes-secrets; do
+            KO_DOCKER_REPO="localhost:5001/kagent-dev/substrate/${component##*/}" \
+              ./hack/run-tool.sh ko build --bare --tags helm-e2e \
+                --platform linux/amd64 "./cmd/${component}"
+          done
+      - name: Install Agent Substrate with Helm
+        run: |
+          helm upgrade --install substrate-crds charts/substrate-crds
+          helm upgrade --install substrate charts/substrate \
+            --namespace ate-system \
+            --create-namespace \
+            -f internal/e2e/suites/credentials/values.yaml \
+            --set image.registry=localhost:5001 \
+            --set image.tag=helm-e2e \
+            --set 'atelet.extraArgs[0]=--localhost-registry-replacement=kind-registry:5000' \
+            --set otel.endpoint=http://opentelemetry-collector.otel-system.svc:4317 \
+            --set postgres.resources.requests.cpu=500m \
+            --set atenetRouter.requestParking.budget=5s
+      - name: Bootstrap mTLS authorities
+        run: |
+          hack/install-ate-kind.sh --create-podcertificate-controller-cas
+          hack/install-ate-kind.sh --create-jwt-authority-pool-secret
+          hack/install-ate-kind.sh --create-actor-id-ca-pool-secret
+          hack/install-ate-kind.sh --create-actor-id-ca-certs-secret
+          hack/install-ate-kind.sh --create-api-authentication-config
+          hack/install-ate-kind.sh --create-egress-mitm-ca-pool-secret
+      - name: Wait for Helm install
+        run: |
+          helm upgrade substrate charts/substrate \
+            --namespace ate-system \
+            --reuse-values \
+            --wait --timeout=10m
+      - name: Enable NFS
+        run: |
+          sudo modprobe nfs || true
+          sudo modprobe nfsd || true
+      - name: Install CSI NFS driver
+        run: hack/install-ate-kind.sh --setup-csi=nfs
+      - name: Deploy micro-VM counter demo
+        # The deploy creates the substrate ActorTemplate and waits for its golden
+        # snapshot internally; the ActorTemplate CRD (and its Ready condition)
+        # no longer exists to wait on.
+        run: hack/run-microvm-demo-kind.sh --skip-control-plane
+      - name: Deploy gVisor counter demo
+        run: hack/install-ate-kind.sh --deploy-demo-counter
+      - name: Deploy egress demo
+        run: hack/install-ate-kind.sh --deploy-demo-egress
+      - name: Keep a gVisor pool that names an older worker on this release's
+        # The shape of an installation whose WorkerPool names the worker of the
+        # Substrate release it was rendered for while a newer release runs
+        # atelet: the pool must still run this build, or the actors the gVisor
+        # suites below start on it meet an ateom of another protocol version.
+        run: |
+          want=localhost:5001/kagent-dev/substrate/ateom-gvisor:${VERSION}
+          kubectl -n ate-demo-counter patch workerpool counter --type merge \
+            -p '{"spec":{"workerImage":"gsoci.azurecr.io/giantswarm/substrate/ateom-gvisor:1.3.0"}}'
+          kubectl -n ate-demo-counter rollout status deployment/counter --timeout=5m
+          got=$(kubectl -n ate-demo-counter get deployment counter \
+            -o jsonpath='{.spec.template.spec.containers[?(@.name=="ateom")].image}')
+          if [[ "${got}" != "${want}" ]]; then
+            echo "counter workers run ${got}, want ${want}" >&2
+            exit 1
+          fi
+      - name: Run E2E tests (gVisor)
+        # Identity rotates the cluster-wide egress CA. Run it last so HTTPS
+        # tests keep a stable trust bundle and gateway signing certificate.
+        env:
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-gvisor.xml
+        run: hack/run-e2e-kind.sh -v -skip '^TestActorIdentity_' -args --no-color
+      - name: Run E2E tests (micro-VM)
+        env:
+          E2E_SANDBOX_CLASS: microvm
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-microvm.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/demo -v -args --no-color
+      - name: Run E2E tests (atelet restart)
+        # Deletes the atelet pod of a running actor's node and requires the next
+        # suspend to commit a snapshot within a client's 30 s budget, as after a
+        # DaemonSet roll. Its own step: nothing may use that atelet beside it.
+        env:
+          E2E_ATELET_RESTART: "1"
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-atelet-restart.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/ateletrestart -v -args --no-color
+      - name: Run E2E tests (identity and trust rotation)
+        env:
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-identity.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
+      - name: Run E2E tests (egress MITM CA rotation)
+        # Rotates the egress MITM CA (add-ca, activate-ca, retire-ca) while
+        # long-running, resumed and new actors fetch through the gateway, and
+        # requires that no fetch fails. Here rather than in pr-workflow because
+        # it proves the chart's data plane: the gateway has to reload tls.crt and
+        # tls.key as one pair. Its own step: it changes the pool every other MITM
+        # test depends on, so nothing may run beside it.
+        env:
+          E2E_EGRESS_MITM_ROTATION: "1"
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-mitm-rotation.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
+      - name: Run E2E tests (egress MITM CA rotation, micro-VM)
+        # The same rotation on the micro-VM runtime, which delivers the bundle
+        # over the virtio-fs share and restores actors with the snapshot's clock.
+        env:
+          E2E_EGRESS_MITM_ROTATION: "1"
+          E2E_SANDBOX_CLASS: microvm
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-mitm-rotation-microvm.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
+      - name: Require every lane to have run tests
+        if: always()
+        run: |
+          make build-junittool
+          bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-helm-e2e
+          path: ${{ env.ARTIFACTS }}
+          if-no-files-found: error
+      - name: Dump diagnostics on failure
+        if: failure()
+        run: |
+          kubectl --context kind-kind get workerpool,pods -A -o wide || true
+          for p in $(kubectl --context kind-kind get pods -n ate-system -o name 2>/dev/null); do
+            echo "=== logs: ate-system/${p} ==="
+            kubectl --context kind-kind logs -n ate-system "$p" --all-containers --tail=300 || true
+          done

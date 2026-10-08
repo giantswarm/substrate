@@ -46,81 +46,81 @@ jobs:
       # a shared path means the last writer wins.
       ARTIFACTS: ${{ github.workspace }}/_artifacts
     steps:
-    - name: Checkout
-      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      with:
-        fetch-depth: 0
-    - name: Setup Go
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-      with:
-        go-version-file: 'go.mod'
-    # Unconditional: a released migration becoming permanent is exactly what
-    # this guards, and that happens on the push to main, not on the PR.
-    - name: Verify immutable PostgreSQL migrations
-      run: hack/verify/postgresql-migrations.sh
-    # gotestsum wraps go test to emit JUnit; the go test arguments are unchanged.
-    - name: unit tests
-      run: hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/unit.xml"
-        --jsonfile "${ARTIFACTS}/unit.json" --format standard-verbose
-        -- -race -v ./...
-    # tools/apitool has its own module so we need to run it explicitly.
-    # run-tool.sh resolves the repo root itself, so it works from the subdir.
-    - name: apitool tests
-      working-directory: tools/apitool
-      run: ../../hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/apitool.xml"
-        --jsonfile "${ARTIFACTS}/apitool.json" --format standard-verbose
-        -- -race -v ./...
-    # Kept apart from the root module so it can move to its own repository.
-    - name: gcp-secret-manager credential provider tests
-      working-directory: internal/plugins/gcp-secret-manager
-      run: ../../../hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/gcp-secret-manager.xml"
-        --jsonfile "${ARTIFACTS}/gcp-secret-manager.json" --format standard-verbose
-        -- -race -v ./...
-    # The root verifiers stop at the module's go.mod, so it gets its own run:
-    # gofmt, go vet and the tidy check, then golangci-lint with the root config.
-    - name: gcp-secret-manager credential provider verify
-      working-directory: internal/plugins/gcp-secret-manager
-      run: |
-        make verify
-        ../../../hack/run-tool.sh golangci-lint run --config ../../../.golangci.yaml ./...
-    - name: Cache cargo
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: |
-          ~/.cargo/registry/index
-          ~/.cargo/registry/cache
-          ~/.cargo/git/db
-          cmd/dataplane/envoy/dynamic-modules/*/target
-        key: cargo-${{ runner.os }}-${{ hashFiles('cmd/dataplane/envoy/dynamic-modules/*/Cargo.lock') }}
-        restore-keys: cargo-${{ runner.os }}-
-    - name: dynamic module tests
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq --no-install-recommends clang libclang-dev
-        make test-dynamic-modules
-    # Root-gated tests (overlay mounts, whiteout mknod, trusted.* xattrs, ...)
-    # skip for the unprivileged runner user above; rerun the packages that
-    # contain them (any test importing internal/roottest) under sudo.
-    - name: root-gated tests
-      env:
-        ROOT_JUNIT_FILE: ${{ github.workspace }}/_artifacts/root.xml
-      run: hack/run-root-tests.sh -race -v
-    # An exit code cannot distinguish "all passed" from "none ran". A registered
-    # file that was never written fails too.
-    - name: Require tests to have run
-      if: always()
-      run: |
-        make build-junittool
-        bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: test-results-unit
-        path: ${{ env.ARTIFACTS }}
-        if-no-files-found: error
-    - name: verify
-      run: hack/verify-all.sh
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: 'go.mod'
+      # Unconditional: a released migration becoming permanent is exactly what
+      # this guards, and that happens on the push to main, not on the PR.
+      - name: Verify immutable PostgreSQL migrations
+        run: hack/verify/postgresql-migrations.sh
+      # gotestsum wraps go test to emit JUnit; the go test arguments are unchanged.
+      - name: unit tests
+        run: hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/unit.xml"
+          --jsonfile "${ARTIFACTS}/unit.json" --format standard-verbose
+          -- -race -v ./...
+      # tools/apitool has its own module so we need to run it explicitly.
+      # run-tool.sh resolves the repo root itself, so it works from the subdir.
+      - name: apitool tests
+        working-directory: tools/apitool
+        run: ../../hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/apitool.xml"
+          --jsonfile "${ARTIFACTS}/apitool.json" --format standard-verbose
+          -- -race -v ./...
+      # Kept apart from the root module so it can move to its own repository.
+      - name: gcp-secret-manager credential provider tests
+        working-directory: internal/plugins/gcp-secret-manager
+        run: ../../../hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/gcp-secret-manager.xml"
+          --jsonfile "${ARTIFACTS}/gcp-secret-manager.json" --format standard-verbose
+          -- -race -v ./...
+      # The root verifiers stop at the module's go.mod, so it gets its own run:
+      # gofmt, go vet and the tidy check, then golangci-lint with the root config.
+      - name: gcp-secret-manager credential provider verify
+        working-directory: internal/plugins/gcp-secret-manager
+        run: |
+          make verify
+          ../../../hack/run-tool.sh golangci-lint run --config ../../../.golangci.yaml ./...
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            cmd/dataplane/envoy/dynamic-modules/*/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('cmd/dataplane/envoy/dynamic-modules/*/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+      - name: dynamic module tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends clang libclang-dev
+          make test-dynamic-modules
+      # Root-gated tests (overlay mounts, whiteout mknod, trusted.* xattrs, ...)
+      # skip for the unprivileged runner user above; rerun the packages that
+      # contain them (any test importing internal/roottest) under sudo.
+      - name: root-gated tests
+        env:
+          ROOT_JUNIT_FILE: ${{ github.workspace }}/_artifacts/root.xml
+        run: hack/run-root-tests.sh -race -v
+      # An exit code cannot distinguish "all passed" from "none ran". A registered
+      # file that was never written fails too.
+      - name: Require tests to have run
+        if: always()
+        run: |
+          make build-junittool
+          bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-unit
+          path: ${{ env.ARTIFACTS }}
+          if-no-files-found: error
+      - name: verify
+        run: hack/verify-all.sh
   # One kind cluster exercises BOTH runtimes. Free x86-64 ubuntu-latest runners
   # expose /dev/kvm (with a udev rule), so create-kind-cluster.sh mounts it and the
   # micro-VM (kata + cloud-hypervisor) sandbox class works alongside gVisor.
@@ -134,7 +134,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - dataplane: agentgateway
+          - dataplane: agentgateway
     env:
       E2E_ATENET_DATAPLANE: ${{ matrix.dataplane }}
       # The installer requires a credential provider selection, and deploys the
@@ -147,151 +147,151 @@ jobs:
       # job, so one job-level path would have each overwrite the last.
       ARTIFACTS: ${{ github.workspace }}/_artifacts
     steps:
-    - name: Checkout
-      uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-    - name: Setup Go
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-      with:
-        go-version-file: 'go.mod'
-    - name: Cache micro-VM assets
-      id: microvm-assets
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        # Assembling the assets (download kata-static + cloud-hypervisor + the
-        # prebuilt virtiofsd — all downloads on amd64) is fully pinned by assemble.sh,
-        # so key the cache on its hash. The push-to-main run populates the
-        # default-branch cache PRs inherit; the weekly schedule refreshes it.
-        # run-microvm-demo-kind.sh skips assembling when these are present.
-        path: bin/microvm-assets/amd64
-        key: microvm-assets-amd64-${{ hashFiles('hack/microvm-assets/assemble.sh') }}
-    - name: Enable KVM
-      # Grant the runner access to /dev/kvm so create-kind-cluster.sh mounts it into
-      # the node and labels it for the micro-VM sandbox class.
-      run: |
-        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-          | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-        sudo udevadm control --reload-rules
-        sudo udevadm trigger --name-match=kvm
-    - name: Create cluster
-      run: hack/create-kind-cluster.sh
-    - name: Install Agent Substrate (${{ matrix.dataplane }})
-      # The dataplane selection applies to both the ingress router and egress
-      # gateway.
-      run: hack/install-ate-kind.sh --deploy-ate-system --atenet-dataplane=${{ matrix.dataplane }} --rollout-timeout=300s
-    - name: Enable NFS
-      # Load NFS kernel modules so in-cluster NFS server and CSI driver can run.
-      run: |
-        sudo modprobe nfs || true
-        sudo modprobe nfsd || true
-    - name: Install CSI NFS driver
-      run: hack/install-ate-kind.sh --setup-csi=nfs
-    - name: Deploy micro-VM counter demo
-      # Stages the (cached) assets into the cluster's rustfs and deploys the
-      # counter-microvm demo onto the control plane installed above.
-      run: hack/run-microvm-demo-kind.sh --skip-control-plane
-    - name: Deploy gVisor counter demo
-      run: hack/install-ate-kind.sh --deploy-demo-counter
-    - name: Deploy egress demos
-      # TestActorEgress in the networking suite builds its Actor from the egress
-      # ActorTemplate for the class under test, so both fixtures have to exist
-      # before their respective lane runs. The demo's actors trust the CA the
-      # gateway mints its leaves from.
-      run: |
-        hack/install-ate-kind.sh --deploy-demo-egress
-        hack/install-ate-kind.sh --deploy-demo-egress-microvm
-    - name: Run E2E tests (gVisor)
-      env:
-        # Gates the injection suite. Injection happens inside the gateway, so
-        # the sandbox class does not matter and only this lane runs it.
-        E2E_EGRESS_CREDINJECT: ${{ matrix.dataplane == 'envoy' && '1' || '' }}
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-gvisor.xml
-      # The identity suite runs last and alone (see below), not here.
-      run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
-    - name: Run E2E tests (micro-VM)
-      # The same suites again, with every fixture repointed at its micro-VM
-      # variant by the single E2E_SANDBOX_CLASS knob (see internal/e2e/sandbox.go).
-      # Sequential with the gVisor lane above, not concurrent: a suite releases
-      # its namespace — and with it its worker pods — as each test passes, so the
-      # two runs do not contend for the one kind node.
-      env:
-        E2E_SANDBOX_CLASS: microvm
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-microvm.xml
-      run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
-    - name: Run E2E tests (identity, gVisor)
-      # The suite rotates the cluster-wide egress CA pool, and
-      # the gateway picks a rotation up only once kubelet has propagated the
-      # Secret into its pod, so until then it signs with a CA no actor trusts.
-      # Nothing that does TLS through the gateway can run alongside it.
-      env:
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-gvisor.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
-    - name: Run E2E tests (identity, micro-VM)
-      env:
-        E2E_SANDBOX_CLASS: microvm
-        E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-microvm.xml
-      run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
-    # Every lane must have reported tests; a `-run` filter that stops matching
-    # otherwise leaves its lane green and empty. The set comes from the manifest
-    # each lane registers itself in, so adding a lane needs no change here, and
-    # run-e2e.sh refuses to run in CI without E2E_JUNIT_FILE.
-    - name: Require every lane to have run tests
-      if: always()
-      run: |
-        make build-junittool
-        bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
-    - name: Upload test results
-      if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: test-results-e2e-${{ matrix.dataplane }}
-        path: ${{ env.ARTIFACTS }}
-        if-no-files-found: error
-    # Each pod's whole log goes to the diagnostics artifact: a tail covers only
-    # the last seconds of a busy control plane, long after the test failed. The
-    # inline output stays a first look: the failed tests with the time they
-    # failed, the pods, and the end of each log.
-    - name: Dump diagnostics on failure
-      if: failure()
-      env:
-        DIAGNOSTICS: ${{ runner.temp }}/diagnostics
-        DIAGNOSTICS_ARTIFACT: diagnostics-e2e-${{ matrix.dataplane }}
-      run: |
-        k() { kubectl --context kind-kind "$@"; }
-        mkdir -p "${DIAGNOSTICS}"
-        echo "=== failed tests (from each lane's go test event stream) ==="
-        for f in "${ARTIFACTS}"/e2e-*.json; do
-          [ -f "$f" ] || continue
-          jq -r --arg lane "$(basename "$f" .json)" \
-            'select(.Action == "fail" and .Test) | "\(.Time) \($lane) \(.Test)"' "$f" || true
-        done | tee "${DIAGNOSTICS}/failed-tests.txt"
-        k get workerpool,pods -A -o wide 2>&1 | tee "${DIAGNOSTICS}/pods.txt" || true
-        k get events -A --sort-by=.lastTimestamp > "${DIAGNOSTICS}/events.txt" 2>&1 || true
-        dump() {
-          local log="${DIAGNOSTICS}/$1/$2.log"
-          mkdir -p "${DIAGNOSTICS}/$1"
-          k logs -n "$1" "$2" --all-containers --timestamps > "${log}" 2>&1 || true
-          # A restarted container's earlier run is often where the failure is.
-          k logs -n "$1" "$2" --all-containers --timestamps --previous \
-            > "${log%.log}.previous.log" 2>/dev/null || rm -f "${log%.log}.previous.log"
-          echo "=== logs: $1/$2 (last 50 lines) ==="
-          tail -n 50 "${log}"
-        }
-        pods() { k get pods "$@" -o 'custom-columns=:.metadata.namespace,:.metadata.name' --no-headers 2>/dev/null || true; }
-        # The control plane, then every worker pod in any namespace: the demo
-        # pools plus the e2e suites' randomly-named per-test namespaces, which
-        # the suites keep on failure. The failing actor runs in one of these, so
-        # this is where its ateom logs (and, for a micro-VM worker, the guest
-        # console tail) live.
-        { pods -n ate-system; pods -A -l ate.dev/worker-pool; } \
-          | while read -r ns name; do dump "$ns" "$name"; done
-        echo "Whole logs, events and pods: artifact ${DIAGNOSTICS_ARTIFACT} of this run."
-    - name: Upload diagnostics
-      if: failure()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-      with:
-        name: diagnostics-e2e-${{ matrix.dataplane }}
-        path: ${{ runner.temp }}/diagnostics
-        if-no-files-found: warn
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: 'go.mod'
+      - name: Cache micro-VM assets
+        id: microvm-assets
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # Assembling the assets (download kata-static + cloud-hypervisor + the
+          # prebuilt virtiofsd — all downloads on amd64) is fully pinned by assemble.sh,
+          # so key the cache on its hash. The push-to-main run populates the
+          # default-branch cache PRs inherit; the weekly schedule refreshes it.
+          # run-microvm-demo-kind.sh skips assembling when these are present.
+          path: bin/microvm-assets/amd64
+          key: microvm-assets-amd64-${{ hashFiles('hack/microvm-assets/assemble.sh') }}
+      - name: Enable KVM
+        # Grant the runner access to /dev/kvm so create-kind-cluster.sh mounts it into
+        # the node and labels it for the micro-VM sandbox class.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Create cluster
+        run: hack/create-kind-cluster.sh
+      - name: Install Agent Substrate (${{ matrix.dataplane }})
+        # The dataplane selection applies to both the ingress router and egress
+        # gateway.
+        run: hack/install-ate-kind.sh --deploy-ate-system --atenet-dataplane=${{ matrix.dataplane }} --rollout-timeout=300s
+      - name: Enable NFS
+        # Load NFS kernel modules so in-cluster NFS server and CSI driver can run.
+        run: |
+          sudo modprobe nfs || true
+          sudo modprobe nfsd || true
+      - name: Install CSI NFS driver
+        run: hack/install-ate-kind.sh --setup-csi=nfs
+      - name: Deploy micro-VM counter demo
+        # Stages the (cached) assets into the cluster's rustfs and deploys the
+        # counter-microvm demo onto the control plane installed above.
+        run: hack/run-microvm-demo-kind.sh --skip-control-plane
+      - name: Deploy gVisor counter demo
+        run: hack/install-ate-kind.sh --deploy-demo-counter
+      - name: Deploy egress demos
+        # TestActorEgress in the networking suite builds its Actor from the egress
+        # ActorTemplate for the class under test, so both fixtures have to exist
+        # before their respective lane runs. The demo's actors trust the CA the
+        # gateway mints its leaves from.
+        run: |
+          hack/install-ate-kind.sh --deploy-demo-egress
+          hack/install-ate-kind.sh --deploy-demo-egress-microvm
+      - name: Run E2E tests (gVisor)
+        env:
+          # Gates the injection suite. Injection happens inside the gateway, so
+          # the sandbox class does not matter and only this lane runs it.
+          E2E_EGRESS_CREDINJECT: ${{ matrix.dataplane == 'envoy' && '1' || '' }}
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-gvisor.xml
+        # The identity suite runs last and alone (see below), not here.
+        run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
+      - name: Run E2E tests (micro-VM)
+        # The same suites again, with every fixture repointed at its micro-VM
+        # variant by the single E2E_SANDBOX_CLASS knob (see internal/e2e/sandbox.go).
+        # Sequential with the gVisor lane above, not concurrent: a suite releases
+        # its namespace — and with it its worker pods — as each test passes, so the
+        # two runs do not contend for the one kind node.
+        env:
+          E2E_SANDBOX_CLASS: microvm
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-microvm.xml
+        run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
+      - name: Run E2E tests (identity, gVisor)
+        # The suite rotates the cluster-wide egress CA pool, and
+        # the gateway picks a rotation up only once kubelet has propagated the
+        # Secret into its pod, so until then it signs with a CA no actor trusts.
+        # Nothing that does TLS through the gateway can run alongside it.
+        env:
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-gvisor.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
+      - name: Run E2E tests (identity, micro-VM)
+        env:
+          E2E_SANDBOX_CLASS: microvm
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-microvm.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
+      # Every lane must have reported tests; a `-run` filter that stops matching
+      # otherwise leaves its lane green and empty. The set comes from the manifest
+      # each lane registers itself in, so adding a lane needs no change here, and
+      # run-e2e.sh refuses to run in CI without E2E_JUNIT_FILE.
+      - name: Require every lane to have run tests
+        if: always()
+        run: |
+          make build-junittool
+          bin/junittool verify -manifest "${ARTIFACTS}/expected-junit.txt"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-e2e-${{ matrix.dataplane }}
+          path: ${{ env.ARTIFACTS }}
+          if-no-files-found: error
+      # Each pod's whole log goes to the diagnostics artifact: a tail covers only
+      # the last seconds of a busy control plane, long after the test failed. The
+      # inline output stays a first look: the failed tests with the time they
+      # failed, the pods, and the end of each log.
+      - name: Dump diagnostics on failure
+        if: failure()
+        env:
+          DIAGNOSTICS: ${{ runner.temp }}/diagnostics
+          DIAGNOSTICS_ARTIFACT: diagnostics-e2e-${{ matrix.dataplane }}
+        run: |
+          k() { kubectl --context kind-kind "$@"; }
+          mkdir -p "${DIAGNOSTICS}"
+          echo "=== failed tests (from each lane's go test event stream) ==="
+          for f in "${ARTIFACTS}"/e2e-*.json; do
+            [ -f "$f" ] || continue
+            jq -r --arg lane "$(basename "$f" .json)" \
+              'select(.Action == "fail" and .Test) | "\(.Time) \($lane) \(.Test)"' "$f" || true
+          done | tee "${DIAGNOSTICS}/failed-tests.txt"
+          k get workerpool,pods -A -o wide 2>&1 | tee "${DIAGNOSTICS}/pods.txt" || true
+          k get events -A --sort-by=.lastTimestamp > "${DIAGNOSTICS}/events.txt" 2>&1 || true
+          dump() {
+            local log="${DIAGNOSTICS}/$1/$2.log"
+            mkdir -p "${DIAGNOSTICS}/$1"
+            k logs -n "$1" "$2" --all-containers --timestamps > "${log}" 2>&1 || true
+            # A restarted container's earlier run is often where the failure is.
+            k logs -n "$1" "$2" --all-containers --timestamps --previous \
+              > "${log%.log}.previous.log" 2>/dev/null || rm -f "${log%.log}.previous.log"
+            echo "=== logs: $1/$2 (last 50 lines) ==="
+            tail -n 50 "${log}"
+          }
+          pods() { k get pods "$@" -o 'custom-columns=:.metadata.namespace,:.metadata.name' --no-headers 2>/dev/null || true; }
+          # The control plane, then every worker pod in any namespace: the demo
+          # pools plus the e2e suites' randomly-named per-test namespaces, which
+          # the suites keep on failure. The failing actor runs in one of these, so
+          # this is where its ateom logs (and, for a micro-VM worker, the guest
+          # console tail) live.
+          { pods -n ate-system; pods -A -l ate.dev/worker-pool; } \
+            | while read -r ns name; do dump "$ns" "$name"; done
+          echo "Whole logs, events and pods: artifact ${DIAGNOSTICS_ARTIFACT} of this run."
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: diagnostics-e2e-${{ matrix.dataplane }}
+          path: ${{ runner.temp }}/diagnostics
+          if-no-files-found: warn
   # Preserve the required-check name for the dataplane matrix above.
   e2e-test:
     name: e2e-test
@@ -299,7 +299,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-    - name: Require E2E matrix success
-      env:
-        MATRIX_RESULT: ${{ needs.e2e-test-matrix.result }}
-      run: test "$MATRIX_RESULT" = success
+      - name: Require E2E matrix success
+        env:
+          MATRIX_RESULT: ${{ needs.e2e-test-matrix.result }}
+        run: test "$MATRIX_RESULT" = success
