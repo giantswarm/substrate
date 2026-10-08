@@ -21,7 +21,7 @@ kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/
 | `fork/<topic>` | pull-request branches against `giantswarm` | anyone in the team |
 | `release-1.0` | **The 1.0 line** for installations whose kagent speaks the v0.0.29 ate-api contract (kagent-upstream 1.0.x): `v1.0.1` plus what a 1.0.x patch needs, cut when `giantswarm` has already moved to a newer pin (it moved to v0.2.0-beta4 on 2026-09-22, a contract change the kagent line moves with). Pull requests against it are rebase-merged like the line's; its releases are `vX.Y.Z` tags on it, published by the same pipeline. Its ledger is this file on `giantswarm`; the branch's own copy carries the same rows for the tagged tree. Retired once the fleet's kagent is past the v0.0.29 contract. | pull requests; the same suites as `giantswarm` run on a pull request against it |
 | `release-1.3` | **The 1.3 line** for installations on the meta chart's Substrate range `>=1.3.0 <1.4.0` once `giantswarm` moved to the v0.3.0-alpha3 pin (1.4.0): `v1.3.0` plus what a 1.3.x patch needs. Pull requests against it are rebase-merged; its releases are `v1.3.Z` tags on it, published by the same pipeline. Its ledger is this file on `giantswarm`; the branch's own copy carries the same rows for the tagged tree. Retired once the fleet runs 1.4. | pull requests |
-| `sync/<date>-<pin>` | re-pin candidates (`sync/<date>-<line>-<pin>` for a maintenance line): the new pin + the replayed carried patches, each with a pull request against its line that is reviewed and closed by the landing, never merged | the sync workflow; a human finishes one whose replay conflicted |
+| `sync/<date>-<pin>` | re-pin candidates (`sync/<date>-<line>-<pin>` for a maintenance line): the new pin + the replayed carried patches, each with a pull request against its line that is reviewed and closed by the landing, never merged; the landing deletes the branch, and the next re-pin's sync deletes every candidate it supersedes (any `sync/*` branch no other line's open pull request holds) | the sync workflow; a human finishes one whose replay conflicted |
 
 ## Pin
 
@@ -260,7 +260,8 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
    maintenance line (`release-1.3`) instead of `giantswarm`. The workflow mirrors `main`, rebases the carried
    patches onto the tag, runs `go build ./... && go test ./...`, pushes the candidate to `sync/<date>-<tag>` and
    opens a pull request against the line that lists the replayed patches and records the line head it was
-   replayed from. The candidate's push runs the line's suites on its head (`pr-workflow` with the required
+   replayed from; it closes the pull requests of the candidates it supersedes and deletes their branches, every
+   `sync/*` branch but one an open pull request against another line holds. The candidate's push runs the line's suites on its head (`pr-workflow` with the required
    `run-tests`, `helm-e2e`, `govulncheck`) — the pull request itself runs nothing, a rebased branch has no merge
    commit.
    - On a conflict the candidate holds the patches that applied before it and the pull request names the
@@ -269,12 +270,12 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
    - Review the candidate in its pull request. Once `run-tests` and `govulncheck` passed on its head, run the
      workflow with `land` = the candidate branch (and the same `line`): it refuses a candidate whose required
      checks did not pass on its head or whose recorded line head is no longer the line's, pushes exactly that
-     head to the line, and closes the pull request. **Never merge it**, through GitHub or `devctl pr merge`: the
+     head to the line, closes the pull request and deletes the branch. **Never merge it**, through GitHub or `devctl pr merge`: the
      line is a rebased branch, no merge method lands a rewrite (a rebase merge replays upstream's commits onto the
      old line and conflicts), and a merge would fold the old pin back in. The push to `giantswarm` publishes the
      dev build.
    - `dry_run: true` does everything except the pushes; the run summary shows the candidate, the pull request it
-     would open and, for `land`, the checks and the push it would make.
+     would open, the candidates it would prune and, for `land`, the checks and the push it would make.
 3. In a pull request: this file (pin, carried patches), the pin annotation of the six push jobs in
    `.circleci/config.yml` (`index:io.giantswarm.upstream.version=<tag>` — every image carries the pin from there),
    and the Substrate rows of #37742.
