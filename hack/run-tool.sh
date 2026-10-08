@@ -31,6 +31,24 @@ TOOL_NAME="$1"
 shift
 
 ROOT="$(git rev-parse --show-toplevel)"
+
+# yamllint is a Python tool, not a Go tool: run it from a virtualenv built from
+# the pinned hack/tools/yamllint/requirements.txt, cached outside the repository.
+if [ "${TOOL_NAME}" = "yamllint" ]; then
+  REQUIREMENTS="${ROOT}/hack/tools/yamllint/requirements.txt"
+  VENV="${XDG_CACHE_HOME:-${HOME}/.cache}/substrate-tools/yamllint-$(cksum < "${REQUIREMENTS}" | cut -d' ' -f1)"
+  if [ ! -x "${VENV}/bin/yamllint" ]; then
+    python3 -m venv "${VENV}" >&2
+    "${VENV}/bin/pip" install --quiet --require-virtualenv -r "${REQUIREMENTS}" >&2
+  fi
+  TOOL_BIN="${VENV}/bin/yamllint"
+  if [ "${PRINT_PATH}" = true ]; then
+    echo "${TOOL_BIN}"
+    exit 0
+  fi
+  exec "${TOOL_BIN}" "$@"
+fi
+
 case "${TOOL_NAME}" in
   "client-gen"|"informer-gen"|"lister-gen"|"validation-gen")
     TOOL_DIR="${ROOT}/hack/tools/code-generator"
