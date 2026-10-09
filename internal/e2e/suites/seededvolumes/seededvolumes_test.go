@@ -249,17 +249,22 @@ func createActor(ctx context.Context, clients *e2e.Clients, tmpl *ateapipb.Actor
 	})
 }
 
-// startActor creates and resumes an actor and registers its deletion.
-func startActor(ctx context.Context, t *testing.T, clients *e2e.Clients, tmpl *ateapipb.ActorTemplate, ref resources.ActorRef, seeds ...*ateapipb.VolumeSeed) {
-	t.Helper()
-	if _, err := createActor(ctx, clients, tmpl, ref, seeds...); err != nil {
-		t.Fatalf("CreateActor %s: %v", ref, err)
-	}
+// deleteActorAtEnd registers the deletion of an actor when the whole suite
+// ends: a later subtest uses an actor an earlier one started.
+func deleteActorAtEnd(t *testing.T, clients *e2e.Clients, ref resources.ActorRef) {
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
 		_, _ = clients.SubstrateAPI.SuspendActor(cleanupCtx, &ateapipb.SuspendActorRequest{Actor: ref.ToObjectRef()})
 		_, _ = clients.SubstrateAPI.DeleteActor(cleanupCtx, &ateapipb.DeleteActorRequest{Actor: ref.ToObjectRef()})
 	})
+}
+
+// startActor creates and resumes an actor.
+func startActor(ctx context.Context, t *testing.T, clients *e2e.Clients, tmpl *ateapipb.ActorTemplate, ref resources.ActorRef, seeds ...*ateapipb.VolumeSeed) {
+	t.Helper()
+	if _, err := createActor(ctx, clients, tmpl, ref, seeds...); err != nil {
+		t.Fatalf("CreateActor %s: %v", ref, err)
+	}
 	if _, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: ref.ToObjectRef()}); err != nil {
 		t.Fatalf("ResumeActor %s: %v", ref, err)
 	}
@@ -363,6 +368,9 @@ func TestSeededVolumes(t *testing.T) {
 	actorA := resources.ActorRef{Atespace: atespace, Name: "seeded-a-" + ns.Name}
 	actorB := resources.ActorRef{Atespace: atespace, Name: "seeded-b-" + ns.Name}
 	unseeded := resources.ActorRef{Atespace: atespace, Name: "unseeded-" + ns.Name}
+	for _, ref := range []resources.ActorRef{actorA, actorB, unseeded} {
+		deleteActorAtEnd(t, clients, ref)
+	}
 	seedPath := mountPath + "/" + seedFile
 	writtenPath := mountPath + "/written-by-a.txt"
 
