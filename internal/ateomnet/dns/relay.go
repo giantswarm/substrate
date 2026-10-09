@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -182,10 +183,15 @@ func (r *Relay) servePacket(ctx context.Context, pc net.PacketConn) error {
 		go func() {
 			defer wg.Done()
 			defer func() { <-r.inFlight }()
+			// A failed query fails the actor's lookup too, often its whole search
+			// list: name the query so the worker's log shows which one and why.
 			answer, err := r.exchangeUDP(ctx, query)
 			if err != nil {
-				slog.WarnContext(ctx, "dns relay could not resolve an actor DNS query", slog.Any("err", err))
+				slog.WarnContext(ctx, "dns relay could not resolve an actor DNS query", questionAttr(query), slog.Any("err", err))
 				return
+			}
+			if rcode, ok := failoverRcode(answer); ok {
+				slog.WarnContext(ctx, "dns relay returned a resolver failure for an actor DNS query", questionAttr(query), slog.Any("err", rcodeError(rcode)))
 			}
 			if _, err := pc.WriteTo(answer, from); err != nil && ctx.Err() == nil {
 				slog.WarnContext(ctx, "dns relay could not return a DNS answer", slog.Any("err", err))
@@ -376,6 +382,62 @@ func rcodeError(rcode byte) error {
 		return errors.New("answered REFUSED")
 	}
 	return fmt.Errorf("answered rcode %d", rcode)
+}
+
+// questionAttr logs a query's first question as "name TYPE", read from the
+// message without decompressing: a query's question carries no pointers.
+func questionAttr(msg []byte) slog.Attr {
+	name, qtype, ok := question(msg)
+	if !ok {
+		return slog.String("query", "unparsable")
+	}
+	return slog.String("query", name+" "+qtype)
+}
+
+func question(msg []byte) (name, qtype string, ok bool) {
+	if len(msg) < 12 || msg[4] == 0 && msg[5] == 0 {
+		return "", "", false
+	}
+	var labels []string
+	i := 12
+	for i < len(msg) && msg[i] != 0 {
+		n := int(msg[i])
+		if n > 63 || i+1+n > len(msg) {
+			return "", "", false
+		}
+		labels = append(labels, string(msg[i+1:i+1+n]))
+		i += 1 + n
+	}
+	if i+3 > len(msg) {
+		return "", "", false
+	}
+	return strings.Join(labels, ".") + ".", typeName(uint16(msg[i+1])<<8 | uint16(msg[i+2])), true
+}
+
+func typeName(t uint16) string {
+	switch t {
+	case 1:
+		return "A"
+	case 2:
+		return "NS"
+	case 5:
+		return "CNAME"
+	case 6:
+		return "SOA"
+	case 12:
+		return "PTR"
+	case 15:
+		return "MX"
+	case 16:
+		return "TXT"
+	case 28:
+		return "AAAA"
+	case 33:
+		return "SRV"
+	case 65:
+		return "HTTPS"
+	}
+	return "TYPE" + strconv.Itoa(int(t))
 }
 
 // closerFunc adapts a cancel function to io.Closer, so a caller takes a

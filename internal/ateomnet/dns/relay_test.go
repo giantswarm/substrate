@@ -19,9 +19,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -469,6 +471,69 @@ func TestRelayReturnsServerFailureWhenAllFail(t *testing.T) {
 		t.Errorf("answer rcode = %d, want the last resolver's %d", got, rcodeRefused)
 	}
 }
+
+// A failed query usually fails the actor's lookup, so the worker's log names
+// the query: the cause of a sandbox's "Could not resolve host" is then visible.
+func TestRelayLogsTheQueryItCouldNotResolve(t *testing.T) {
+	var mu sync.Mutex
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return logs.Write(p)
+	}), nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	sick := newFakeResolver(t, func(query []byte) []byte { return dnsAnswer(query, rcodeServFail) })
+	relay, err := NewRelayForUpstreams([]string{sick})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := serveRelayUDP(t, relay)
+	if _, err := client.Write(dnsQuery(0x4567)); err != nil {
+		t.Fatal(err)
+	}
+	if got := readWithin(t, client)[3] & 0x0f; got != rcodeServFail {
+		t.Fatalf("answer rcode = %d, want the resolver's SERVFAIL", got)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, want := range []string{"resolver failure", `query="example.com. A"`, "answered SERVFAIL"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("log lacks %q:\n%s", want, logs.String())
+		}
+	}
+}
+
+func TestQuestion(t *testing.T) {
+	aaaa := dnsQuery(1)
+	aaaa[len(aaaa)-3] = 28
+	for _, tc := range []struct {
+		name  string
+		msg   []byte
+		want  string
+		valid bool
+	}{
+		{name: "A", msg: dnsQuery(1), want: "example.com. A", valid: true},
+		{name: "AAAA", msg: aaaa, want: "example.com. AAAA", valid: true},
+		{name: "no question", msg: dnsQuery(1)[:12]},
+		{name: "truncated label", msg: dnsQuery(1)[:15]},
+		{name: "short header", msg: []byte{0, 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			name, qtype, ok := question(tc.msg)
+			if ok != tc.valid || ok && name+" "+qtype != tc.want {
+				t.Errorf("question() = %q %q %v, want %q %v", name, qtype, ok, tc.want, tc.valid)
+			}
+		})
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 // NXDOMAIN is an answer, not a failure: failing over would ask every resolver
 // about a name that does not exist.

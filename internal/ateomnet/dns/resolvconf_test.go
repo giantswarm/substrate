@@ -106,6 +106,45 @@ func TestSandboxResolvConfKeepsSearchAndOptions(t *testing.T) {
 	}
 }
 
+// The node's search domains reach cluster DNS only as queries it forwards to
+// the node's resolvers, tried before every cluster name under ndots:5; one that
+// times out ends the whole lookup in c-ares and musl.
+func TestSandboxResolvConfDropsTheNodeSearchDomains(t *testing.T) {
+	for _, tc := range []struct {
+		name, search, want string
+	}{
+		{
+			name:   "kubelet list with the node's domains",
+			search: "search kagent.svc.cluster.local svc.cluster.local cluster.local abc.ex.internal.cloudapp.net corp.example",
+			want:   "search kagent.svc.cluster.local svc.cluster.local cluster.local",
+		},
+		{
+			name:   "custom cluster domain, any case",
+			search: "search team.svc.Fleet.Example svc.fleet.example fleet.example eu-west-1.compute.internal",
+			want:   "search team.svc.Fleet.Example svc.fleet.example fleet.example",
+		},
+		{
+			name:   "a list kubelet did not write is kept",
+			search: "search svc.cluster.local corp.example",
+			want:   "search svc.cluster.local corp.example",
+		},
+		{
+			name:   "kubelet list without node domains is unchanged",
+			search: "search ate-demo.svc.cluster.local svc.cluster.local cluster.local",
+			want:   "search ate-demo.svc.cluster.local svc.cluster.local cluster.local",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pod := "nameserver 10.96.0.10\n" + tc.search + "\noptions ndots:5\n"
+			got := string(SandboxResolvConf("169.254.17.1", []byte(pod)))
+			want := "nameserver 169.254.17.1\n" + tc.want + "\noptions ndots:5\n"
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("actor resolv.conf mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestWriteRootfsResolvConf(t *testing.T) {
 	rootfs := t.TempDir()
 	if err := WriteRootfsResolvConf(rootfs, []byte("nameserver 169.254.17.1\n")); err != nil {
