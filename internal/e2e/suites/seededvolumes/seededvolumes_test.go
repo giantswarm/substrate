@@ -256,7 +256,9 @@ func startActor(ctx context.Context, t *testing.T, clients *e2e.Clients, tmpl *a
 		t.Fatalf("CreateActor %s: %v", ref, err)
 	}
 	t.Cleanup(func() {
-		_, _ = clients.SubstrateAPI.DeleteActor(context.Background(), &ateapipb.DeleteActorRequest{Actor: ref.ToObjectRef()})
+		cleanupCtx := context.Background()
+		_, _ = clients.SubstrateAPI.SuspendActor(cleanupCtx, &ateapipb.SuspendActorRequest{Actor: ref.ToObjectRef()})
+		_, _ = clients.SubstrateAPI.DeleteActor(cleanupCtx, &ateapipb.DeleteActorRequest{Actor: ref.ToObjectRef()})
 	})
 	if _, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: ref.ToObjectRef()}); err != nil {
 		t.Fatalf("ResumeActor %s: %v", ref, err)
@@ -407,6 +409,10 @@ func TestSeededVolumes(t *testing.T) {
 		volumeID := storageVolumeID(ctx, t, clients, actorA)
 		if has, err := driverHasVolume(volumeID); err != nil || !has {
 			t.Fatalf("driver holds volume %q before the delete = %v, %v; want true", volumeID, has, err)
+		}
+		// A running actor is not deletable; the suspend detaches its volume.
+		if _, err := clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: actorA.ToObjectRef()}); err != nil {
+			t.Fatalf("SuspendActor: %v", err)
 		}
 		if _, err := clients.SubstrateAPI.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: actorA.ToObjectRef()}); err != nil {
 			t.Fatalf("DeleteActor: %v", err)
