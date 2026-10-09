@@ -39,7 +39,10 @@ func ToGRPCStatusError(errs field.ErrorList) error {
 }
 
 // DeepEqual compares two values of any type, using proto.Equal if both are
-// proto messages, and reflect.DeepEqual otherwise. Declarative validation's
+// proto messages or slices of them (a repeated message field), and
+// reflect.DeepEqual otherwise. reflect.DeepEqual must not see a message: it
+// compares the message's internal state, such as the size cache a marshal
+// fills, so a message and its clone would differ. Declarative validation's
 // generated code reaches it through each generating package's ateDeepEqual.
 func DeepEqual[T any](a, b T) bool {
 	asProto := func(x any) proto.Message {
@@ -53,8 +56,23 @@ func DeepEqual[T any](a, b T) bool {
 	if pa, pb := asProto(a), asProto(b); pa != nil && pb != nil {
 		return proto.Equal(pa, pb)
 	}
+	if va, vb := reflect.ValueOf(a), reflect.ValueOf(b); va.Kind() == reflect.Slice && vb.Kind() == reflect.Slice &&
+		va.Type().Elem().Implements(protoMessageType) {
+		// A nil and an empty repeated field are the same field value.
+		if va.Len() != vb.Len() {
+			return false
+		}
+		for i := range va.Len() {
+			if !proto.Equal(va.Index(i).Interface().(proto.Message), vb.Index(i).Interface().(proto.Message)) {
+				return false
+			}
+		}
+		return true
+	}
 	return reflect.DeepEqual(a, b)
 }
+
+var protoMessageType = reflect.TypeFor[proto.Message]()
 
 // ValidateResourceName checks that a string conforms to Agent Substrate's
 // rules for a resource name, which is a subset of the rules for an RFC-1123
