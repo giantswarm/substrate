@@ -152,6 +152,26 @@ func TestValidateCreateActorRequest(t *testing.T) {
 		"invalid actor.source_tag.name",
 		validReq(validActor(withSourceTag("as", "invalid value"))),
 		field.ErrorList{field.Invalid(field.NewPath("actor", "source_tag", "name"), nil, "").WithOrigin("format=k8s-short-name")},
+	}, {
+		"seed without a capacity",
+		validReq(validActor(withSeedCapacity(""))),
+		nil,
+	}, {
+		"seed with a capacity",
+		validReq(validActor(withSeedCapacity("20Gi"))),
+		nil,
+	}, {
+		"seed capacity that is no quantity",
+		validReq(validActor(withSeedCapacity("twenty gigs"))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "volume_seeds").Index(0).Child("capacity"), "twenty gigs", "must be a Kubernetes resource quantity")},
+	}, {
+		"seed capacity of zero",
+		validReq(validActor(withSeedCapacity("0"))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "volume_seeds").Index(0).Child("capacity"), "0", "must be positive")},
+	}, {
+		"seed capacity that is too long",
+		validReq(validActor(withSeedCapacity(strings.Repeat("1", 31) + "Gi"))),
+		field.ErrorList{field.TooLong(field.NewPath("actor", "volume_seeds").Index(0).Child("capacity"), "", 32).WithOrigin("maxLength")},
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1002,6 +1022,14 @@ func withActorActorTemplate(atespace, name string) func(*ateapipb.Actor) {
 // the actor's source_tag to a valid value.
 func withActorSourceTag(atespace, name string) func(*ateapipb.Actor) {
 	return func(a *ateapipb.Actor) { a.SourceTag = &ateapipb.ObjectRef{Atespace: atespace, Name: name} }
+}
+
+// withSeedCapacity returns a modifier func (see validActor) which gives the
+// actor one valid volume seed with the given capacity.
+func withSeedCapacity(capacity string) func(*ateapipb.Actor) {
+	return func(a *ateapipb.Actor) {
+		a.VolumeSeeds = []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "hostpath.csi.k8s.io", SnapshotHandle: "snap-1", Capacity: capacity}}
+	}
 }
 
 // withActorWorkerAssignment returns a modifier func (see validActor) which sets

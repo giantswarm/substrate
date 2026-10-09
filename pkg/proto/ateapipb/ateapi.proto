@@ -504,6 +504,15 @@ message VolumeSeed {
   // +k8s:maxLength=256
   // +k8s:customValidation # no control characters
   string snapshot_handle = 3;
+
+  // capacity of this actor's volume, in Kubernetes resource.Quantity string
+  // form (e.g. "20Gi"). Empty takes the template's capacity. It must hold the
+  // snapshot: a capacity below the snapshot's size is refused at create.
+  //
+  // +k8s:optional
+  // +k8s:maxLength=32 # matches ExternalVolumeTemplate.capacity's bound
+  // +k8s:customValidation # must parse as a positive resource.Quantity
+  string capacity = 4;
 }
 
 // EgressPolicy is an egress policy resource nested under an Actor. An Actor has

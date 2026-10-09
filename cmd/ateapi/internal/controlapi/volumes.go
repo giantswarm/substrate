@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -70,6 +71,15 @@ func volumeSeed(seeds []*ateapipb.VolumeSeed, volumeName string) *ateapipb.Volum
 		}
 	}
 	return nil
+}
+
+// volumeCapacity is the capacity to create an actor's external volume with:
+// its seed's, when the seed names one, otherwise the template's.
+func volumeCapacity(evt *ateapipb.ExternalVolumeTemplate, seed *ateapipb.VolumeSeed) string {
+	if c := seed.GetCapacity(); c != "" {
+		return c
+	}
+	return evt.GetCapacity()
 }
 
 // validateVolumeSeeds checks a CreateActor's seeds against the template and
@@ -119,6 +129,15 @@ func validateVolumeSeeds(ctx context.Context, registry VolumePluginRegistry, scL
 			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: driver %q holds no snapshot %q", volName, seed.GetDriver(), handle)
 		case !snap.ReadyToUse:
 			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: snapshot %q in driver %q is not ready to use", volName, handle, seed.GetDriver())
+		}
+
+		capacity := volumeCapacity(evt, seed)
+		q, err := resource.ParseQuantity(capacity)
+		if err != nil {
+			return status.Errorf(codes.InvalidArgument, "seed for volume %q: capacity %q: %v", volName, capacity, err)
+		}
+		if snap.SizeBytes > 0 && q.Value() < snap.SizeBytes {
+			return status.Errorf(codes.InvalidArgument, "seed for volume %q: capacity %s is smaller than snapshot %q (%d bytes)", volName, capacity, handle, snap.SizeBytes)
 		}
 	}
 	return nil
@@ -179,14 +198,13 @@ func createActorVolumes(ctx context.Context, registry VolumePluginRegistry, scLi
 			return resultVolumes, status.Errorf(codes.FailedPrecondition, "volume %q has mismatched type %q (expected %q from StorageClass %q)", volName, vol.GetVolumeType(), sc.Provisioner, scName)
 		}
 
-		var sourceSnapshotID string
+		var seed *ateapipb.VolumeSeed
 		if specVol.GetExternalVolumeTemplate().GetSeeded() {
-			seed := volumeSeed(seeds, volName)
-			if seed == nil {
+			if seed = volumeSeed(seeds, volName); seed == nil {
 				return resultVolumes, status.Errorf(codes.FailedPrecondition, "seeded volume %q has no seed on the actor", volName)
 			}
-			sourceSnapshotID = seed.GetSnapshotHandle()
 		}
+		sourceSnapshotID := seed.GetSnapshotHandle()
 
 		plugin, err := registry.GetPlugin(ctx, vol.GetVolumeType())
 		if err != nil {
@@ -195,7 +213,7 @@ func createActorVolumes(ctx context.Context, registry VolumePluginRegistry, scLi
 
 		resp, volErr := plugin.CreateVolume(ctx, volume.CreateVolumeRequest{
 			Name:             actVolID,
-			Capacity:         specVol.GetExternalVolumeTemplate().GetCapacity(),
+			Capacity:         volumeCapacity(specVol.GetExternalVolumeTemplate(), seed),
 			Parameters:       sc.Parameters,
 			DriverName:       sc.Provisioner,
 			SourceSnapshotID: sourceSnapshotID,

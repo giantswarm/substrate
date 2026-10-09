@@ -56,6 +56,8 @@ const (
 	volumeName = "workspace"
 	mountPath  = "/mnt/workspace"
 	capacity   = "1Gi"
+	// seedCapacity is a seed's own capacity, larger than the template's.
+	seedCapacity = "2Gi"
 
 	seedFile    = "seed.txt"
 	seedContent = "prepared outside the actor"
@@ -219,7 +221,7 @@ func createTemplate(ctx context.Context, t *testing.T, clients *e2e.Clients, ns 
 		Atespace:     atespace,
 		Name:         "probe-" + ns.Name,
 		PoolName:     e2e.ProbeName,
-		PoolReplicas: 3,
+		PoolReplicas: 4,
 		Labels:       map[string]string{"seededvolumes": ns.Name},
 		SnapshotConfig: &ateapipb.SnapshotConfig{
 			StorageLocation: fmt.Sprintf("gs://%s/%s/", env["BUCKET_NAME"], ns.Name),
@@ -334,6 +336,32 @@ func storageVolumeID(ctx context.Context, t *testing.T, clients *e2e.Clients, re
 	return ""
 }
 
+// driverVolumeSize returns the size in bytes the hostpath driver provisioned
+// volumeID with, from the state file it keeps in its data directory.
+func driverVolumeSize(t *testing.T, volumeID string) int64 {
+	t.Helper()
+	out, err := kubectl("exec", "-n", "default", driverPod, "-c", "hostpath", "--", "cat", driverDataDir+"/state.json")
+	if err != nil {
+		t.Fatalf("reading the hostpath driver's state: %v", err)
+	}
+	var state struct {
+		Volumes []struct {
+			VolID   string
+			VolSize int64
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &state); err != nil {
+		t.Fatalf("decoding the hostpath driver's state: %v", err)
+	}
+	for _, vol := range state.Volumes {
+		if vol.VolID == volumeID {
+			return vol.VolSize
+		}
+	}
+	t.Fatalf("the hostpath driver holds no volume %q", volumeID)
+	return 0
+}
+
 // driverHasVolume reports whether the hostpath driver still holds volumeID.
 func driverHasVolume(volumeID string) (bool, error) {
 	out, err := kubectl("exec", "-n", "default", driverPod, "-c", "hostpath", "--", "ls", driverDataDir)
@@ -367,8 +395,9 @@ func TestSeededVolumes(t *testing.T) {
 	seed := &ateapipb.VolumeSeed{VolumeName: volumeName, Driver: driver, SnapshotHandle: handle}
 	actorA := resources.ActorRef{Atespace: atespace, Name: "seeded-a-" + ns.Name}
 	actorB := resources.ActorRef{Atespace: atespace, Name: "seeded-b-" + ns.Name}
+	sized := resources.ActorRef{Atespace: atespace, Name: "sized-" + ns.Name}
 	unseeded := resources.ActorRef{Atespace: atespace, Name: "unseeded-" + ns.Name}
-	for _, ref := range []resources.ActorRef{actorA, actorB, unseeded} {
+	for _, ref := range []resources.ActorRef{actorA, actorB, sized, unseeded} {
 		deleteActorAtEnd(t, clients, ref)
 	}
 	seedPath := mountPath + "/" + seedFile
@@ -387,6 +416,18 @@ func TestSeededVolumes(t *testing.T) {
 		requireAbsent(ctx, t, router, actorB, writtenPath)
 		if a, b := storageVolumeID(ctx, t, clients, actorA), storageVolumeID(ctx, t, clients, actorB); a == b {
 			t.Errorf("both actors have storage volume %q, want one each", a)
+		}
+	})
+
+	t.Run("SeedCapacityReplacesTheTemplates", func(t *testing.T) {
+		sizedSeed := &ateapipb.VolumeSeed{VolumeName: volumeName, Driver: driver, SnapshotHandle: handle, Capacity: seedCapacity}
+		startActor(ctx, t, clients, tmpl, sized, sizedSeed)
+		requireContent(ctx, t, router, sized, seedPath, seedContent)
+		for ref, want := range map[resources.ActorRef]string{actorA: capacity, sized: seedCapacity} {
+			wantBytes := resource.MustParse(want)
+			if got := driverVolumeSize(t, storageVolumeID(ctx, t, clients, ref)); got != wantBytes.Value() {
+				t.Errorf("%s: volume size = %d bytes, want %s", ref, got, want)
+			}
 		}
 	})
 

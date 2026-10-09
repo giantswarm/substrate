@@ -407,9 +407,13 @@ func TestValidateVolumeSeeds(t *testing.T) {
 	ready := map[string]volume.Snapshot{
 		"snap-1":   {SnapshotID: "snap-1", ReadyToUse: true},
 		"snap-new": {SnapshotID: "snap-new"},
+		"snap-3gi": {SnapshotID: "snap-3gi", ReadyToUse: true, SizeBytes: 3 << 30},
 	}
 	seed := func(vol, driver, handle string) []*ateapipb.VolumeSeed {
 		return []*ateapipb.VolumeSeed{{VolumeName: vol, Driver: driver, SnapshotHandle: handle}}
+	}
+	sized := func(handle, capacity string) []*ateapipb.VolumeSeed {
+		return []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "mock-standard", SnapshotHandle: handle, Capacity: capacity}}
 	}
 	for _, tc := range []struct {
 		name     string
@@ -426,6 +430,9 @@ func TestValidateVolumeSeeds(t *testing.T) {
 		{name: "snapshot is missing", seeds: seed("workspace", "mock-standard", "snap-gone"), wantCode: codes.FailedPrecondition, wantMsg: `driver "mock-standard" holds no snapshot "snap-gone"`},
 		{name: "snapshot is not ready", seeds: seed("workspace", "mock-standard", "snap-new"), wantCode: codes.FailedPrecondition, wantMsg: `snapshot "snap-new" in driver "mock-standard" is not ready to use`},
 		{name: "driver cannot list snapshots", seeds: seed("workspace", "mock-standard", "snap-1"), listErr: status.Error(codes.Unimplemented, "no ListSnapshots"), wantCode: codes.FailedPrecondition, wantMsg: `cannot list snapshots`},
+		{name: "capacity holds the snapshot", seeds: sized("snap-3gi", "4Gi"), wantCode: codes.OK},
+		{name: "template capacity below the snapshot", seeds: seed("workspace", "mock-standard", "snap-3gi"), wantCode: codes.InvalidArgument, wantMsg: `capacity 2Gi is smaller than snapshot "snap-3gi"`},
+		{name: "seed capacity below the snapshot", seeds: sized("snap-3gi", "1Gi"), wantCode: codes.InvalidArgument, wantMsg: `capacity 1Gi is smaller than snapshot "snap-3gi"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{
@@ -478,6 +485,22 @@ func TestCreateActorVolumes_Seeded(t *testing.T) {
 			if v.GetStatus() != ateapipb.ExternalVolume_STATUS_CREATED {
 				t.Errorf("volume %q status = %v, want CREATED", v.GetVolumeName(), v.GetStatus())
 			}
+		}
+	})
+
+	t.Run("a seed's capacity replaces the template's", func(t *testing.T) {
+		plugin := &seedVolumePlugin{}
+		registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{"mock-standard": plugin}}
+		sized := []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "mock-standard", SnapshotHandle: "snap-1", Capacity: "20Gi"}}
+		if _, err := createActorVolumes(context.Background(), registry, seedStorageClasses(), "uid", seededTemplate(), sized, pending()); err != nil {
+			t.Fatalf("createActorVolumes: %v", err)
+		}
+		want := []volume.CreateVolumeRequest{
+			{Name: "substrate-uid-scratch", Capacity: "1Gi", DriverName: "mock-standard"},
+			{Name: "substrate-uid-workspace", Capacity: "20Gi", DriverName: "mock-standard", SourceSnapshotID: "snap-1"},
+		}
+		if diff := cmp.Diff(want, plugin.created); diff != "" {
+			t.Errorf("CreateVolume requests mismatch (-want +got):\n%s", diff)
 		}
 	})
 

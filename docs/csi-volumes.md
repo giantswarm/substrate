@@ -117,11 +117,13 @@ volumeSeeds:
 - volumeName: workspace
   driver: hostpath.csi.k8s.io
   snapshotHandle: <the snapshot's ID in the driver>
+  capacity: 20Gi # optional; the template's capacity when omitted
 ```
 
 The handle is the CSI driver's snapshot ID, as a Kubernetes `VolumeSnapshotContent` reports it in `status.snapshotHandle`. The volume is created through the driver's `CreateVolume` with that snapshot as its content source, so every actor seeded from one handle gets a volume of its own. A driver that answers without reporting the snapshot as the volume's source fails the actor's resume rather than mounting an empty volume.
 
 * `CreateActor` refuses a seed whose volume is not a seeded external volume of the template, whose `driver` is not the volume's StorageClass provisioner or has no `CSIDriverConfig`, or whose snapshot the driver does not list as ready to use. The driver must implement `ListSnapshots`.
+* A seed's `capacity` sizes that actor's volume, so actors of one template can get volumes of different sizes. `CreateActor` refuses a capacity, the seed's or the template's, below the size the driver reports for the snapshot.
 * An actor created without a seed for a seeded volume has neither the volume nor its mounts.
 * A seeded actor boots from its image instead of the template's golden snapshot, which was built without the seeded volume's mounts. It pauses, resumes and is deleted with its volume like any actor with external volumes.
 * `volumeSeeds` is immutable.

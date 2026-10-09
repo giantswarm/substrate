@@ -1068,8 +1068,16 @@ type VolumeSeed struct {
 	// +k8s:maxLength=256
 	// +k8s:customValidation # no control characters
 	SnapshotHandle string `protobuf:"bytes,3,opt,name=snapshot_handle,json=snapshotHandle,proto3" json:"snapshot_handle,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// capacity of this actor's volume, in Kubernetes resource.Quantity string
+	// form (e.g. "20Gi"). Empty takes the template's capacity. It must hold the
+	// snapshot: a capacity below the snapshot's size is refused at create.
+	//
+	// +k8s:optional
+	// +k8s:maxLength=32 # matches ExternalVolumeTemplate.capacity's bound
+	// +k8s:customValidation # must parse as a positive resource.Quantity
+	Capacity      string `protobuf:"bytes,4,opt,name=capacity,proto3" json:"capacity,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *VolumeSeed) Reset() {
@@ -1119,6 +1127,13 @@ func (x *VolumeSeed) GetDriver() string {
 func (x *VolumeSeed) GetSnapshotHandle() string {
 	if x != nil {
 		return x.SnapshotHandle
+	}
+	return ""
+}
+
+func (x *VolumeSeed) GetCapacity() string {
+	if x != nil {
+		return x.Capacity
 	}
 	return ""
 }
@@ -8465,13 +8480,14 @@ const file_ateapi_proto_rawDesc = "" +
 	"\n" +
 	"source_tag\x18\x06 \x01(\v2\x11.ateapi.ObjectRefR\tsourceTag\x12+\n" +
 	"\x06status\x18\a \x01(\v2\x13.ateapi.ActorStatusR\x06status\x126\n" +
-	"\fvolume_seeds\x18\x91N \x03(\v2\x12.ateapi.VolumeSeedR\vvolumeSeeds\"n\n" +
+	"\fvolume_seeds\x18\x91N \x03(\v2\x12.ateapi.VolumeSeedR\vvolumeSeeds\"\x8a\x01\n" +
 	"\n" +
 	"VolumeSeed\x12\x1f\n" +
 	"\vvolume_name\x18\x01 \x01(\tR\n" +
 	"volumeName\x12\x16\n" +
 	"\x06driver\x18\x02 \x01(\tR\x06driver\x12'\n" +
-	"\x0fsnapshot_handle\x18\x03 \x01(\tR\x0esnapshotHandle\"n\n" +
+	"\x0fsnapshot_handle\x18\x03 \x01(\tR\x0esnapshotHandle\x12\x1a\n" +
+	"\bcapacity\x18\x04 \x01(\tR\bcapacity\"n\n" +
 	"\fEgressPolicy\x124\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x18.ateapi.ResourceMetadataR\bmetadata\x12(\n" +
 	"\x05rules\x18\x02 \x03(\v2\x12.ateapi.EgressRuleR\x05rules\"@\n" +

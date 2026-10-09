@@ -20,6 +20,7 @@ import (
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"k8s.io/apimachinery/pkg/api/operation"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/api/validate"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -176,4 +177,16 @@ func ValidateCustom_VolumeSeed_Driver(ctx context.Context, op operation.Operatio
 // handle, like a storage volume ID, contains no control characters.
 func ValidateCustom_VolumeSeed_SnapshotHandle(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
 	return ValidateCustom_ExternalVolume_StorageVolumeId(ctx, op, fldPath, value, oldValue)
+}
+
+// ValidateCustom_VolumeSeed_Capacity checks that a seed's capacity, when
+// given, is a positive resource quantity.
+func ValidateCustom_VolumeSeed_Capacity(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	if errs := ValidateCustom_ExternalVolumeTemplate_Capacity(ctx, op, fldPath, value, oldValue); len(errs) > 0 {
+		return errs
+	}
+	if q := resource.MustParse(*value); q.Sign() <= 0 {
+		return field.ErrorList{field.Invalid(fldPath, *value, "must be positive")}
+	}
+	return nil
 }
