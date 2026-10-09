@@ -35,6 +35,17 @@ tests:
         name: OTEL_RESOURCE_ATTRIBUTES
         value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
 
+- it: names the ext-proc's telemetry atenet-egress, not the atenet-router the binary defaults to
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[1].env
+      content:
+        name: OTEL_SERVICE_NAME
+        value: atenet-egress
+
 - it: turns each disabled signal off, where the SDK would export to localhost:4317
   set:
     otel.traces.enabled: false
