@@ -122,6 +122,7 @@ func workloadSpecFromActorTemplate(actorTemplate *ateapipb.ActorTemplate, actor 
 	if err := appendExternalVolumes(workloadSpec, actorTemplate, actor); err != nil {
 		return nil, err
 	}
+	appendExistingVolumes(workloadSpec, actorTemplate, actor)
 
 	for _, ctr := range actorTemplate.GetContainers() {
 		ctrResources, err := toAteletResources(ctr.GetResources())
@@ -144,6 +145,13 @@ func workloadSpecFromActorTemplate(actorTemplate *ateapipb.ActorTemplate, actor 
 			})
 		}
 		for _, mount := range ctr.GetVolumeMounts() {
+			if unsuppliedVolume(actorTemplate, actor, mount.GetName()) {
+				continue
+			}
+			if ev := existingVolume(actor, mount.GetName()); ev != nil {
+				ateletCtr.VolumeMounts = append(ateletCtr.VolumeMounts, existingVolumeMount(mount, ev))
+				continue
+			}
 			ateletCtr.VolumeMounts = append(ateletCtr.VolumeMounts, &ateletpb.VolumeMount{
 				Name:      mount.GetName(),
 				MountPath: mount.GetMountPath(),

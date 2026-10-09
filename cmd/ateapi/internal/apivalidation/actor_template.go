@@ -62,11 +62,12 @@ func ValidateActorTemplateUpdate(ctx context.Context, fldPath *field.Path, newVa
 }
 
 // ValidateCustom_CreateActorTemplateRequest_ActorTemplate rejects container
-// volume mounts that reference volumes the template does not declare.
+// volume mounts that reference volumes the template does not declare, and a
+// sub_path or read_only on a mount of any volume but an existing one.
 func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *ateapipb.ActorTemplate) field.ErrorList {
-	declared := make(map[string]bool, len(value.GetVolumes()))
+	declared := make(map[string]*ateapipb.Volume, len(value.GetVolumes()))
 	for _, vol := range value.GetVolumes() {
-		declared[vol.GetName()] = true
+		declared[vol.GetName()] = vol
 	}
 	var errs field.ErrorList
 	for i, ctr := range value.GetContainers() {
@@ -75,10 +76,20 @@ func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, 
 			if name == "" {
 				continue // required is enforced by tags
 			}
-			if !declared[name] {
-				errs = append(errs, field.Invalid(
-					fldPath.Child("containers").Index(i).Child("volume_mounts").Index(j).Child("name"),
-					name, "must reference a volume declared in the template"))
+			mountPath := fldPath.Child("containers").Index(i).Child("volume_mounts").Index(j)
+			vol, ok := declared[name]
+			if !ok {
+				errs = append(errs, field.Invalid(mountPath.Child("name"), name, "must reference a volume declared in the template"))
+				continue
+			}
+			if vol.GetExistingVolume() != nil {
+				continue
+			}
+			if mount.GetSubPath() != "" {
+				errs = append(errs, field.Invalid(mountPath.Child("sub_path"), mount.GetSubPath(), "may be set only on a mount of an existing volume"))
+			}
+			if mount.GetReadOnly() {
+				errs = append(errs, field.Invalid(mountPath.Child("read_only"), true, "may be set only on a mount of an existing volume"))
 			}
 		}
 	}
@@ -287,4 +298,26 @@ func ValidateCustom_Capabilities_Add(_ context.Context, _ operation.Operation, f
 
 func ValidateCustom_Capabilities_Drop(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ []string) field.ErrorList {
 	return validateCapabilities(fldPath, value, true)
+}
+
+// ValidateCustom_VolumeMount_SubPath requires a clean relative Unix path: no
+// leading '/', no '.' or '..' segments, '//', trailing '/', or control
+// characters.
+func ValidateCustom_VolumeMount_SubPath(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
+	p := *value
+	if p == "" {
+		return nil
+	}
+	bad := strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/") ||
+		strings.Contains(p, "//") || mountPathBadSegmentRE.MatchString(p)
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			bad = true
+			break
+		}
+	}
+	if bad {
+		return field.ErrorList{field.Invalid(fldPath, p, "must be a clean relative Unix path: must not start or end with '/', and contain no '..', '.', '//', or control characters")}
+	}
+	return nil
 }

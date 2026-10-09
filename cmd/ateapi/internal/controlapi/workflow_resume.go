@@ -27,6 +27,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -624,11 +625,11 @@ func (w *ActorWorkflow) ensureVolumesAttached(ctx context.Context, actor *ateapi
 		if err != nil {
 			return fmt.Errorf("failed to get volume plugin for %q: %w", vol.GetVolumeType(), err)
 		}
-		if err := plugin.AttachVolume(ctx, vol.GetStorageVolumeId(), node); err != nil {
+		if err := plugin.AttachVolume(ctx, vol.GetStorageVolumeId(), node, volume.ReadWriteOnce); err != nil {
 			return fmt.Errorf("failed to attach volume %q to node %q: %w", vol.GetStorageVolumeId(), node, err)
 		}
 	}
-	return nil
+	return attachExistingVolumes(ctx, w.pluginRegistry, actor, actorTemplate, node)
 }
 
 // ensureAteletRestored brings the workload up on the assigned worker:
@@ -663,6 +664,9 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 
 	workloadSpec, err := workloadSpecFromActorTemplate(actorTemplate, actor)
 	if err != nil {
+		return tele, err
+	}
+	if err := fillExistingVolumeContext(workloadSpec, w.persistentVolumeLister, actor); err != nil {
 		return tele, err
 	}
 	egressGateway := w.egressGateway()

@@ -135,6 +135,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 	scFactory := informers.NewSharedInformerFactory(k8sClient, 0)
 	scLister := scFactory.Storage().V1().StorageClasses().Lister()
 	nodeLister := scFactory.Core().V1().Nodes().Lister()
+	pvLister := scFactory.Core().V1().PersistentVolumes().Lister()
 
 	substrateInformerFactory := externalversions.NewSharedInformerFactory(substrateClient, 0)
 	workerPoolLister := substrateInformerFactory.Api().V1alpha1().WorkerPools().Lister()
@@ -217,6 +218,7 @@ func setupTestWithVolumePlugins(t *testing.T, ns string, plugins map[string]volu
 		sandboxConfigLister,
 		csiDriverConfigLister,
 		scLister,
+		pvLister,
 		nodeLister,
 		dialer,
 		instruments,

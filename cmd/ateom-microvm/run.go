@@ -43,6 +43,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/sizing"
+	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/agent-substrate/substrate/internal/wakeupprobe"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -697,6 +698,11 @@ func (s *AteomService) stageMergedRootfs(ctx context.Context, rr resolvedRuntime
 		}
 	}
 	if hasCsiVolumes(containers) {
+		// The directories mounts name a sub-path of, or mount read-only, are
+		// bound beside their volumes first, so the share carries them too.
+		if err := volumebind.Prepare(actorDirs.GetVolumesDir(), containers); err != nil {
+			return nil, fmt.Errorf("while binding volume directories: %w", err)
+		}
 		if err := s.stageCsiVolumes(ctx, id, actorDirs.GetVolumesDir()); err != nil {
 			return nil, fmt.Errorf("while staging CSI volumes: %w", err)
 		}

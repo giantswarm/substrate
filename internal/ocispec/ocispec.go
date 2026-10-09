@@ -26,6 +26,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/imagecache"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
+	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -182,7 +183,10 @@ func Build(o Options) *specs.Spec {
 		case *ateletpb.Volume_DurableDir:
 			srcPath = filepath.Join(o.DurableDirVolumeMountsDir, vm.GetName())
 		case *ateletpb.Volume_External:
-			srcPath = filepath.Join(o.VolumesDir, vm.GetName())
+			srcPath = filepath.Join(o.VolumesDir, volumebind.MountDir(vm.GetName(), vm.GetSubPath(), vm.GetReadOnly()))
+			if vm.GetReadOnly() {
+				options = []string{"bind", "ro"}
+			}
 		case *ateletpb.Volume_SystemInfo:
 			srcPath = filepath.Join(o.SystemInfoVolumeRootsDir, vm.GetName())
 			options = []string{"bind", "ro"}
