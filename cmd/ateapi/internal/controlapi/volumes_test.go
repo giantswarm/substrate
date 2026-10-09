@@ -104,7 +104,7 @@ func TestInitialActorVolumes_PendingState(t *testing.T) {
 			},
 		},
 	}
-	initVols, err := initialActorVolumes(context.Background(), scLister, tmpl)
+	initVols, err := initialActorVolumes(context.Background(), scLister, tmpl, nil)
 	if err != nil {
 		t.Fatalf("initialActorVolumes failed: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestCreateActorVolumes(t *testing.T) {
 				}
 			}
 			scLister := &fakeStorageClassLister{storageClasses: scs}
-			res, err := createActorVolumes(ctx, registry, scLister, "actor-uid-123", tt.tmpl, tt.inputVolumes)
+			res, err := createActorVolumes(ctx, registry, scLister, "actor-uid-123", tt.tmpl, nil, tt.inputVolumes)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("createActorVolumes() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -315,6 +315,186 @@ func TestCreateActorVolumes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// seedVolumePlugin holds a fixed set of snapshots and records the volumes it
+// creates and deletes. ignoreSource makes it answer a restore with an empty
+// volume, as a driver that does not implement content sources does.
+type seedVolumePlugin struct {
+	volume.VolumePluginControlPlane
+	snapshots    map[string]volume.Snapshot
+	listErr      error
+	ignoreSource bool
+	created      []volume.CreateVolumeRequest
+	deleted      []string
+}
+
+func (p *seedVolumePlugin) GetSnapshot(_ context.Context, id string) (volume.Snapshot, bool, error) {
+	if p.listErr != nil {
+		return volume.Snapshot{}, false, p.listErr
+	}
+	snap, ok := p.snapshots[id]
+	return snap, ok, nil
+}
+
+func (p *seedVolumePlugin) CreateVolume(_ context.Context, req volume.CreateVolumeRequest) (volume.CreateVolumeResponse, error) {
+	p.created = append(p.created, req)
+	resp := volume.CreateVolumeResponse{VolumeID: "vol-" + req.Name, ContentSourceSnapshotID: req.SourceSnapshotID}
+	if p.ignoreSource {
+		resp.ContentSourceSnapshotID = ""
+	}
+	return resp, nil
+}
+
+func (p *seedVolumePlugin) DeleteVolume(_ context.Context, id string) error {
+	p.deleted = append(p.deleted, id)
+	return nil
+}
+
+// seededTemplate has one plain and one seeded external volume, both mounted.
+func seededTemplate() *ateapipb.ActorTemplate {
+	return &ateapipb.ActorTemplate{
+		Containers: []*ateapipb.Container{{
+			Name: "main",
+			VolumeMounts: []*ateapipb.VolumeMount{
+				{Name: "scratch", MountPath: "/scratch"},
+				{Name: "workspace", MountPath: "/workspace"},
+			},
+		}},
+		Volumes: []*ateapipb.Volume{
+			{Name: "scratch", ExternalVolumeTemplate: &ateapipb.ExternalVolumeTemplate{Capacity: "1Gi", StorageClassName: "standard"}},
+			{Name: "workspace", ExternalVolumeTemplate: &ateapipb.ExternalVolumeTemplate{Capacity: "2Gi", StorageClassName: "standard", Seeded: true}},
+		},
+	}
+}
+
+func seedStorageClasses() *fakeStorageClassLister {
+	return &fakeStorageClassLister{storageClasses: map[string]*storagev1.StorageClass{
+		"standard": {ObjectMeta: metav1.ObjectMeta{Name: "standard"}, Provisioner: "mock-standard"},
+	}}
+}
+
+func TestInitialActorVolumes_Seeded(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		seeds []*ateapipb.VolumeSeed
+		want  []string
+	}{
+		{name: "without a seed the seeded volume is left out", want: []string{"scratch"}},
+		{
+			name:  "with a seed the seeded volume is created",
+			seeds: []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "mock-standard", SnapshotHandle: "snap-1"}},
+			want:  []string{"scratch", "workspace"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			vols, err := initialActorVolumes(context.Background(), seedStorageClasses(), seededTemplate(), tc.seeds)
+			if err != nil {
+				t.Fatalf("initialActorVolumes: %v", err)
+			}
+			var got []string
+			for _, v := range vols {
+				got = append(got, v.GetVolumeName())
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("volumes mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestValidateVolumeSeeds(t *testing.T) {
+	ready := map[string]volume.Snapshot{
+		"snap-1":   {SnapshotID: "snap-1", ReadyToUse: true},
+		"snap-new": {SnapshotID: "snap-new"},
+	}
+	seed := func(vol, driver, handle string) []*ateapipb.VolumeSeed {
+		return []*ateapipb.VolumeSeed{{VolumeName: vol, Driver: driver, SnapshotHandle: handle}}
+	}
+	for _, tc := range []struct {
+		name     string
+		seeds    []*ateapipb.VolumeSeed
+		listErr  error
+		wantCode codes.Code
+		wantMsg  string
+	}{
+		{name: "no seeds", wantCode: codes.OK},
+		{name: "ready snapshot", seeds: seed("workspace", "mock-standard", "snap-1"), wantCode: codes.OK},
+		{name: "volume is not seeded", seeds: seed("scratch", "mock-standard", "snap-1"), wantCode: codes.InvalidArgument, wantMsg: `no seeded external volume "scratch"`},
+		{name: "volume is not in the template", seeds: seed("other", "mock-standard", "snap-1"), wantCode: codes.InvalidArgument, wantMsg: `no seeded external volume "other"`},
+		{name: "driver is not the provisioner", seeds: seed("workspace", "other.csi.example.com", "snap-1"), wantCode: codes.InvalidArgument, wantMsg: `names driver "other.csi.example.com", but the volume's StorageClass "standard" provisions with "mock-standard"`},
+		{name: "snapshot is missing", seeds: seed("workspace", "mock-standard", "snap-gone"), wantCode: codes.FailedPrecondition, wantMsg: `driver "mock-standard" holds no snapshot "snap-gone"`},
+		{name: "snapshot is not ready", seeds: seed("workspace", "mock-standard", "snap-new"), wantCode: codes.FailedPrecondition, wantMsg: `snapshot "snap-new" in driver "mock-standard" is not ready to use`},
+		{name: "driver cannot list snapshots", seeds: seed("workspace", "mock-standard", "snap-1"), listErr: status.Error(codes.Unimplemented, "no ListSnapshots"), wantCode: codes.FailedPrecondition, wantMsg: `cannot list snapshots`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{
+				"mock-standard": &seedVolumePlugin{snapshots: ready, listErr: tc.listErr},
+			}}
+			err := validateVolumeSeeds(context.Background(), registry, seedStorageClasses(), seededTemplate(), tc.seeds)
+			if got := status.Code(err); got != tc.wantCode {
+				t.Fatalf("validateVolumeSeeds code = %v (%v), want %v", got, err, tc.wantCode)
+			}
+			if tc.wantMsg != "" && !strings.Contains(err.Error(), tc.wantMsg) {
+				t.Errorf("validateVolumeSeeds error = %q, want it to contain %q", err, tc.wantMsg)
+			}
+		})
+	}
+
+	t.Run("unknown driver", func(t *testing.T) {
+		// The StorageClass names a provisioner no CSIDriverConfig registers.
+		registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{}}
+		err := validateVolumeSeeds(context.Background(), registry, seedStorageClasses(), seededTemplate(), seed("workspace", "mock-standard", "snap-1"))
+		if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), `unknown driver "mock-standard"`) {
+			t.Fatalf("validateVolumeSeeds = %v, want FailedPrecondition naming the unknown driver", err)
+		}
+	})
+}
+
+func TestCreateActorVolumes_Seeded(t *testing.T) {
+	seeds := []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "mock-standard", SnapshotHandle: "snap-1"}}
+	pending := func() []*ateapipb.ExternalVolume {
+		return []*ateapipb.ExternalVolume{
+			{VolumeName: "scratch", VolumeType: "mock-standard", Status: ateapipb.ExternalVolume_STATUS_PENDING},
+			{VolumeName: "workspace", VolumeType: "mock-standard", Status: ateapipb.ExternalVolume_STATUS_PENDING},
+		}
+	}
+
+	t.Run("restores the seeded volume and creates the other empty", func(t *testing.T) {
+		plugin := &seedVolumePlugin{}
+		registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{"mock-standard": plugin}}
+		vols, err := createActorVolumes(context.Background(), registry, seedStorageClasses(), "uid", seededTemplate(), seeds, pending())
+		if err != nil {
+			t.Fatalf("createActorVolumes: %v", err)
+		}
+		want := []volume.CreateVolumeRequest{
+			{Name: "substrate-uid-scratch", Capacity: "1Gi", DriverName: "mock-standard"},
+			{Name: "substrate-uid-workspace", Capacity: "2Gi", DriverName: "mock-standard", SourceSnapshotID: "snap-1"},
+		}
+		if diff := cmp.Diff(want, plugin.created); diff != "" {
+			t.Errorf("CreateVolume requests mismatch (-want +got):\n%s", diff)
+		}
+		for _, v := range vols {
+			if v.GetStatus() != ateapipb.ExternalVolume_STATUS_CREATED {
+				t.Errorf("volume %q status = %v, want CREATED", v.GetVolumeName(), v.GetStatus())
+			}
+		}
+	})
+
+	t.Run("a driver that does not restore fails the create", func(t *testing.T) {
+		plugin := &seedVolumePlugin{ignoreSource: true}
+		registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{"mock-standard": plugin}}
+		vols, err := createActorVolumes(context.Background(), registry, seedStorageClasses(), "uid", seededTemplate(), seeds, pending())
+		if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), `from snapshot "", want "snap-1"`) {
+			t.Fatalf("createActorVolumes = %v, want FailedPrecondition naming the missing restore", err)
+		}
+		if diff := cmp.Diff([]string{"vol-substrate-uid-workspace"}, plugin.deleted); diff != "" {
+			t.Errorf("deleted volumes mismatch (-want +got):\n%s", diff)
+		}
+		if got := vols[1].GetStatus(); got != ateapipb.ExternalVolume_STATUS_PENDING {
+			t.Errorf("unrestored volume status = %v, want PENDING", got)
+		}
+	})
 }
 
 type trackingVolumePlugin struct {

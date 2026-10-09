@@ -144,6 +144,9 @@ func workloadSpecFromActorTemplate(actorTemplate *ateapipb.ActorTemplate, actor 
 			})
 		}
 		for _, mount := range ctr.GetVolumeMounts() {
+			if unseededVolume(actorTemplate, actor, mount.GetName()) {
+				continue
+			}
 			ateletCtr.VolumeMounts = append(ateletCtr.VolumeMounts, &ateletpb.VolumeMount{
 				Name:      mount.GetName(),
 				MountPath: mount.GetMountPath(),
@@ -163,7 +166,7 @@ func appendExternalVolumes(workloadSpec *ateletpb.WorkloadSpec, template *ateapi
 	}
 	for _, vol := range template.GetVolumes() {
 		if vol.GetExternalVolumeTemplate() != nil {
-			if !isVolumeMounted(vol.GetName(), template) {
+			if !isVolumeMounted(vol.GetName(), template) || unseededVolume(template, actor, vol.GetName()) {
 				continue
 			}
 			if actor == nil {
@@ -197,6 +200,18 @@ func appendExternalVolumes(workloadSpec *ateletpb.WorkloadSpec, template *ateapi
 		}
 	}
 	return nil
+}
+
+// unseededVolume reports whether volumeName is a seeded external volume of
+// template that actor was created without a seed for: such an actor has
+// neither the volume nor its mounts.
+func unseededVolume(template *ateapipb.ActorTemplate, actor *ateapipb.Actor, volumeName string) bool {
+	for _, vol := range template.GetVolumes() {
+		if vol.GetName() == volumeName {
+			return vol.GetExternalVolumeTemplate().GetSeeded() && volumeSeed(actor.GetVolumeSeeds(), volumeName) == nil
+		}
+	}
+	return false
 }
 
 func isVolumeMounted(volumeName string, template *ateapipb.ActorTemplate) bool {

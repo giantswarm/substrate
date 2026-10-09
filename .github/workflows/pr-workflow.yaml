@@ -146,6 +146,9 @@ jobs:
       # E2E_JUNIT_FILE is set per step, not here: the lanes below share this
       # job, so one job-level path would have each overwrite the last.
       ARTIFACTS: ${{ github.workspace }}/_artifacts
+      # The hostpath driver and the volume snapshot API are installed below,
+      # so the seededvolumes suite fails rather than skips without them.
+      E2E_CSI_HOSTPATH: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -183,8 +186,10 @@ jobs:
         run: |
           sudo modprobe nfs || true
           sudo modprobe nfsd || true
-      - name: Install CSI NFS driver
-        run: hack/install-ate-kind.sh --setup-csi=nfs
+      - name: Install CSI NFS and hostpath drivers
+        # hostpath brings the volume snapshot API, which the seededvolumes
+        # suite takes its seed snapshot with (E2E_CSI_HOSTPATH below).
+        run: hack/install-ate-kind.sh --setup-csi=both
       - name: Deploy micro-VM counter demo
         # Stages the (cached) assets into the cluster's rustfs and deploys the
         # counter-microvm demo onto the control plane installed above.

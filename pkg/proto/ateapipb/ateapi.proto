@@ -460,6 +460,50 @@ message Actor {
   //
   // +k8s:optional
   ActorStatus status = 7;
+
+  // volume_seeds gives this Actor its seeded external volumes: each names a
+  // template volume whose external_volume_template is seeded, and the
+  // snapshot the volume is created from. A seeded volume without a seed here
+  // is not created and not mounted. CreateActor refuses a seed whose volume
+  // is not a seeded external volume of the template, whose driver is not the
+  // volume's StorageClass provisioner, or whose snapshot the driver does not
+  // hold ready. Set once at creation and immutable afterward.
+  //
+  // +k8s:optional
+  // +k8s:maxItems=32 # matches the template's volumes bound
+  // +k8s:listType=map
+  // +k8s:listMapKey=volume_name
+  // +k8s:immutable
+  repeated VolumeSeed volume_seeds = 10001;
+}
+
+// VolumeSeed names the snapshot one seeded external volume of an Actor is
+// created from.
+message VolumeSeed {
+  // volume_name is the template volume this seed is for.
+  //
+  // +k8s:required
+  // +k8s:format=k8s-short-name
+  string volume_name = 1;
+
+  // driver is the CSI driver that holds the snapshot. It must be the
+  // provisioner of the volume's StorageClass: a snapshot handle means
+  // nothing to any other driver.
+  //
+  // +k8s:required
+  // +k8s:maxLength=253
+  // +k8s:customValidation # same syntax as ExternalVolume.volume_type
+  string driver = 2;
+
+  // snapshot_handle is the driver's ID of the snapshot, as a Kubernetes
+  // VolumeSnapshotContent reports it in status.snapshotHandle. Its format is
+  // the storage system's own, so it is only bounded and checked for control
+  // characters.
+  //
+  // +k8s:required
+  // +k8s:maxLength=256
+  // +k8s:customValidation # no control characters
+  string snapshot_handle = 3;
 }
 
 // EgressPolicy is an egress policy resource nested under an Actor. An Actor has
@@ -1378,6 +1422,15 @@ message ExternalVolumeTemplate {
   // +k8s:required
   // +k8s:format=k8s-long-name
   string storage_class_name = 2;
+
+  // seeded makes the volume optional and seeded per Actor: an Actor gets it
+  // only when its CreateActor names a seed for it in Actor.volume_seeds, and
+  // the volume is then created from that seed's snapshot instead of empty.
+  // An Actor created without a seed has neither the volume nor its mounts.
+  // Unset, every Actor gets an empty volume.
+  //
+  // +k8s:optional
+  bool seeded = 10001;
 }
 
 // SystemInfoVolumeSource is a read-only volume of substrate-generated

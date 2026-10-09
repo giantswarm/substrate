@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -232,6 +233,10 @@ func (e *Env) setupCSIHostpath(ctx context.Context) error {
 		return err
 	}
 
+	if err := e.setupVolumeSnapshotAPI(ctx); err != nil {
+		return err
+	}
+
 	log.Infof("Deploying the CSI hostpath driver...")
 	err = e.Kube.ApplyTolerant(ctx, objs, func(obj *unstructured.Unstructured, _ error) {
 		log.Warnf("skipping %s: its CRD is not installed on this cluster", kube.Describe(obj))
@@ -309,6 +314,40 @@ spec:
 	// atelet has to recreate them.
 	log.Infof("Restarting the atelet DaemonSets (if present)...")
 	return e.RestartAteletDaemonSets(ctx)
+}
+
+// volumeSnapshotCRDs are the snapshot.storage.k8s.io kinds the hostpath
+// driver's csi-snapshotter sidecar and its VolumeSnapshotClass need.
+var volumeSnapshotCRDs = []string{
+	"volumesnapshotclasses.snapshot.storage.k8s.io",
+	"volumesnapshotcontents.snapshot.storage.k8s.io",
+	"volumesnapshots.snapshot.storage.k8s.io",
+}
+
+// setupVolumeSnapshotAPI installs the Kubernetes volume snapshot API and its
+// snapshot-controller, so that a VolumeSnapshot of a hostpath volume yields a
+// snapshot handle an actor's external volume can be seeded from. It goes in
+// before the driver, whose VolumeSnapshotClass needs the CRDs.
+func (e *Env) setupVolumeSnapshotAPI(ctx context.Context) error {
+	log.Infof("Deploying the volume snapshot CRDs and snapshot-controller...")
+	bundle, err := kustomize.Build(e.Cfg.Path("hack", "third_party", "external-snapshotter"))
+	if err != nil {
+		return err
+	}
+	objs, err := kube.DecodeManifestBytes(bundle)
+	if err != nil {
+		return err
+	}
+	if err := e.Kube.Apply(ctx, objs); err != nil {
+		return err
+	}
+	for _, name := range volumeSnapshotCRDs {
+		if err := e.Kube.WaitCondition(ctx, crdGVK, "", name, "Established", 30*time.Second); err != nil {
+			return err
+		}
+	}
+	e.Kube.InvalidateDiscovery()
+	return e.Kube.RolloutStatus(ctx, kube.KindDeployment, "kube-system", "snapshot-controller", e.Cfg.WaitTimeout(BootstrapTimeout))
 }
 
 func (e *Env) setupCSINFS(ctx context.Context) error {

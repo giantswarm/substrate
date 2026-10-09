@@ -325,6 +325,56 @@ func Validate_Actor(
 		errs = append(errs, fn(fldPath.Child("status"), obj.Status, oldVal, oldObj != nil)...)
 	}
 
+	{ // field ateapipb.Actor.VolumeSeeds
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj []*ateapipb.VolumeSeed,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.PtrSliceNoNils[ateapipb.VolumeSeed](ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.Immutable(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.MaxItems(ctx, op, fldPath, obj, oldObj, 32).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.OptionalSlice(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// lists with map semantics require unique keys
+			if e := validate.PtrSliceUnique(ctx, op, fldPath, obj, oldObj,
+				func(a *ateapipb.VolumeSeed, b *ateapipb.VolumeSeed) bool { return a.VolumeName == b.VolumeName }); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			// iterate the list and call the type's validation function
+			if e := validate.EachPtrSliceVal(ctx, op, fldPath, obj, oldObj,
+				func(a *ateapipb.VolumeSeed, b *ateapipb.VolumeSeed) bool { return a.VolumeName == b.VolumeName }, ateDeepEqual, Validate_VolumeSeed); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.Actor) []*ateapipb.VolumeSeed {
+				return oldObj.VolumeSeeds
+			})
+		errs = append(errs, fn(fldPath.Child("volume_seeds"), obj.VolumeSeeds, oldVal, oldObj != nil)...)
+	}
+
 	return errs
 }
 
@@ -4083,6 +4133,34 @@ func Validate_ExternalVolumeTemplate(
 				return &oldObj.StorageClassName
 			})
 		errs = append(errs, fn(fldPath.Child("storage_class_name"), &obj.StorageClassName, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.ExternalVolumeTemplate.Seeded
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *bool,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.ExternalVolumeTemplate) *bool {
+				return &oldObj.Seeded
+			})
+		errs = append(errs, fn(fldPath.Child("seeded"), &obj.Seeded, oldVal, oldObj != nil)...)
 	}
 
 	return errs
@@ -8761,6 +8839,119 @@ func Validate_VolumeMount(
 				return &oldObj.MountPath
 			})
 		errs = append(errs, fn(fldPath.Child("mount_path"), &obj.MountPath, oldVal, oldObj != nil)...)
+	}
+
+	return errs
+}
+
+// Validate_VolumeSeed validates an instance of VolumeSeed according
+// to declarative validation rules in the API schema.
+func Validate_VolumeSeed(
+	ctx context.Context, op operation.Operation, fldPath *field.Path,
+	obj, oldObj *ateapipb.VolumeSeed) (errs field.ErrorList) {
+
+	{ // field ateapipb.VolumeSeed.VolumeName
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			if e := validate.ShortName(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.VolumeSeed) *string {
+				return &oldObj.VolumeName
+			})
+		errs = append(errs, fn(fldPath.Child("volume_name"), &obj.VolumeName, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.VolumeSeed.Driver
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// custom validation
+			if e := ValidateCustom_VolumeSeed_Driver(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			if e := validate.MaxLength(ctx, op, fldPath, obj, oldObj, 253); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.VolumeSeed) *string {
+				return &oldObj.Driver
+			})
+		errs = append(errs, fn(fldPath.Child("driver"), &obj.Driver, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.VolumeSeed.SnapshotHandle
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if obj == oldObj || (obj != nil && oldObj != nil && *obj == *oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredValue(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// custom validation
+			if e := ValidateCustom_VolumeSeed_SnapshotHandle(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			if e := validate.MaxLength(ctx, op, fldPath, obj, oldObj, 256); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.VolumeSeed) *string {
+				return &oldObj.SnapshotHandle
+			})
+		errs = append(errs, fn(fldPath.Child("snapshot_handle"), &obj.SnapshotHandle, oldVal, oldObj != nil)...)
 	}
 
 	return errs

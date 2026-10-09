@@ -634,3 +634,58 @@ func TestWorkloadSpecFromActorTemplatePropagatesResources(t *testing.T) {
 		t.Errorf("unlimited container Resources = %v, want nil", r)
 	}
 }
+
+// An actor created without a seed for a seeded volume gets exactly the
+// workload of the same template without that volume: no volume, no mount.
+func TestWorkloadSpecFromActorTemplateSeededVolume(t *testing.T) {
+	created := func(names ...string) []*ateapipb.ExternalVolume {
+		var vols []*ateapipb.ExternalVolume
+		for _, n := range names {
+			vols = append(vols, &ateapipb.ExternalVolume{VolumeName: n, StorageVolumeId: "id-" + n, VolumeType: "mock-standard", Status: ateapipb.ExternalVolume_STATUS_CREATED})
+		}
+		return vols
+	}
+
+	withoutSeeded := seededTemplate()
+	withoutSeeded.Volumes = withoutSeeded.Volumes[:1]
+	withoutSeeded.Containers[0].VolumeMounts = withoutSeeded.Containers[0].VolumeMounts[:1]
+
+	t.Run("unseeded actor", func(t *testing.T) {
+		actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{ActorVolumes: created("scratch")}}
+		got, err := workloadSpecFromActorTemplate(seededTemplate(), actor)
+		if err != nil {
+			t.Fatalf("workloadSpecFromActorTemplate: %v", err)
+		}
+		want, err := workloadSpecFromActorTemplate(withoutSeeded, actor)
+		if err != nil {
+			t.Fatalf("workloadSpecFromActorTemplate without the seeded volume: %v", err)
+		}
+		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+			t.Errorf("unseeded actor's workload differs from the template without the seeded volume (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("seeded actor", func(t *testing.T) {
+		actor := &ateapipb.Actor{
+			VolumeSeeds: []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "mock-standard", SnapshotHandle: "snap-1"}},
+			Status:      &ateapipb.ActorStatus{ActorVolumes: created("scratch", "workspace")},
+		}
+		got, err := workloadSpecFromActorTemplate(seededTemplate(), actor)
+		if err != nil {
+			t.Fatalf("workloadSpecFromActorTemplate: %v", err)
+		}
+		var vols, mounts []string
+		for _, v := range got.GetVolumes() {
+			vols = append(vols, v.GetName()+"="+v.GetExternal().GetStorageVolumeId())
+		}
+		for _, m := range got.GetContainers()[0].GetVolumeMounts() {
+			mounts = append(mounts, m.GetName()+":"+m.GetMountPath())
+		}
+		if diff := cmp.Diff([]string{"scratch=id-scratch", "workspace=id-workspace"}, vols); diff != "" {
+			t.Errorf("volumes mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff([]string{"scratch:/scratch", "workspace:/workspace"}, mounts); diff != "" {
+			t.Errorf("mounts mismatch (-want +got):\n%s", diff)
+		}
+	})
+}

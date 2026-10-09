@@ -223,7 +223,7 @@ func (w *ActorWorkflow) ensureVolumesCreated(ctx context.Context, actorRef resou
 		return actor, nil
 	}
 
-	volumes, createErr := createActorVolumes(ctx, w.pluginRegistry, w.storageClassLister, actor.GetMetadata().GetUid(), actorTemplate, actor.GetStatus().GetActorVolumes())
+	volumes, createErr := createActorVolumes(ctx, w.pluginRegistry, w.storageClassLister, actor.GetMetadata().GetUid(), actorTemplate, actor.GetVolumeSeeds(), actor.GetStatus().GetActorVolumes())
 	// createActorVolumes reports the state it got to even when it fails, so both
 	// paths persist the same field.
 	updatePrecondition := store.PreconditionFrom(actor)
