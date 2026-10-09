@@ -242,7 +242,8 @@ func TestUpdateActor(t *testing.T) {
 // update may point a suspended actor at a different template (it takes effect
 // on the next ResumeActor), but the actor must be suspended, the new ref must
 // resolve, and the replacement's sandbox config and its volumes and volume
-// mounts other than system_info must match the old template's.
+// mounts other than system_info and existing volumes must match the old
+// template's.
 func TestUpdateActor_RepointTemplate(t *testing.T) {
 	ctx := context.Background()
 	persistence, cleanup := storetest.SetupTestStore(t)
@@ -301,6 +302,28 @@ func TestUpdateActor_RepointTemplate(t *testing.T) {
 		SandboxConfig:  gvisorConfig,
 	}); err != nil {
 		t.Fatalf("creating template tmpl-f: %v", err)
+	}
+	// tmpl-g adds an existing volume and its mount to tmpl-f's layout, which a
+	// repoint may do too: the actor supplies such a volume at create or not at
+	// all, and no snapshot carries its content.
+	if _, err := persistence.CreateActorTemplate(ctx, &ateapipb.ActorTemplate{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "tmpl-g"},
+		Containers: []*ateapipb.Container{{
+			Name:  "main",
+			Image: "example.com/app:v1",
+			VolumeMounts: []*ateapipb.VolumeMount{
+				{Name: "data", MountPath: "/data"},
+				{Name: "egress-trust", MountPath: "/run/kagent/egress"},
+				{Name: "workspace", MountPath: "/workspace"},
+			},
+		}},
+		Volumes: []*ateapipb.Volume{dataVolume, {Name: "egress-trust", SystemInfo: &ateapipb.SystemInfoVolumeSource{
+			DataSources: []*ateapipb.SystemInfoDataSource{{TrustBundle: &ateapipb.TrustBundleDataSource{Names: []string{"egress"}, Path: "ca.crt"}}},
+		}}, {Name: "workspace", ExistingVolume: &ateapipb.ExistingVolumeSource{}}},
+		SnapshotConfig: &ateapipb.SnapshotConfig{StorageLocation: "gs://my-bucket/snapshots"},
+		SandboxConfig:  gvisorConfig,
+	}); err != nil {
+		t.Fatalf("creating template tmpl-g: %v", err)
 	}
 
 	created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
@@ -369,6 +392,19 @@ func TestUpdateActor_RepointTemplate(t *testing.T) {
 		t.Fatalf("UpdateActor to a template adding a system_info volume failed: %v", err)
 	}
 	if got, want := updated.GetActorTemplate().GetName(), "tmpl-f"; got != want {
+		t.Errorf("updated actor_template.name = %q, want %q", got, want)
+	}
+
+	// Repointing at a template that only adds an existing volume and its
+	// mount succeeds.
+	updated, err = svc.UpdateActor(ctx, &ateapipb.UpdateActorRequest{Actor: &ateapipb.Actor{
+		Metadata:      updated.GetMetadata(),
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl-g"},
+	}})
+	if err != nil {
+		t.Fatalf("UpdateActor to a template adding an existing volume failed: %v", err)
+	}
+	if got, want := updated.GetActorTemplate().GetName(), "tmpl-g"; got != want {
 		t.Errorf("updated actor_template.name = %q, want %q", got, want)
 	}
 
@@ -586,6 +622,9 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 	}
 	trustMount := &ateapipb.VolumeMount{Name: "egress-trust", MountPath: "/run/kagent/egress"}
 	withTrust := []*ateapipb.Volume{dataVolume, trustBundleVolume("egress")}
+	workspaceVolume := &ateapipb.Volume{Name: "workspace", ExistingVolume: &ateapipb.ExistingVolumeSource{}}
+	workspaceMount := &ateapipb.VolumeMount{Name: "workspace", MountPath: "/workspace"}
+	withWorkspace := []*ateapipb.Volume{dataVolume, workspaceVolume}
 
 	tests := []struct {
 		name             string
@@ -682,6 +721,33 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 		name:    "durable volume replaced by a system_info volume of the same name",
 		oldTmpl: template(oneVolume, container("main", dataMount)),
 		newTmpl: template([]*ateapipb.Volume{{Name: "data", SystemInfo: &ateapipb.SystemInfoVolumeSource{}}}, container("main", dataMount)),
+		wantErr: true,
+	}, {
+		name:    "existing volume and mount added",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template(withWorkspace, container("main", dataMount, workspaceMount)),
+	}, {
+		name:    "existing volume and mount removed",
+		oldTmpl: template(withWorkspace, container("main", workspaceMount, dataMount)),
+		newTmpl: template(oneVolume, container("main", dataMount)),
+	}, {
+		name:    "existing volume mount path and sub_path changed",
+		oldTmpl: template(withWorkspace, container("main", dataMount, workspaceMount)),
+		newTmpl: template(withWorkspace, container("main", dataMount, &ateapipb.VolumeMount{Name: "workspace", MountPath: "/work", SubPath: "src", ReadOnly: true})),
+	}, {
+		name:    "durable volume added beside an existing volume",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template([]*ateapipb.Volume{dataVolume, workspaceVolume, scratchVolume}, container("main", dataMount, workspaceMount)),
+		wantErr: true,
+	}, {
+		name:    "durable mount path changed beside an existing volume",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template(withWorkspace, container("main", &ateapipb.VolumeMount{Name: "data", MountPath: "/mnt/data"}, workspaceMount)),
+		wantErr: true,
+	}, {
+		name:    "durable volume replaced by an existing volume of the same name",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template([]*ateapipb.Volume{{Name: "data", ExistingVolume: &ateapipb.ExistingVolumeSource{}}}, container("main", dataMount)),
 		wantErr: true,
 	}}
 	for _, tt := range tests {

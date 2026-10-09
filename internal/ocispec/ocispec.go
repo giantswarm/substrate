@@ -18,6 +18,8 @@ package ocispec
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,12 +28,24 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/imagecache"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
-	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 // specFile is the OCI spec file name within a bundle.
 const specFile = "config.json"
+
+// MountDir is the directory under an actor's volumes directory that a mount
+// of the external volume name binds from: the volume's own mount point, or,
+// for a mount of a sub-path or a read-only mount, a bind of its own beside
+// it that ateom makes before the sandbox starts (internal/volumebind). A
+// volume name is a DNS label, so the suffix never names a volume.
+func MountDir(name, subPath string, readOnly bool) string {
+	if subPath == "" && !readOnly {
+		return name
+	}
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%t", subPath, readOnly))
+	return name + "." + hex.EncodeToString(sum[:6])
+}
 
 // hostname is the UTS hostname for actor containers.
 const hostname = "actor"
@@ -183,7 +197,7 @@ func Build(o Options) *specs.Spec {
 		case *ateletpb.Volume_DurableDir:
 			srcPath = filepath.Join(o.DurableDirVolumeMountsDir, vm.GetName())
 		case *ateletpb.Volume_External:
-			srcPath = filepath.Join(o.VolumesDir, volumebind.MountDir(vm.GetName(), vm.GetSubPath(), vm.GetReadOnly()))
+			srcPath = filepath.Join(o.VolumesDir, MountDir(vm.GetName(), vm.GetSubPath(), vm.GetReadOnly()))
 			if vm.GetReadOnly() {
 				options = []string{"bind", "ro"}
 			}

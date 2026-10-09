@@ -317,9 +317,9 @@ func (s *ServiceImpl) UpdateActor(ctx context.Context, actorRef resources.ActorR
 		// The repointed ref must also resolve, mirroring CreateActor's
 		// check (same non-atomicity caveat; resume re-resolves and fails
 		// cleanly), and the replacement's sandbox config and its volumes
-		// and volume mounts other than system_info must match the old
-		// template's. It must also store snapshots under the location the
-		// actor's own already live in.
+		// and volume mounts other than system_info and existing volumes
+		// must match the old template's. It must also store snapshots under
+		// the location the actor's own already live in.
 		if !proto.Equal(oldVal.GetActorTemplate(), newVal.GetActorTemplate()) {
 			if state := oldVal.GetStatus().GetState(); state != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
 				return status.Errorf(codes.FailedPrecondition,
@@ -389,15 +389,18 @@ func (s *ServiceImpl) UpdateActor(ctx context.Context, actorRef resources.ActorR
 // containers added or removed by the new template are unconstrained.
 // SystemInfo volumes and their mounts are exempt: atelet regenerates their
 // content on every Run/Restore and a snapshot holds none of it, so the new
-// template may add, remove or change them.
+// template may add, remove or change them. Existing volumes and their mounts
+// are exempt for the same reason: their data lives outside Substrate, the
+// actor supplies them at create or not at all, and an actor that supplies no
+// reference to one the new template declares gets no mount of it.
 func validateTemplateVolumesUnchanged(oldTemplate, newTemplate *ateapipb.ActorTemplate) error {
-	oldVolumes, oldSystemInfo := splitSnapshotVolumes(oldTemplate)
-	newVolumes, newSystemInfo := splitSnapshotVolumes(newTemplate)
+	oldVolumes, oldExempt := splitSnapshotVolumes(oldTemplate)
+	newVolumes, newExempt := splitSnapshotVolumes(newTemplate)
 	if !slices.EqualFunc(oldVolumes, newVolumes, func(a, b *ateapipb.Volume) bool {
 		return proto.Equal(a, b)
 	}) {
 		return status.Error(codes.FailedPrecondition,
-			"volumes differ between the current and the new actor template; volumes other than system_info must be identical to repoint an actor")
+			"volumes differ between the current and the new actor template; volumes other than system_info and existing volumes must be identical to repoint an actor")
 	}
 
 	newContainers := make(map[string]*ateapipb.Container, len(newTemplate.GetContainers()))
@@ -409,11 +412,11 @@ func validateTemplateVolumesUnchanged(oldTemplate, newTemplate *ateapipb.ActorTe
 		if !ok {
 			continue
 		}
-		if !slices.EqualFunc(snapshotVolumeMounts(oldC, oldSystemInfo), snapshotVolumeMounts(newC, newSystemInfo), func(a, b *ateapipb.VolumeMount) bool {
+		if !slices.EqualFunc(snapshotVolumeMounts(oldC, oldExempt), snapshotVolumeMounts(newC, newExempt), func(a, b *ateapipb.VolumeMount) bool {
 			return proto.Equal(a, b)
 		}) {
 			return status.Errorf(codes.FailedPrecondition,
-				"volume mounts of container %q differ between the current and the new actor template; mounts of volumes other than system_info must be identical to repoint an actor", oldC.GetName())
+				"volume mounts of container %q differ between the current and the new actor template; mounts of volumes other than system_info and existing volumes must be identical to repoint an actor", oldC.GetName())
 		}
 	}
 	return nil
@@ -453,27 +456,28 @@ func validateSnapshotLocationUnchanged(actor *ateapipb.Actor, newTemplate *ateap
 	return nil
 }
 
-// splitSnapshotVolumes returns the template's volumes other than SystemInfo
-// ones, in order, and the names of its SystemInfo volumes.
+// splitSnapshotVolumes returns the template's volumes a snapshot carries data
+// for, in order, and the names of the others: its SystemInfo and existing
+// volumes.
 func splitSnapshotVolumes(tmpl *ateapipb.ActorTemplate) ([]*ateapipb.Volume, map[string]bool) {
 	var volumes []*ateapipb.Volume
-	systemInfo := map[string]bool{}
+	exempt := map[string]bool{}
 	for _, v := range tmpl.GetVolumes() {
-		if v.GetSystemInfo() != nil {
-			systemInfo[v.GetName()] = true
+		if v.GetSystemInfo() != nil || v.GetExistingVolume() != nil {
+			exempt[v.GetName()] = true
 			continue
 		}
 		volumes = append(volumes, v)
 	}
-	return volumes, systemInfo
+	return volumes, exempt
 }
 
 // snapshotVolumeMounts returns the container's mounts, in order, without the
-// mounts of the named SystemInfo volumes.
-func snapshotVolumeMounts(c *ateapipb.Container, systemInfo map[string]bool) []*ateapipb.VolumeMount {
+// mounts of the named exempt volumes.
+func snapshotVolumeMounts(c *ateapipb.Container, exempt map[string]bool) []*ateapipb.VolumeMount {
 	var mounts []*ateapipb.VolumeMount
 	for _, m := range c.GetVolumeMounts() {
-		if !systemInfo[m.GetName()] {
+		if !exempt[m.GetName()] {
 			mounts = append(mounts, m)
 		}
 	}

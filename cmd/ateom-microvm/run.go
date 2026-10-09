@@ -700,7 +700,7 @@ func (s *AteomService) stageMergedRootfs(ctx context.Context, rr resolvedRuntime
 	if hasCsiVolumes(containers) {
 		// The directories mounts name a sub-path of, or mount read-only, are
 		// bound beside their volumes first, so the share carries them too.
-		if err := volumebind.Prepare(actorDirs.GetVolumesDir(), containers); err != nil {
+		if err := volumebind.Prepare(actorDirs.GetVolumesDir(), actorDirs.GetOciBundleDir(), containers); err != nil {
 			return nil, fmt.Errorf("while binding volume directories: %w", err)
 		}
 		if err := s.stageCsiVolumes(ctx, id, actorDirs.GetVolumesDir()); err != nil {
