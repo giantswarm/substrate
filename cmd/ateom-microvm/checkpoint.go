@@ -28,6 +28,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/internal/volumebind"
 
 	"github.com/agent-substrate/substrate/cmd/ateom-microvm/internal/ch"
 	"github.com/agent-substrate/substrate/cmd/ateom-microvm/internal/kata"
@@ -212,7 +213,7 @@ func (s *AteomService) CheckpointWorkload(ctx context.Context, req *ateompb.Chec
 	// Tear down: the actor returns to "available". Best-effort; the snapshot is
 	// already on disk for atelet to ship.
 	tTeardown := time.Now()
-	if err := s.terminateWorkload(ctx, attribution, actorDirs); err != nil {
+	if err := s.terminateWorkload(ctx, attribution, actorDirs, req.GetSpec().GetContainers()); err != nil {
 		slog.WarnContext(ctx, "failed to terminate workload after checkpoint",
 			slog.String("actor", attribution.Ref.String()),
 			slog.String("actorUID", actorUID),
@@ -399,7 +400,7 @@ func (s *AteomService) TerminateWorkload(ctx context.Context, req *ateompb.Termi
 
 	attribution := ateomstats.ActorAttributionFromRequest(req)
 
-	if err := s.terminateWorkload(ctx, attribution, req.GetActorDirs()); err != nil {
+	if err := s.terminateWorkload(ctx, attribution, req.GetActorDirs(), req.GetSpec().GetContainers()); err != nil {
 		return nil, fmt.Errorf("failed to terminate workload: %w", err)
 	}
 
@@ -418,7 +419,7 @@ func (s *AteomService) stopActorVM(ctx context.Context, actorUID string, actorDi
 	return s.teardownActor(ctx, actorUID, actorDirs, ra, ch.NewClient(chSocket))
 }
 
-func (s *AteomService) terminateWorkload(ctx context.Context, actor resources.ActorAttribution, actorDirs *ateompb.ActorDirs) error {
+func (s *AteomService) terminateWorkload(ctx context.Context, actor resources.ActorAttribution, actorDirs *ateompb.ActorDirs, containers []*ateompb.Container) error {
 	var errs []error
 	if err := s.tunnel.Deactivate(ctx, actor); err != nil {
 		errs = append(errs, fmt.Errorf("while deactivating actor networking: %w", err))
@@ -427,6 +428,9 @@ func (s *AteomService) terminateWorkload(ctx context.Context, actor resources.Ac
 	actorUID := actor.UID
 	if err := s.stopActorVM(ctx, actorUID, actorDirs); err != nil {
 		errs = append(errs, fmt.Errorf("while tearing down actor: %w", err))
+	}
+	if err := volumebind.Release(actorDirs.GetVolumesDir(), containers); err != nil {
+		errs = append(errs, fmt.Errorf("while unbinding volume directories: %w", err))
 	}
 	// Remove attribution after teardown; a failed checkpoint may leave the VM running.
 	if err := s.unhostActor(ctx, actorUID); err != nil {

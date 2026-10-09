@@ -521,7 +521,7 @@ func (s *AteomHerder) Run(ctx context.Context, req *ateletpb.RunRequest) (resp *
 		return nil, fmt.Errorf("while resetting actor dirs: %w", err)
 	}
 
-	if err := s.mountExternalVolumes(ctx, actorUID, req.GetSpec().GetVolumes()); err != nil {
+	if err := s.mountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
 		return nil, err
 	}
 
@@ -759,7 +759,7 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRe
 	}
 	dPersist = time.Since(tPersist)
 
-	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec().GetVolumes()); err != nil {
+	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
 		return nil, fmt.Errorf("while unmounting external volumes: %w", err)
 	}
 
@@ -1133,7 +1133,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	}
 
 	tMount := time.Now()
-	mountErr := s.mountExternalVolumes(ctx, actorUID, req.GetSpec().GetVolumes())
+	mountErr := s.mountExternalVolumes(ctx, actorUID, req.GetSpec())
 	dMount = time.Since(tMount)
 	if mountErr != nil {
 		return nil, mountErr
@@ -1364,7 +1364,7 @@ func (s *AteomHerder) Terminate(ctx context.Context, req *ateletpb.TerminateRequ
 	s.systemInfoVolumes.Deregister(actorUID)
 
 	// Unmount external volumes
-	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec().GetVolumes()); err != nil {
+	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
 		return nil, fmt.Errorf("failed to unmount external volumes during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
 	}
 
@@ -1664,6 +1664,8 @@ func buildAteomWorkloadSpec(spec *ateletpb.WorkloadSpec) (*ateompb.WorkloadSpec,
 				csiMounts = append(csiMounts, &ateompb.VolumeMount{
 					VolumeName: volName,
 					MountPath:  vm.GetMountPath(),
+					SubPath:    vm.GetSubPath(),
+					ReadOnly:   vm.GetReadOnly(),
 				})
 			case *ateletpb.Volume_SystemInfo:
 				siMounts = append(siMounts, &ateompb.SystemInfoVolumeMount{

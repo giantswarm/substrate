@@ -282,6 +282,16 @@ message ExternalVolumeSource {
   string storage_volume_id = 1;
   string volume_type = 2;
   map<string, string> volume_context = 3;
+  // access_mode is how the volume is published; unset is READ_WRITE_ONCE.
+  VolumeAccessMode access_mode = 4;
+}
+
+// VolumeAccessMode mirrors ateapi.VolumeAccessMode.
+enum VolumeAccessMode {
+  VOLUME_ACCESS_MODE_UNSPECIFIED = 0;
+  VOLUME_ACCESS_MODE_READ_WRITE_ONCE = 1;
+  VOLUME_ACCESS_MODE_READ_ONLY_MANY = 2;
+  VOLUME_ACCESS_MODE_READ_WRITE_MANY = 3;
 }
 
 message ImageVolumeSource {
@@ -345,6 +355,11 @@ message Volume {
 message VolumeMount {
   string name = 1;
   string mount_path = 2;
+  // sub_path is the directory of an external volume to mount, relative to
+  // its root; empty mounts the root.
+  string sub_path = 3;
+  // read_only mounts an external volume read-only.
+  bool read_only = 4;
 }
 
 message Container {

@@ -75,7 +75,7 @@ func (p *MockVolumePlugin) DeleteVolume(ctx context.Context, volumeID string) er
 }
 
 // AttachVolume simulates volume attachment to a node.
-func (p *MockVolumePlugin) AttachVolume(ctx context.Context, volumeID string, node string) error {
+func (p *MockVolumePlugin) AttachVolume(ctx context.Context, volumeID string, node string, _ AccessMode) error {
 	slog.InfoContext(ctx, "MockVolumePlugin.AttachVolume", slog.String("volumeID", volumeID), slog.String("node", node))
 	return nil
 }
@@ -87,7 +87,7 @@ func (p *MockVolumePlugin) DetachVolume(ctx context.Context, volumeID string, no
 }
 
 // MountVolume simulates mounting volume on the host.
-func (p *MockVolumePlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string) error {
+func (p *MockVolumePlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string, _ AccessMode) error {
 	slog.InfoContext(ctx, "MockVolumePlugin.MountVolume", slog.String("volumeID", volumeID), slog.String("targetPath", targetPath))
 
 	volumeDir := filepath.Join(mockVolumeDirectories, volumeID)
@@ -111,7 +111,7 @@ func (p *MockVolumePlugin) MountVolume(ctx context.Context, volumeID string, tar
 }
 
 // UnmountVolume simulates unmounting volume from the host.
-func (p *MockVolumePlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (p *MockVolumePlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, _ AccessMode) error {
 	slog.InfoContext(ctx, "MockVolumePlugin.UnmountVolume", slog.String("volumeID", volumeID), slog.String("targetPath", targetPath))
 
 	if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
