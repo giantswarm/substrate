@@ -24,6 +24,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -62,21 +63,53 @@ func resolvConfNameservers(path string) ([]string, error) {
 }
 
 // SandboxResolvConf replaces the pod's nameservers with nameserver, the
-// address the sandbox's DNS is served on, while preserving the pod's search
-// domains and options for Kubernetes DNS.
+// address the sandbox's DNS is served on, while preserving the pod's options
+// and the search domains of Kubernetes DNS.
+//
+// The search domains kubelet appends from the node's own resolv.conf are
+// dropped. Under ndots:5 every cluster name is first tried under each of them,
+// a query cluster DNS can only forward to the node's resolvers. Stub resolvers
+// such as c-ares and musl end the whole lookup when one search query times out
+// or fails, so a hiccup of the node's resolvers failed the sandbox's lookup of
+// a cluster Service name; and the node's network is not the sandbox's.
 func SandboxResolvConf(nameserver string, podResolvConf []byte) []byte {
 	var out strings.Builder
 	out.WriteString("nameserver " + nameserver + "\n")
 	for line := range strings.SplitSeq(string(podResolvConf), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "nameserver") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] == "nameserver" {
 			continue
 		}
-		if strings.TrimSpace(line) == "" {
-			continue
+		if fields[0] == "search" {
+			line = strings.Join(append([]string{"search"}, clusterSearchDomains(fields[1:])...), " ")
 		}
 		out.WriteString(line + "\n")
 	}
 	return []byte(out.String())
+}
+
+// clusterSearchDomains keeps the search domains at or under the cluster
+// domain, which kubelet lists together with its "svc." subdomain. A list
+// without that pair was not written by kubelet's ClusterFirst policy and is
+// kept as it is.
+func clusterSearchDomains(domains []string) []string {
+	var cluster string
+	for _, d := range domains {
+		if rest, ok := strings.CutPrefix(strings.ToLower(d), "svc."); ok && slices.ContainsFunc(domains, func(o string) bool { return strings.EqualFold(o, rest) }) {
+			cluster = rest
+			break
+		}
+	}
+	if cluster == "" {
+		return domains
+	}
+	var kept []string
+	for _, d := range domains {
+		if lower := strings.ToLower(d); lower == cluster || strings.HasSuffix(lower, "."+cluster) {
+			kept = append(kept, d)
+		}
+	}
+	return kept
 }
 
 // WriteRootfsResolvConf installs content at /etc/resolv.conf inside rootfs.

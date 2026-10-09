@@ -17,6 +17,9 @@ package dns
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
 )
 
 // Response codes that say the resolver failed rather than answered. NXDOMAIN
@@ -51,4 +54,60 @@ func rcodeError(rcode byte) error {
 		return errors.New("answered REFUSED")
 	}
 	return fmt.Errorf("answered rcode %d", rcode)
+}
+
+// questionAttr logs a query's first question as "name TYPE", read from the
+// message without decompressing: a query's question carries no pointers.
+func questionAttr(msg []byte) slog.Attr {
+	name, qtype, ok := question(msg)
+	if !ok {
+		return slog.String("query", "unparsable")
+	}
+	return slog.String("query", name+" "+qtype)
+}
+
+func question(msg []byte) (name, qtype string, ok bool) {
+	if len(msg) < 12 || msg[4] == 0 && msg[5] == 0 {
+		return "", "", false
+	}
+	var labels []string
+	i := 12
+	for i < len(msg) && msg[i] != 0 {
+		n := int(msg[i])
+		if n > 63 || i+1+n > len(msg) {
+			return "", "", false
+		}
+		labels = append(labels, string(msg[i+1:i+1+n]))
+		i += 1 + n
+	}
+	if i+3 > len(msg) {
+		return "", "", false
+	}
+	return strings.Join(labels, ".") + ".", typeName(uint16(msg[i+1])<<8 | uint16(msg[i+2])), true
+}
+
+func typeName(t uint16) string {
+	switch t {
+	case 1:
+		return "A"
+	case 2:
+		return "NS"
+	case 5:
+		return "CNAME"
+	case 6:
+		return "SOA"
+	case 12:
+		return "PTR"
+	case 15:
+		return "MX"
+	case 16:
+		return "TXT"
+	case 28:
+		return "AAAA"
+	case 33:
+		return "SRV"
+	case 65:
+		return "HTTPS"
+	}
+	return "TYPE" + strconv.Itoa(int(t))
 }

@@ -134,10 +134,15 @@ func (s *Server) servePacket(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			defer func() { <-s.limiter.inFlight }()
+			// A failed query fails the actor's lookup too, often its whole search
+			// list: name the query so the worker's log shows which one and why.
 			answer, err := s.exchangeUDP(ctx, query)
 			if err != nil {
-				slog.WarnContext(ctx, "dns relay could not resolve an actor DNS query", slog.Any("err", err))
+				slog.WarnContext(ctx, "dns relay could not resolve an actor DNS query", questionAttr(query), slog.Any("err", err))
 				return
+			}
+			if rcode, ok := failoverRcode(answer); ok {
+				slog.WarnContext(ctx, "dns relay returned a resolver failure for an actor DNS query", questionAttr(query), slog.Any("err", rcodeError(rcode)))
 			}
 			if _, err := s.n.udp.WriteTo(answer, from); err != nil && ctx.Err() == nil {
 				slog.WarnContext(ctx, "dns relay could not return a DNS answer", slog.Any("err", err))
