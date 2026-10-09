@@ -116,9 +116,11 @@ type ActorWorkflow struct {
 	instruments          *Instruments
 	egressGatewayAddress string
 	pluginRegistry       VolumePluginRegistry
-	workflowDeadline     time.Duration
-	restoreBudget        time.Duration
-	objectStore          objectstore.Store
+	// persistentVolumeLister resolves an actor's existing volumes at resume.
+	persistentVolumeLister corev1listers.PersistentVolumeLister
+	workflowDeadline       time.Duration
+	restoreBudget          time.Duration
+	objectStore            objectstore.Store
 	// pauseUploads makes every pause durable in the background; nil in a
 	// workflow built without one, which then pauses node-locally only.
 	pauseUploads *pauseUploader

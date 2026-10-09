@@ -460,6 +460,84 @@ message Actor {
   //
   // +k8s:optional
   ActorStatus status = 7;
+
+  // existing_volumes supply the template's existing volumes
+  // (Volume.existing_volume) for this actor: each names one and references a
+  // CSI volume that exists outside Substrate and outlives the actor, such as
+  // a read-write-many volume several actors work on. Substrate attaches and
+  // mounts it for this actor, and never creates or deletes it nor changes its
+  // content. An existing volume of the template that this list does not name
+  // has neither the volume nor its mounts. An actor that names any boots from
+  // its image instead of restoring the template's golden snapshot, which was
+  // captured without these mounts. Set once at creation and immutable
+  // afterward.
+  //
+  // +k8s:optional
+  // +k8s:maxItems=8
+  // +k8s:listType=map
+  // +k8s:listMapKey=name
+  // +k8s:immutable
+  repeated ExistingVolume existing_volumes = 10001;
+}
+
+// VolumeAccessMode is how a volume may be attached and mounted across nodes.
+enum VolumeAccessMode {
+  VOLUME_ACCESS_MODE_UNSPECIFIED = 0;
+  // Read-write on a single node (CSI SINGLE_NODE_WRITER).
+  VOLUME_ACCESS_MODE_READ_WRITE_ONCE = 1;
+  // Read-only on many nodes (CSI MULTI_NODE_READER_ONLY).
+  VOLUME_ACCESS_MODE_READ_ONLY_MANY = 2;
+  // Read-write on many nodes (CSI MULTI_NODE_MULTI_WRITER).
+  VOLUME_ACCESS_MODE_READ_WRITE_MANY = 3;
+}
+
+// ExistingVolume references a CSI volume for one of the template's existing
+// volumes.
+message ExistingVolume {
+  // name of the template's existing volume this supplies.
+  //
+  // +k8s:required
+  // +k8s:format=k8s-short-name
+  string name = 1;
+
+  // driver is the CSI driver that serves the volume. It must have a
+  // CSIDriverConfig.
+  //
+  // +k8s:required
+  // +k8s:maxLength=253
+  // +k8s:customValidation # same syntax as ExternalVolume.volume_type
+  string driver = 2;
+
+  // volume_handle is the driver's ID of the volume, as a Kubernetes
+  // PersistentVolume names it in spec.csi.volumeHandle. A PersistentVolume of
+  // the driver with this handle must exist; its spec.csi.volumeAttributes are
+  // passed to the driver when the volume is mounted. Several existing volumes
+  // of one actor may reference the same handle.
+  //
+  // +k8s:required
+  // +k8s:maxLength=256
+  // +k8s:customValidation # no control characters
+  string volume_handle = 3;
+
+  // access_mode is READ_WRITE_MANY or READ_ONLY_MANY, and must be one of the
+  // PersistentVolume's access modes. With READ_ONLY_MANY every mount of the
+  // volume is read-only.
+  //
+  // +k8s:required
+  // +k8s:minimum=2
+  // +k8s:maximum=3 # keep in sync with VolumeAccessMode
+  VolumeAccessMode access_mode = 4;
+
+  // sub_path is the directory of the volume that this actor sees as the
+  // volume's root, in the form of VolumeMount.sub_path; empty is the root.
+  // The template's mounts of the volume, and their own sub_path, are
+  // relative to it, so actors of one template can each work in a directory
+  // of their own.
+  //
+  // +k8s:optional
+  // +k8s:maxLength=4096
+  // +k8s:customValidation # clean relative path
+  string sub_path = 5;
 }
 
 // EgressPolicy is an egress policy resource nested under an Actor. An Actor has
@@ -1323,7 +1401,7 @@ message Volume {
   string name = 1;
 
   // Exactly one of durable_dir / external_volume_template / image /
-  // system_info must be set.
+  // system_info / existing_volume must be set.
   //
   // +k8s:optional
   // +k8s:unionMember
@@ -1342,7 +1420,19 @@ message Volume {
   // +k8s:optional
   // +k8s:unionMember
   ImageVolumeSource image = 6;
+
+  // existing_volume declares a volume each actor supplies at CreateActor
+  // (Actor.existing_volumes).
+  //
+  // +k8s:optional
+  // +k8s:unionMember
+  ExistingVolumeSource existing_volume = 10001;
 }
+
+// ExistingVolumeSource declares a volume that exists outside Substrate and
+// that each actor supplies at CreateActor in Actor.existing_volumes. An actor
+// that supplies none has neither the volume nor its mounts.
+message ExistingVolumeSource {}
 
 // ImageVolumeSource mounts the contents of an OCI image, read-only. The
 // reference must include a digest: changing the image invalidates
@@ -1495,6 +1585,24 @@ message VolumeMount {
   // +k8s:maxLength=4096
   // +k8s:customValidation # clean-absolute-path shape; no regex/pattern tag exists
   string mount_path = 2;
+
+  // sub_path is the directory of the volume to mount, relative to its root;
+  // empty mounts the root. It must be a clean relative path: no leading '/',
+  // no '.' or '..' element, no '//', no trailing '/' and no control
+  // characters. Only an existing volume's mount may set it. The directory
+  // must exist, and no element of it may be a symbolic link: a mount that
+  // would need either fails.
+  //
+  // +k8s:optional
+  // +k8s:maxLength=4096
+  // +k8s:customValidation # clean relative path
+  string sub_path = 10001;
+
+  // read_only mounts the volume read-only. Only an existing volume's mount
+  // may set it.
+  //
+  // +k8s:optional
+  bool read_only = 10002;
 }
 
 message CreateAtespaceRequest {

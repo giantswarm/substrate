@@ -248,6 +248,9 @@ func main() {
 	// exists, the one signal that tells a node gone from one whose workers are
 	// momentarily absent.
 	nodeLister := scInformerFactory.Core().V1().Nodes().Lister()
+	// PersistentVolumes: the cluster's record of the existing volumes actors
+	// mount, which CreateActor checks and resume reads the volume context from.
+	persistentVolumeLister := scInformerFactory.Core().V1().PersistentVolumes().Lister()
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -299,6 +302,7 @@ func main() {
 		sandboxConfigLister,
 		csiDriverConfigLister,
 		storageClassLister,
+		persistentVolumeLister,
 		nodeLister,
 		ateletDialer,
 		instruments,

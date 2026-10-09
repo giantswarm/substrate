@@ -152,6 +152,48 @@ func TestValidateCreateActorRequest(t *testing.T) {
 		"invalid actor.source_tag.name",
 		validReq(validActor(withSourceTag("as", "invalid value"))),
 		field.ErrorList{field.Invalid(field.NewPath("actor", "source_tag", "name"), nil, "").WithOrigin("format=k8s-short-name")},
+	}, {
+		"valid existing volume",
+		validReq(validActor(withExistingVolume(nil))),
+		nil,
+	}, {
+		"existing volume without a driver",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) { ev.Driver = "" }))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("driver"), "")},
+	}, {
+		"existing volume with an invalid driver",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) { ev.Driver = "Not A Driver" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("driver"), "Not A Driver", "")},
+	}, {
+		"existing volume without a handle",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) { ev.VolumeHandle = "" }))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("volume_handle"), "")},
+	}, {
+		"existing volume handle with a control character",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) { ev.VolumeHandle = "a\x01b" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("volume_handle"), "a\x01b", "")},
+	}, {
+		"existing volume read-only many",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) {
+			ev.AccessMode = ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY
+		}))),
+		nil,
+	}, {
+		"existing volume single-node",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) {
+			ev.AccessMode = ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_ONCE
+		}))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("access_mode"), nil, "").WithOrigin("minimum")},
+	}, {
+		"existing volume without an access mode",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) {
+			ev.AccessMode = ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED
+		}))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("access_mode"), "")},
+	}, {
+		"existing volume escaping its root",
+		validReq(validActor(withExistingVolume(func(ev *ateapipb.ExistingVolume) { ev.SubPath = "../other" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("sub_path"), "../other", "")},
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1002,6 +1044,24 @@ func withActorActorTemplate(atespace, name string) func(*ateapipb.Actor) {
 // the actor's source_tag to a valid value.
 func withActorSourceTag(atespace, name string) func(*ateapipb.Actor) {
 	return func(a *ateapipb.Actor) { a.SourceTag = &ateapipb.ObjectRef{Atespace: atespace, Name: name} }
+}
+
+// withExistingVolume returns a modifier func (see validActor) which gives the
+// actor one valid existing volume, changed by mod when it is not nil.
+func withExistingVolume(mod func(*ateapipb.ExistingVolume)) func(*ateapipb.Actor) {
+	return func(a *ateapipb.Actor) {
+		ev := &ateapipb.ExistingVolume{
+			Name:         "workspace",
+			Driver:       "nfs.csi.k8s.io",
+			VolumeHandle: "nfs-server#share#workspace-1",
+			AccessMode:   ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY,
+			SubPath:      "sessions/a",
+		}
+		if mod != nil {
+			mod(ev)
+		}
+		a.ExistingVolumes = []*ateapipb.ExistingVolume{ev}
+	}
 }
 
 // withActorWorkerAssignment returns a modifier func (see validActor) which sets

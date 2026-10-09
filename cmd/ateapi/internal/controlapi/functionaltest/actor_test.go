@@ -1597,7 +1597,7 @@ func (f *partialFailVolumePlugin) CreateVolume(ctx context.Context, name, capaci
 	return "storage-" + name, parameters, nil
 }
 
-func (f *partialFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string) error {
+func (f *partialFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string, _ volume.AccessMode) error {
 	return nil
 }
 
@@ -1738,7 +1738,7 @@ func (r *retrySuccessVolumePlugin) CreateVolume(ctx context.Context, name, capac
 	return "storage-" + name, parameters, nil
 }
 
-func (r *retrySuccessVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string) error {
+func (r *retrySuccessVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string, _ volume.AccessMode) error {
 	return nil
 }
 
@@ -1880,7 +1880,7 @@ func (a *attachFailVolumePlugin) CreateVolume(ctx context.Context, name, capacit
 	return "storage-" + name, parameters, nil
 }
 
-func (a *attachFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string) error {
+func (a *attachFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string, _ volume.AccessMode) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.attachAttempts++
@@ -2125,7 +2125,7 @@ func (m *multiVolAttachPlugin) CreateVolume(ctx context.Context, name, capacity,
 	return "storage-" + name, parameters, nil
 }
 
-func (m *multiVolAttachPlugin) AttachVolume(ctx context.Context, volumeID, node string) error {
+func (m *multiVolAttachPlugin) AttachVolume(ctx context.Context, volumeID, node string, _ volume.AccessMode) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.attachAttempts[volumeID]++
@@ -2296,7 +2296,7 @@ func (d *detachFailVolumePlugin) CreateVolume(ctx context.Context, name, capacit
 	return "storage-" + name, parameters, nil
 }
 
-func (d *detachFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string) error {
+func (d *detachFailVolumePlugin) AttachVolume(ctx context.Context, volumeID, node string, _ volume.AccessMode) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.attachedNodes = append(d.attachedNodes, node)

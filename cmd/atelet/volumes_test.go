@@ -45,7 +45,7 @@ type fakeWorkerPlugin struct {
 	mountCalls  []mountCall
 }
 
-func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, attributes map[string]string) error {
+func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, attributes map[string]string, _ volume.AccessMode) error {
 	f.mountCalls = append(f.mountCalls, mountCall{
 		volumeID:   volumeID,
 		targetPath: targetPath,
@@ -59,7 +59,7 @@ func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, volumeID string, tar
 	return f.mountErr
 }
 
-func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, _ volume.AccessMode) error {
 	f.unmounted = append(f.unmounted, volumeID)
 	if f.unmountErrs != nil {
 		if err, ok := f.unmountErrs[volumeID]; ok {
@@ -119,7 +119,7 @@ func TestUnmountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.unmountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, durableVol, extVol2})
+		err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, durableVol, extVol2}})
 		if err != nil {
 			t.Fatalf("unmountExternalVolumes failed unexpectedly: %v", err)
 		}
@@ -138,7 +138,7 @@ func TestUnmountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.unmountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1})
+		err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}})
 		if err == nil {
 			t.Fatal("unmountExternalVolumes returned nil, want blocking error")
 		}
@@ -157,7 +157,7 @@ func TestUnmountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.unmountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2})
+		err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}})
 		if err == nil {
 			t.Fatal("unmountExternalVolumes returned nil, want blocking error")
 		}
@@ -209,7 +209,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, durableVol, extVol2})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, durableVol, extVol2}})
 		if err != nil {
 			t.Fatalf("mountExternalVolumes failed unexpectedly: %v", err)
 		}
@@ -258,7 +258,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}})
 		if err != nil {
 			t.Fatalf("mountExternalVolumes with existing directory failed: %v", err)
 		}
@@ -284,7 +284,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			volumePlugins: map[string]volume.VolumePluginWorkerPlane{},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{unknownVol})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{unknownVol}})
 		if err == nil {
 			t.Fatal("expected mountExternalVolumes to fail with unknown plugin, got nil")
 		}
@@ -305,7 +305,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}})
 		if err == nil {
 			t.Fatal("expected mountExternalVolumes to fail, got nil")
 		}
@@ -326,7 +326,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}})
 		if err == nil {
 			t.Fatal("expected mountExternalVolumes to fail, got nil")
 		}
@@ -352,7 +352,7 @@ func TestMountExternalVolumes(t *testing.T) {
 			},
 		}
 
-		err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2})
+		err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}})
 		if err == nil {
 			t.Fatal("expected mountExternalVolumes to fail when vol-2 fails, got nil")
 		}
@@ -418,7 +418,7 @@ func TestVolumeHostDirectoryCleanup(t *testing.T) {
 			},
 		}
 
-		if err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2}); err != nil {
+		if err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}}); err != nil {
 			t.Fatalf("mountExternalVolumes failed: %v", err)
 		}
 
@@ -430,7 +430,7 @@ func TestVolumeHostDirectoryCleanup(t *testing.T) {
 			}
 		}
 
-		if err := s.unmountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2}); err != nil {
+		if err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}}); err != nil {
 			t.Fatalf("unmountExternalVolumes failed: %v", err)
 		}
 
@@ -453,10 +453,10 @@ func TestVolumeHostDirectoryCleanup(t *testing.T) {
 		}
 
 		// Mount and then unmount external volumes.
-		if err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2}); err != nil {
+		if err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}}); err != nil {
 			t.Fatalf("mountExternalVolumes failed: %v", err)
 		}
-		if err := s.unmountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1, extVol2}); err != nil {
+		if err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1, extVol2}}); err != nil {
 			t.Fatalf("unmountExternalVolumes failed: %v", err)
 		}
 
@@ -500,7 +500,7 @@ func TestVolumeHostDirectoryCleanup(t *testing.T) {
 			},
 		}
 
-		if err := s.mountExternalVolumes(ctx, actorUID, []*ateletpb.Volume{extVol1}); err != nil {
+		if err := s.mountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}}); err != nil {
 			t.Fatalf("mountExternalVolumes failed: %v", err)
 		}
 

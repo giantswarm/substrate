@@ -17,6 +17,7 @@ package ocispec
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/agent-substrate/substrate/internal/imagecache"
@@ -62,6 +63,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 			{Name: "data", MountPath: "/home/counter"},
 			{Name: "sysinfo", MountPath: "/run/ate"},
 			{Name: "csi", MountPath: "/mnt/csi"},
+			{Name: "csi", MountPath: "/workspace", SubPath: "sessions/a"},
+			{Name: "csi", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
 			{Name: "agent", MountPath: "/ate"},
 		},
 		DurableDirVolumeMountsDir: durableDir,
@@ -79,6 +82,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		{"/home/counter", durableDir + "/data", []string{"bind", "rw"}},
 		{"/run/ate", sysInfoDir + "/sysinfo", []string{"bind", "ro"}},
 		{"/mnt/csi", volumesDir + "/csi", []string{"bind", "rw"}},
+		{"/workspace", volumesDir + "/" + ExternalMountDir(&ateletpb.VolumeMount{Name: "csi", SubPath: "sessions/a"}), []string{"bind", "rw"}},
+		{"/mirrors", volumesDir + "/" + ExternalMountDir(&ateletpb.VolumeMount{Name: "csi", SubPath: "mirrors", ReadOnly: true}), []string{"bind", "ro"}},
 		{"/ate", imagecache.ImageVolumeMountPath(bundle, "agent"), []string{"bind", "ro"}},
 	} {
 		m := mountFor(t, spec, tc.dest)
@@ -91,6 +96,24 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		if !slices.Equal(m.Options, tc.wantOpts) {
 			t.Errorf("%s options = %v, want %v", tc.dest, m.Options, tc.wantOpts)
 		}
+	}
+}
+
+// A mount of a sub-path or a read-only mount binds a directory of its own,
+// one per sub-path and read-only flag, which never names a volume.
+func TestExternalMountDir(t *testing.T) {
+	plain := ExternalMountDir(&ateletpb.VolumeMount{Name: "ws"})
+	sub := ExternalMountDir(&ateletpb.VolumeMount{Name: "ws", SubPath: "sessions/a"})
+	subRO := ExternalMountDir(&ateletpb.VolumeMount{Name: "ws", SubPath: "sessions/a", ReadOnly: true})
+	other := ExternalMountDir(&ateletpb.VolumeMount{Name: "ws", SubPath: "sessions/b", MountPath: "/elsewhere"})
+	if plain != "ws" {
+		t.Errorf("plain mount dir = %q, want the volume's own", plain)
+	}
+	if len(slices.Compact([]string{plain, sub, subRO, other})) != 4 {
+		t.Errorf("mount dirs %q %q %q %q are not distinct", plain, sub, subRO, other)
+	}
+	if !strings.HasPrefix(sub, "ws.") || ExternalMountDir(&ateletpb.VolumeMount{Name: "ws", SubPath: "sessions/a", MountPath: "/x"}) != sub {
+		t.Errorf("sub-path mount dir = %q, want ws.<hash> independent of the mount path", sub)
 	}
 }
 

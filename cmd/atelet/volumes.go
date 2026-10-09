@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
+	"github.com/agent-substrate/substrate/internal/ocispec"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/internal/volume/csi"
@@ -29,8 +31,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string, volumes []*ateletpb.Volume) error {
-	for _, vol := range volumes {
+func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
+	for _, vol := range spec.GetVolumes() {
 		ext := vol.GetExternal()
 		if ext == nil {
 			continue
@@ -44,19 +46,31 @@ func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string,
 		if err != nil {
 			return fmt.Errorf("failed to get volume plugin for %q: %w", ext.GetVolumeType(), err)
 		}
-		if err := plugin.MountVolume(ctx, ext.GetStorageVolumeId(), hostPath, ext.GetVolumeContext()); err != nil {
+		if err := plugin.MountVolume(ctx, ext.GetStorageVolumeId(), hostPath, ext.GetVolumeContext(), accessMode(ext)); err != nil {
 			return fmt.Errorf("failed to mount volume %q to %q: %w", ext.GetStorageVolumeId(), hostPath, err)
+		}
+		for _, vm := range boundMounts(spec, vol.GetName()) {
+			target := filepath.Join(ateletpath.VolumesDir(actorUID), ocispec.ExternalMountDir(vm))
+			if err := bindVolumeDir(hostPath, vm.GetSubPath(), target, vm.GetReadOnly()); err != nil {
+				return fmt.Errorf("volume %q: %w", vol.GetName(), err)
+			}
 		}
 	}
 	return nil
 }
 
-func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID string, volumes []*ateletpb.Volume) error {
+func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
 	var errs []error
-	for _, vol := range volumes {
+	for _, vol := range spec.GetVolumes() {
 		ext := vol.GetExternal()
 		if ext == nil {
 			continue
+		}
+		for _, vm := range boundMounts(spec, vol.GetName()) {
+			target := filepath.Join(ateletpath.VolumesDir(actorUID), ocispec.ExternalMountDir(vm))
+			if err := unbindVolumeDir(target); err != nil {
+				errs = append(errs, fmt.Errorf("volume %q: %w", vol.GetName(), err))
+			}
 		}
 		hostPath := ateletpath.VolumeHostPath(actorUID, vol.GetName())
 		slog.InfoContext(ctx, "Unmounting volume", slog.String("volume_id", ext.GetStorageVolumeId()), slog.String("host_path", hostPath), slog.String("volume_type", ext.GetVolumeType()))
@@ -67,7 +81,7 @@ func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID strin
 			errs = append(errs, fmt.Errorf("failed to get volume plugin for %q (volume %q): %w", ext.GetVolumeType(), ext.GetStorageVolumeId(), err))
 			continue
 		}
-		if err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath); err != nil {
+		if err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath, accessMode(ext)); err != nil {
 			if status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
 				slog.WarnContext(ctx, "Volume not found during unmount, assuming already unmounted", slog.String("volume_id", ext.GetStorageVolumeId()), slog.Any("error", err))
 			} else {
@@ -76,6 +90,36 @@ func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID strin
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// accessMode maps an external volume's access mode to the volume plugins'.
+func accessMode(ext *ateletpb.ExternalVolumeSource) volume.AccessMode {
+	switch ext.GetAccessMode() {
+	case ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY:
+		return volume.ReadOnlyMany
+	case ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY:
+		return volume.ReadWriteMany
+	default:
+		return volume.ReadWriteOnce
+	}
+}
+
+// boundMounts returns the containers' mounts of volumeName that bind a
+// directory of their own (ocispec.ExternalMountDir), once per directory.
+func boundMounts(spec *ateletpb.WorkloadSpec, volumeName string) []*ateletpb.VolumeMount {
+	var out []*ateletpb.VolumeMount
+	seen := map[string]bool{}
+	for _, ctr := range spec.GetContainers() {
+		for _, vm := range ctr.GetVolumeMounts() {
+			dir := ocispec.ExternalMountDir(vm)
+			if vm.GetName() != volumeName || dir == volumeName || seen[dir] {
+				continue
+			}
+			seen[dir] = true
+			out = append(out, vm)
+		}
+	}
+	return out
 }
 
 func (s *AteomHerder) getPlugin(ctx context.Context, driverName string) (volume.VolumePluginWorkerPlane, error) {

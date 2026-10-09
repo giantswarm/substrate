@@ -18,6 +18,8 @@ package ocispec
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -182,7 +184,10 @@ func Build(o Options) *specs.Spec {
 		case *ateletpb.Volume_DurableDir:
 			srcPath = filepath.Join(o.DurableDirVolumeMountsDir, vm.GetName())
 		case *ateletpb.Volume_External:
-			srcPath = filepath.Join(o.VolumesDir, vm.GetName())
+			srcPath = filepath.Join(o.VolumesDir, ExternalMountDir(vm))
+			if vm.GetReadOnly() {
+				options = []string{"bind", "ro"}
+			}
 		case *ateletpb.Volume_SystemInfo:
 			srcPath = filepath.Join(o.SystemInfoVolumeRootsDir, vm.GetName())
 			options = []string{"bind", "ro"}
@@ -201,6 +206,18 @@ func Build(o Options) *specs.Spec {
 	}
 
 	return spec
+}
+
+// ExternalMountDir is the directory under an actor's volumes directory that
+// an external volume's mount binds from: the volume's own mount point, or,
+// for a mount of a sub-path or a read-only mount, a bind of its own beside
+// it. A volume name is a DNS label, so the suffix never names a volume.
+func ExternalMountDir(vm *ateletpb.VolumeMount) string {
+	if vm.GetSubPath() == "" && !vm.GetReadOnly() {
+		return vm.GetName()
+	}
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%t", vm.GetSubPath(), vm.GetReadOnly()))
+	return vm.GetName() + "." + hex.EncodeToString(sum[:6])
 }
 
 // Load reads the OCI spec of the bundle at bundlePath.
