@@ -15,15 +15,12 @@
 # limitations under the License.
 
 # Lints the repository's own workflow files with .yamllint.yaml. Left out:
-# the zz_generated.* workflows, which only giantswarm/devctl changes, and the
-# files in SKIP, which carry known errors that wait on a pending change.
+# the zz_generated.* workflows, which only giantswarm/devctl changes.
 
 set -o errexit -o nounset -o pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 cd "${ROOT}"
-
-SKIP=(pr-workflow.yaml helm-e2e.yaml)
 
 FILES=()
 for file in .github/workflows/*.yaml; do
@@ -31,9 +28,6 @@ for file in .github/workflows/*.yaml; do
   case "${name}" in
     zz_generated.*) continue ;;
   esac
-  if printf '%s\n' "${SKIP[@]}" | grep -qxF "${name}"; then
-    continue
-  fi
   FILES+=("${file}")
 done
 
