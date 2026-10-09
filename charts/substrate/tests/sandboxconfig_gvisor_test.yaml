@@ -15,12 +15,13 @@
 # The gVisor SandboxConfig the chart ships: its root container is the pause
 # image `images.pause` names, by digest (each snapshot's manifest records it),
 # so a platform with its own pause image or a cluster behind a mirror can set
-# it like every other third-party image of the chart.
+# it like every other third-party image of the chart. On this line the
+# default is upstream's pin under its gsoci copy, the same digest.
 suite: gVisor SandboxConfig
 templates:
 - sandboxconfig-gvisor.yaml
 tests:
-- it: runs the sandbox's root container from the pause image the chart pins, by digest
+- it: runs the sandbox's root container from the gsoci copy of upstream's pause pin, by digest
   asserts:
   - equal:
       path: metadata.name
@@ -30,7 +31,7 @@ tests:
       value: gvisor
   - equal:
       path: spec.pauseImage
-      value: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
+      value: gsoci.azurecr.io/giantswarm/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
 
 - it: renders an overridden pause image verbatim
   set:
