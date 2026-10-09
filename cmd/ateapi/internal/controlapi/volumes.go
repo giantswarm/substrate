@@ -21,6 +21,7 @@ import (
 	"log/slog"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,36 +30,105 @@ import (
 )
 
 // initialActorVolumes constructs initial volume objects in PENDING state before volume creation.
-func initialActorVolumes(ctx context.Context, scLister storagev1listers.StorageClassLister, template *ateapipb.ActorTemplate) ([]*ateapipb.ExternalVolume, error) {
+// A seeded external volume is included only when the actor names a seed for it.
+func initialActorVolumes(ctx context.Context, scLister storagev1listers.StorageClassLister, template *ateapipb.ActorTemplate, seeds []*ateapipb.VolumeSeed) ([]*ateapipb.ExternalVolume, error) {
 	if template == nil {
 		return nil, status.Error(codes.InvalidArgument, "template is required")
 	}
 	var volumes []*ateapipb.ExternalVolume
 	for _, vol := range template.GetVolumes() {
-		if vol.GetExternalVolumeTemplate() != nil {
-			scName := vol.GetExternalVolumeTemplate().GetStorageClassName()
-			sc, err := scLister.Get(scName)
-			if err != nil {
-				if k8serrors.IsNotFound(err) {
-					return nil, status.Errorf(codes.FailedPrecondition, "StorageClass %q not found", scName)
-				}
-				return nil, status.Errorf(codes.Internal, "failed to get StorageClass %q: %v", scName, err)
-			}
-
-			volumes = append(volumes, &ateapipb.ExternalVolume{
-				VolumeName: vol.GetName(),
-				VolumeType: sc.Provisioner,
-				Status:     ateapipb.ExternalVolume_STATUS_PENDING,
-			})
+		evt := vol.GetExternalVolumeTemplate()
+		if evt == nil {
+			continue
 		}
+		if evt.GetSeeded() && volumeSeed(seeds, vol.GetName()) == nil {
+			continue
+		}
+		scName := evt.GetStorageClassName()
+		sc, err := scLister.Get(scName)
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				return nil, status.Errorf(codes.FailedPrecondition, "StorageClass %q not found", scName)
+			}
+			return nil, status.Errorf(codes.Internal, "failed to get StorageClass %q: %v", scName, err)
+		}
+
+		volumes = append(volumes, &ateapipb.ExternalVolume{
+			VolumeName: vol.GetName(),
+			VolumeType: sc.Provisioner,
+			Status:     ateapipb.ExternalVolume_STATUS_PENDING,
+		})
 	}
 	return volumes, nil
 }
 
+// volumeSeed returns the seed naming volumeName, or nil.
+func volumeSeed(seeds []*ateapipb.VolumeSeed, volumeName string) *ateapipb.VolumeSeed {
+	for _, seed := range seeds {
+		if seed.GetVolumeName() == volumeName {
+			return seed
+		}
+	}
+	return nil
+}
+
+// validateVolumeSeeds checks a CreateActor's seeds against the template and
+// the storage system, so that a seed that cannot be restored is refused at
+// create rather than at the actor's first resume: each seed must name a
+// seeded external volume of the template, its driver must be the volume's
+// StorageClass provisioner and registered, and the driver must hold the
+// snapshot, ready to use.
+func validateVolumeSeeds(ctx context.Context, registry VolumePluginRegistry, scLister storagev1listers.StorageClassLister, template *ateapipb.ActorTemplate, seeds []*ateapipb.VolumeSeed) error {
+	for _, seed := range seeds {
+		volName := seed.GetVolumeName()
+		var evt *ateapipb.ExternalVolumeTemplate
+		for _, vol := range template.GetVolumes() {
+			if vol.GetName() == volName {
+				evt = vol.GetExternalVolumeTemplate()
+				break
+			}
+		}
+		if !evt.GetSeeded() {
+			return status.Errorf(codes.InvalidArgument, "seed for volume %q: ActorTemplate has no seeded external volume %q", volName, volName)
+		}
+
+		scName := evt.GetStorageClassName()
+		sc, err := scLister.Get(scName)
+		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				return status.Errorf(codes.FailedPrecondition, "seed for volume %q: StorageClass %q not found", volName, scName)
+			}
+			return status.Errorf(codes.Internal, "seed for volume %q: failed to get StorageClass %q: %v", volName, scName, err)
+		}
+		if seed.GetDriver() != sc.Provisioner {
+			return status.Errorf(codes.InvalidArgument, "seed for volume %q names driver %q, but the volume's StorageClass %q provisions with %q", volName, seed.GetDriver(), scName, sc.Provisioner)
+		}
+		plugin, err := registry.GetPlugin(ctx, seed.GetDriver())
+		if err != nil {
+			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: unknown driver %q: %v", volName, seed.GetDriver(), err)
+		}
+
+		handle := seed.GetSnapshotHandle()
+		snap, found, err := plugin.GetSnapshot(ctx, handle)
+		switch {
+		case status.Code(err) == codes.Unimplemented:
+			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: driver %q cannot list snapshots, so snapshot %q cannot be checked: %v", volName, seed.GetDriver(), handle, err)
+		case err != nil:
+			return status.Errorf(codes.Unavailable, "seed for volume %q: looking up snapshot %q in driver %q: %v", volName, handle, seed.GetDriver(), err)
+		case !found:
+			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: driver %q holds no snapshot %q", volName, seed.GetDriver(), handle)
+		case !snap.ReadyToUse:
+			return status.Errorf(codes.FailedPrecondition, "seed for volume %q: snapshot %q in driver %q is not ready to use", volName, handle, seed.GetDriver())
+		}
+	}
+	return nil
+}
+
 // createActorVolumes provisions external volumes specified in volumesToCreate using the provided volume plugin.
+// A volume with a seed in seeds is restored from the seed's snapshot.
 // It returns the list of external volumes (with updated status and storage IDs), or an error if any creation fails.
 // Any volumes processed before or during a failure are returned alongside the error so they can be persisted on the actor.
-func createActorVolumes(ctx context.Context, registry VolumePluginRegistry, scLister storagev1listers.StorageClassLister, actorUID string, template *ateapipb.ActorTemplate, volumesToCreate []*ateapipb.ExternalVolume) (resultVolumes []*ateapipb.ExternalVolume, err error) {
+func createActorVolumes(ctx context.Context, registry VolumePluginRegistry, scLister storagev1listers.StorageClassLister, actorUID string, template *ateapipb.ActorTemplate, seeds []*ateapipb.VolumeSeed, volumesToCreate []*ateapipb.ExternalVolume) (resultVolumes []*ateapipb.ExternalVolume, err error) {
 	resultVolumes = make([]*ateapipb.ExternalVolume, 0, len(volumesToCreate))
 
 	var currentIdx int
@@ -109,22 +179,46 @@ func createActorVolumes(ctx context.Context, registry VolumePluginRegistry, scLi
 			return resultVolumes, status.Errorf(codes.FailedPrecondition, "volume %q has mismatched type %q (expected %q from StorageClass %q)", volName, vol.GetVolumeType(), sc.Provisioner, scName)
 		}
 
+		var sourceSnapshotID string
+		if specVol.GetExternalVolumeTemplate().GetSeeded() {
+			seed := volumeSeed(seeds, volName)
+			if seed == nil {
+				return resultVolumes, status.Errorf(codes.FailedPrecondition, "seeded volume %q has no seed on the actor", volName)
+			}
+			sourceSnapshotID = seed.GetSnapshotHandle()
+		}
+
 		plugin, err := registry.GetPlugin(ctx, vol.GetVolumeType())
 		if err != nil {
 			return resultVolumes, status.Errorf(codes.FailedPrecondition, "failed to get volume plugin for driver %q (StorageClass %q): %v", sc.Provisioner, scName, err)
 		}
 
-		storageVolumeID, volCtx, volErr := plugin.CreateVolume(ctx, actVolID, specVol.GetExternalVolumeTemplate().GetCapacity(), sc.Provisioner, sc.Parameters)
+		resp, volErr := plugin.CreateVolume(ctx, volume.CreateVolumeRequest{
+			Name:             actVolID,
+			Capacity:         specVol.GetExternalVolumeTemplate().GetCapacity(),
+			Parameters:       sc.Parameters,
+			DriverName:       sc.Provisioner,
+			SourceSnapshotID: sourceSnapshotID,
+		})
 		if volErr != nil {
 			return resultVolumes, status.Errorf(codes.Internal, "failed to create volume %q: %v", specVol.GetName(), volErr)
+		}
+		if resp.ContentSourceSnapshotID != sourceSnapshotID {
+			// The driver answered with a volume that is not the requested
+			// restore. Release it, so the retry provisions afresh instead of
+			// mounting it, and fail rather than hand the actor the wrong data.
+			if delErr := plugin.DeleteVolume(ctx, resp.VolumeID); delErr != nil {
+				slog.WarnContext(ctx, "Failed to delete a volume the driver did not restore as requested", slog.String("volume_id", resp.VolumeID), slog.Any("error", delErr))
+			}
+			return resultVolumes, status.Errorf(codes.FailedPrecondition, "driver %q created volume %q from snapshot %q, want %q", sc.Provisioner, volName, resp.ContentSourceSnapshotID, sourceSnapshotID)
 		}
 
 		resultVolumes = append(resultVolumes, &ateapipb.ExternalVolume{
 			VolumeName:      volName,
-			StorageVolumeId: storageVolumeID,
+			StorageVolumeId: resp.VolumeID,
 			VolumeType:      sc.Provisioner,
 			Status:          ateapipb.ExternalVolume_STATUS_CREATED,
-			VolumeContext:   volCtx,
+			VolumeContext:   resp.VolumeContext,
 		})
 	}
 	return resultVolumes, nil

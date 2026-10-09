@@ -1,0 +1,13 @@
+# The Kubernetes volume snapshot API and its controller from
+# kubernetes-csi/external-snapshotter v8.6.0 (client/config/crd and
+# deploy/kubernetes/snapshot-controller), so the Kind CSI hostpath setup can
+# take VolumeSnapshots.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+  - snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+  - snapshot.storage.k8s.io_volumesnapshots.yaml
+  - rbac-snapshot-controller.yaml
+  - setup-snapshot-controller.yaml

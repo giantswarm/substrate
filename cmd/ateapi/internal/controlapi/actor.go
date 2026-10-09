@@ -88,14 +88,23 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 		return nil, err
 	}
 
+	if err := validateVolumeSeeds(ctx, s.pluginRegistry, s.storageClassLister, template, inActor.GetVolumeSeeds()); err != nil {
+		return nil, err
+	}
+
 	// Resolve the explicit tag, or freeze the template's current golden default.
+	// The golden actor has no seeds, so its snapshot was captured without the
+	// seeded volumes' mounts: a seeded actor boots fresh instead of restoring
+	// guest state built under another mount set.
 	tagRef := inActor.GetSourceTag()
-	if tagRef == nil {
+	switch {
+	case tagRef == nil && len(inActor.GetVolumeSeeds()) > 0:
+	case tagRef == nil:
 		if legacyGoldenSnapshot(template.GetStatus().GetGoldenSnapshotStatus()) {
 			return nil, goldenSnapshotAwaitingMigration(template)
 		}
 		tagRef = template.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
-	} else {
+	default:
 		for _, volume := range template.GetVolumes() {
 			if volume.GetExternalVolumeTemplate() != nil {
 				// TODO: Permit cloning after CSI volume snapshots are supported.
@@ -120,7 +129,7 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 	name := inActor.GetMetadata().GetName()
 
 	// Volume creation is completed asynchronously after the actor is recorded.
-	initVols, err := initialActorVolumes(ctx, s.storageClassLister, template)
+	initVols, err := initialActorVolumes(ctx, s.storageClassLister, template, inActor.GetVolumeSeeds())
 	if err != nil {
 		return nil, err
 	}

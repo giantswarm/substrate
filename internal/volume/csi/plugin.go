@@ -80,32 +80,75 @@ func (p *Plugin) DriverName(ctx context.Context) (string, error) {
 }
 
 // CreateVolume maps to CSI Controller CreateVolume.
-func (p *Plugin) CreateVolume(ctx context.Context, name string, capacity string, driverName string, parameters map[string]string) (string, map[string]string, error) {
-	qty, err := resource.ParseQuantity(capacity)
+func (p *Plugin) CreateVolume(ctx context.Context, req volume.CreateVolumeRequest) (volume.CreateVolumeResponse, error) {
+	qty, err := resource.ParseQuantity(req.Capacity)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to parse capacity %q: %w", capacity, err)
+		return volume.CreateVolumeResponse{}, fmt.Errorf("failed to parse capacity %q: %w", req.Capacity, err)
 	}
-	capBytes := qty.Value()
 
-	req := &csi.CreateVolumeRequest{
-		Name: name,
+	csiReq := &csi.CreateVolumeRequest{
+		Name: req.Name,
 		CapacityRange: &csi.CapacityRange{
-			RequiredBytes: capBytes,
+			RequiredBytes: qty.Value(),
 		},
 		VolumeCapabilities: getStandardCapabilities(),
-		Parameters:         parameters,
+		Parameters:         req.Parameters,
+	}
+	if req.SourceSnapshotID != "" {
+		csiReq.VolumeContentSource = &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{
+					SnapshotId: req.SourceSnapshotID,
+				},
+			},
+		}
 	}
 
-	resp, err := p.client.CreateVolume(ctx, req)
+	resp, err := p.client.CreateVolume(ctx, csiReq)
 	if err != nil {
-		return "", nil, fmt.Errorf("CSI CreateVolume failed: %w", err)
+		return volume.CreateVolumeResponse{}, fmt.Errorf("CSI CreateVolume failed: %w", err)
 	}
 
 	if resp.GetVolume() == nil {
-		return "", nil, fmt.Errorf("CSI CreateVolume response returned nil volume")
+		return volume.CreateVolumeResponse{}, fmt.Errorf("CSI CreateVolume response returned nil volume")
 	}
 
-	return resp.GetVolume().GetVolumeId(), resp.GetVolume().GetVolumeContext(), nil
+	// Report the source the driver says it restored from, never the one we
+	// asked for: only the response tells a restore from an empty volume.
+	return volume.CreateVolumeResponse{
+		VolumeID:                resp.GetVolume().GetVolumeId(),
+		VolumeContext:           resp.GetVolume().GetVolumeContext(),
+		ContentSourceSnapshotID: resp.GetVolume().GetContentSource().GetSnapshot().GetSnapshotId(),
+	}, nil
+}
+
+// GetSnapshot maps to CSI Controller ListSnapshots filtered to one handle; the
+// CSI spec has no single-snapshot read. A driver that does not implement
+// ListSnapshots cannot say whether it holds the snapshot, so that is an error
+// with code Unimplemented rather than "not found".
+func (p *Plugin) GetSnapshot(ctx context.Context, snapshotID string) (volume.Snapshot, bool, error) {
+	resp, err := p.client.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SnapshotId: snapshotID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			return volume.Snapshot{}, false, status.Errorf(codes.Unimplemented, "CSI driver does not implement ListSnapshots: %v", err)
+		}
+		return volume.Snapshot{}, false, fmt.Errorf("CSI ListSnapshots failed: %w", err)
+	}
+	// Filtering by snapshot_id yields at most one entry, and an empty list for
+	// a handle the driver does not have.
+	for _, entry := range resp.GetEntries() {
+		if snap := entry.GetSnapshot(); snap.GetSnapshotId() == snapshotID {
+			return volume.Snapshot{
+				SnapshotID:     snap.GetSnapshotId(),
+				SourceVolumeID: snap.GetSourceVolumeId(),
+				ReadyToUse:     snap.GetReadyToUse(),
+				SizeBytes:      snap.GetSizeBytes(),
+			}, true, nil
+		}
+	}
+	return volume.Snapshot{}, false, nil
 }
 
 // DeleteVolume maps to CSI Controller DeleteVolume.

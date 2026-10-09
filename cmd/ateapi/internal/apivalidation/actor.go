@@ -165,3 +165,15 @@ func ValidateCustom_ExternalVolume_StorageVolumeId(_ context.Context, _ operatio
 	}
 	return nil
 }
+
+// ValidateCustom_VolumeSeed_Driver checks a seed's driver with the syntax of
+// ExternalVolume.volume_type, the provisioner it must match.
+func ValidateCustom_VolumeSeed_Driver(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	return ValidateCustom_ExternalVolume_VolumeType(ctx, op, fldPath, value, oldValue)
+}
+
+// ValidateCustom_VolumeSeed_SnapshotHandle checks that a seed's snapshot
+// handle, like a storage volume ID, contains no control characters.
+func ValidateCustom_VolumeSeed_SnapshotHandle(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	return ValidateCustom_ExternalVolume_StorageVolumeId(ctx, op, fldPath, value, oldValue)
+}

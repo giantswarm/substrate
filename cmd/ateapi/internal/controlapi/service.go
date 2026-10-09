@@ -108,6 +108,7 @@ func NewRPCService(
 		actorIDJWTPool:        actorIDJWTPool,
 		actorIDCAPool:         actorIDCAPool,
 	}
+	impl.pluginRegistry = s
 	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, nodeLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
@@ -188,6 +189,10 @@ type ServiceImpl struct {
 	store store.Interface
 
 	storageClassLister storagev1listers.StorageClassLister
+
+	// pluginRegistry resolves the volume plugins that CreateActor checks a
+	// seed's snapshot with.
+	pluginRegistry VolumePluginRegistry
 }
 
 // newServiceImpl creates an instance of the service's middleware
