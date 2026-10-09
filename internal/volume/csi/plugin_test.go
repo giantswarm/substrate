@@ -417,7 +417,7 @@ func TestPlugin_UnmountVolume(t *testing.T) {
 
 	ctx := context.Background()
 	plugin.InitNodeCapabilities(ctx)
-	err = plugin.UnmountVolume(ctx, "test-vol", targetPath)
+	err = plugin.UnmountVolume(ctx, "test-vol", targetPath, volume.ReadWriteOnce)
 	if err != nil {
 		t.Fatalf("UnmountVolume failed: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestPlugin_UnmountVolume(t *testing.T) {
 	if err := os.MkdirAll(stagingPath, 0750); err != nil {
 		t.Fatalf("failed to create staging path: %v", err)
 	}
-	err = plugin.UnmountVolume(ctx, "test-vol", targetPath)
+	err = plugin.UnmountVolume(ctx, "test-vol", targetPath, volume.ReadWriteOnce)
 	if err != nil {
 		t.Errorf("UnmountVolume should have succeeded when NodeUnstageVolume is unimplemented, got: %v", err)
 	}
@@ -599,7 +599,7 @@ func TestPlugin_Capabilities_SkipStageUnstageWhenUnsupported(t *testing.T) {
 	}
 
 	// UnmountVolume should skip NodeUnstageVolume entirely
-	if err := plugin.UnmountVolume(ctx, "test-vol", targetPath); err != nil {
+	if err := plugin.UnmountVolume(ctx, "test-vol", targetPath, volume.ReadWriteOnce); err != nil {
 		t.Errorf("UnmountVolume failed: %v", err)
 	}
 	if unstageCalled != 0 {
@@ -751,7 +751,7 @@ func TestPlugin_Capabilities_DisableStageUnstageAfterUnimplemented(t *testing.T)
 		t.Errorf("expected staging directory %q to be removed, got err: %v", stagingPath, err)
 	}
 
-	if err := plugin.UnmountVolume(ctx, "test-vol", targetPath); err != nil {
+	if err := plugin.UnmountVolume(ctx, "test-vol", targetPath, volume.ReadWriteOnce); err != nil {
 		t.Errorf("UnmountVolume failed: %v", err)
 	}
 	if unstageCalled != 0 {
@@ -788,5 +788,77 @@ func TestNewCSIPlugin_CapabilityQueryFailureIsNotFatal(t *testing.T) {
 				t.Errorf("expected STAGE_UNSTAGE_VOLUME to be true")
 			}
 		})
+	}
+}
+
+func TestPlugin_MountVolumeMultiNode(t *testing.T) {
+	var staged, unstaged []string
+	var published []*csi.NodePublishVolumeRequest
+	driver := &mockCSIDriver{
+		nodeStageVolumeFunc: func(_ context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+			staged = append(staged, req.GetStagingTargetPath())
+			return &csi.NodeStageVolumeResponse{}, nil
+		},
+		nodePublishVolumeFunc: func(_ context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
+			published = append(published, req)
+			return &csi.NodePublishVolumeResponse{}, nil
+		},
+		nodeUnstageVolumeFunc: func(_ context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+			unstaged = append(unstaged, req.GetStagingTargetPath())
+			return &csi.NodeUnstageVolumeResponse{}, nil
+		},
+		nodeGetCapabilitiesFunc: func(context.Context, *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
+			return &csi.NodeGetCapabilitiesResponse{Capabilities: []*csi.NodeServiceCapability{{
+				Type: &csi.NodeServiceCapability_Rpc{Rpc: &csi.NodeServiceCapability_RPC{Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME}},
+			}}}, nil
+		},
+	}
+	endpoint, cleanup := startMockCSIDriver(t, driver)
+	defer cleanup()
+	client, err := NewCSIClient(endpoint, nil)
+	if err != nil {
+		t.Fatalf("failed to create CSI client: %v", err)
+	}
+	defer client.Close()
+	plugin := NewPlugin(client)
+	tmpDir := t.TempDir()
+	plugin.stagingDirPrefix = filepath.Join(tmpDir, "staging")
+	ctx := context.Background()
+	plugin.InitNodeCapabilities(ctx)
+
+	// Two actors on one node mount the same read-write-many volume.
+	targetA, targetB := filepath.Join(tmpDir, "a"), filepath.Join(tmpDir, "b")
+	for _, target := range []string{targetA, targetB} {
+		if err := plugin.MountVolume(ctx, volume.MountVolumeRequest{VolumeID: "shared", TargetPath: target, Mode: volume.ReadWriteMany}); err != nil {
+			t.Fatalf("MountVolume %s: %v", target, err)
+		}
+	}
+	if len(staged) != 2 || staged[0] == staged[1] {
+		t.Fatalf("staging paths = %v, want one per target", staged)
+	}
+	for _, req := range published {
+		if got := req.GetVolumeCapability().GetAccessMode().GetMode(); got != csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+			t.Errorf("publish access mode = %v, want MULTI_NODE_MULTI_WRITER", got)
+		}
+		if req.GetReadonly() {
+			t.Errorf("read-write-many volume published read-only")
+		}
+	}
+
+	// One actor's unmount unstages only its own staging.
+	if err := plugin.UnmountVolume(ctx, "shared", targetA, volume.ReadWriteMany); err != nil {
+		t.Fatalf("UnmountVolume: %v", err)
+	}
+	if len(unstaged) != 1 || unstaged[0] != staged[0] {
+		t.Errorf("unstaged = %v, want only %q", unstaged, staged[0])
+	}
+
+	// A read-only-many volume is published read-only.
+	published = nil
+	if err := plugin.MountVolume(ctx, volume.MountVolumeRequest{VolumeID: "mirrors", TargetPath: targetA, Mode: volume.ReadOnlyMany}); err != nil {
+		t.Fatalf("MountVolume: %v", err)
+	}
+	if req := published[0]; !req.GetReadonly() || req.GetVolumeCapability().GetAccessMode().GetMode() != csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY {
+		t.Errorf("read-only-many publish = %v, want read-only MULTI_NODE_READER_ONLY", req)
 	}
 }

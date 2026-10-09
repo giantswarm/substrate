@@ -112,7 +112,7 @@ func (p *MockVolumePlugin) MountVolume(ctx context.Context, req MountVolumeReque
 }
 
 // UnmountVolume simulates unmounting volume from the host.
-func (p *MockVolumePlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (p *MockVolumePlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, _ AccessMode) error {
 	slog.InfoContext(ctx, "MockVolumePlugin.UnmountVolume", slog.String("volumeID", volumeID), slog.String("targetPath", targetPath))
 
 	if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {

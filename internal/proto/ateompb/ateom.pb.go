@@ -769,9 +769,15 @@ func (x *Container) GetImageVolumeMounts() []*ImageVolumeMount {
 
 // VolumeMount is one volume mounted into a container.
 type VolumeMount struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	VolumeName    string                 `protobuf:"bytes,1,opt,name=volume_name,json=volumeName,proto3" json:"volume_name,omitempty"`
-	MountPath     string                 `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	VolumeName string                 `protobuf:"bytes,1,opt,name=volume_name,json=volumeName,proto3" json:"volume_name,omitempty"`
+	MountPath  string                 `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	// sub_path is the directory of the volume to mount, relative to its root;
+	// empty mounts the root. ateom binds it beside the volume's mount point
+	// before the sandbox starts (internal/volumebind).
+	SubPath string `protobuf:"bytes,3,opt,name=sub_path,json=subPath,proto3" json:"sub_path,omitempty"`
+	// read_only mounts it read-only.
+	ReadOnly      bool `protobuf:"varint,4,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -818,6 +824,20 @@ func (x *VolumeMount) GetMountPath() string {
 		return x.MountPath
 	}
 	return ""
+}
+
+func (x *VolumeMount) GetSubPath() string {
+	if x != nil {
+		return x.SubPath
+	}
+	return ""
+}
+
+func (x *VolumeMount) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 // DurableDirVolumeMount is one durable-dir volume mounted into a container.
@@ -1949,12 +1969,14 @@ const file_ateom_proto_rawDesc = "" +
 	"\x19durable_dir_volume_mounts\x18\x03 \x03(\v2\x1c.ateom.DurableDirVolumeMountR\x16durableDirVolumeMounts\x12>\n" +
 	"\x11csi_volume_mounts\x18\x04 \x03(\v2\x12.ateom.VolumeMountR\x0fcsiVolumeMounts\x12W\n" +
 	"\x19system_info_volume_mounts\x18\x05 \x03(\v2\x1c.ateom.SystemInfoVolumeMountR\x16systemInfoVolumeMounts\x12G\n" +
-	"\x13image_volume_mounts\x18\x06 \x03(\v2\x17.ateom.ImageVolumeMountR\x11imageVolumeMounts\"M\n" +
+	"\x13image_volume_mounts\x18\x06 \x03(\v2\x17.ateom.ImageVolumeMountR\x11imageVolumeMounts\"\x85\x01\n" +
 	"\vVolumeMount\x12\x1f\n" +
 	"\vvolume_name\x18\x01 \x01(\tR\n" +
 	"volumeName\x12\x1d\n" +
 	"\n" +
-	"mount_path\x18\x02 \x01(\tR\tmountPath\"W\n" +
+	"mount_path\x18\x02 \x01(\tR\tmountPath\x12\x19\n" +
+	"\bsub_path\x18\x03 \x01(\tR\asubPath\x12\x1b\n" +
+	"\tread_only\x18\x04 \x01(\bR\breadOnly\"W\n" +
 	"\x15DurableDirVolumeMount\x12\x1f\n" +
 	"\vvolume_name\x18\x01 \x01(\tR\n" +
 	"volumeName\x12\x1d\n" +

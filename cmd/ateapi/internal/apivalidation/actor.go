@@ -165,3 +165,21 @@ func ValidateCustom_ExternalVolume_StorageVolumeId(_ context.Context, _ operatio
 	}
 	return nil
 }
+
+// ValidateCustom_ExistingVolume_Driver checks an existing volume's driver
+// with the syntax of ExternalVolume.volume_type.
+func ValidateCustom_ExistingVolume_Driver(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	return ValidateCustom_ExternalVolume_VolumeType(ctx, op, fldPath, value, oldValue)
+}
+
+// ValidateCustom_ExistingVolume_VolumeHandle checks that an existing
+// volume's handle, like a storage volume ID, contains no control characters.
+func ValidateCustom_ExistingVolume_VolumeHandle(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	return ValidateCustom_ExternalVolume_StorageVolumeId(ctx, op, fldPath, value, oldValue)
+}
+
+// ValidateCustom_ExistingVolume_SubPath checks an existing volume's root
+// with the shape of VolumeMount.sub_path.
+func ValidateCustom_ExistingVolume_SubPath(ctx context.Context, op operation.Operation, fldPath *field.Path, value, oldValue *string) field.ErrorList {
+	return ValidateCustom_VolumeMount_SubPath(ctx, op, fldPath, value, oldValue)
+}

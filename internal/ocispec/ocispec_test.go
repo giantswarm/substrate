@@ -21,6 +21,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/imagecache"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
+	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -62,6 +63,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 			{Name: "data", MountPath: "/home/counter"},
 			{Name: "sysinfo", MountPath: "/run/ate"},
 			{Name: "csi", MountPath: "/mnt/csi"},
+			{Name: "csi", MountPath: "/workspace", SubPath: "sessions/a"},
+			{Name: "csi", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
 			{Name: "agent", MountPath: "/ate"},
 		},
 		DurableDirVolumeMountsDir: durableDir,
@@ -79,6 +82,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		{"/home/counter", durableDir + "/data", []string{"bind", "rw"}},
 		{"/run/ate", sysInfoDir + "/sysinfo", []string{"bind", "ro"}},
 		{"/mnt/csi", volumesDir + "/csi", []string{"bind", "rw"}},
+		{"/workspace", volumesDir + "/" + volumebind.MountDir("csi", "sessions/a", false), []string{"bind", "rw"}},
+		{"/mirrors", volumesDir + "/" + volumebind.MountDir("csi", "mirrors", true), []string{"bind", "ro"}},
 		{"/ate", imagecache.ImageVolumeMountPath(bundle, "agent"), []string{"bind", "ro"}},
 	} {
 		m := mountFor(t, spec, tc.dest)

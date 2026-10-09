@@ -43,6 +43,8 @@ type AttachVolumeRequest struct {
 	VolumeID string
 	// Node is the node to attach the volume to.
 	Node string
+	// Mode is how the volume is attached across nodes.
+	Mode AccessMode
 }
 
 // AttachVolumeResponse describes a completed attachment.
@@ -65,7 +67,25 @@ type MountVolumeRequest struct {
 	// PublishContext is the metadata returned when the volume was attached to
 	// this node. It is empty for drivers that do not implement attachment.
 	PublishContext map[string]string
+	// Mode is how the volume is mounted across nodes.
+	Mode AccessMode
 }
+
+// AccessMode is how a volume is attached and mounted across nodes.
+type AccessMode int
+
+const (
+	// ReadWriteOnce is read-write on a single node.
+	ReadWriteOnce AccessMode = iota
+	// ReadOnlyMany is read-only on many nodes.
+	ReadOnlyMany
+	// ReadWriteMany is read-write on many nodes.
+	ReadWriteMany
+)
+
+// MultiNode reports whether a volume of the mode may be in use by several
+// actors at once, on one node or many.
+func (m AccessMode) MultiNode() bool { return m != ReadWriteOnce }
 
 // VolumePluginControlPlane abstracts storage operations performed on the control plane.
 type VolumePluginControlPlane interface {
@@ -79,5 +99,5 @@ type VolumePluginControlPlane interface {
 // VolumePluginWorkerPlane abstracts storage operations performed on worker nodes.
 type VolumePluginWorkerPlane interface {
 	MountVolume(ctx context.Context, req MountVolumeRequest) error
-	UnmountVolume(ctx context.Context, volumeID string, targetPath string) error
+	UnmountVolume(ctx context.Context, volumeID string, targetPath string, mode AccessMode) error
 }

@@ -34,6 +34,11 @@ rules:
 - apiGroups: ["storage.k8s.io"]
   resources: ["storageclasses"]
   verbs: ["get", "watch", "list"]
+# PersistentVolumes: an actor's existing volumes are checked against them at
+# CreateActor, and their volume attributes are read at resume.
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "watch", "list"]
 ---
 # Create Service Account for Workload Identity
 apiVersion: v1

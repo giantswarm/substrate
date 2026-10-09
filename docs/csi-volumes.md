@@ -99,6 +99,50 @@ volumeMounts:
 
 ---
 
+### Existing Volumes: One Volume, Many Actors
+
+A volume that exists outside Substrate and outlives its actors, such as a read-write-many workspace several actors work on, is an **existing volume**. The template declares it by name and mounts it; each actor supplies it at `CreateActor`:
+
+```yaml
+volumes:
+- name: workspace
+  existingVolume: {}
+- name: mirrors
+  existingVolume: {}
+containers:
+- name: agent
+  volumeMounts:
+  - name: workspace
+    mountPath: /workspace
+  - name: mirrors
+    mountPath: /mirrors
+    readOnly: true
+```
+
+```yaml
+existingVolumes:
+- name: workspace
+  driver: nfs.csi.k8s.io
+  volumeHandle: <the PersistentVolume's spec.csi.volumeHandle>
+  accessMode: VOLUME_ACCESS_MODE_READ_WRITE_MANY
+  subPath: sessions/a
+- name: mirrors
+  driver: nfs.csi.k8s.io
+  volumeHandle: <the same handle>
+  accessMode: VOLUME_ACCESS_MODE_READ_ONLY_MANY
+  subPath: mirrors
+```
+
+* An existing volume's `subPath` is the directory this actor sees as the volume's root; a mount's own `subPath` is relative to it. So one template serves every actor, each in a directory of its own. One volume may be mounted at several paths.
+* The directory must exist on the volume: Substrate never creates one. It is resolved beneath the volume's root without following any symbolic link, so a link that another actor wrote on the volume fails the mount rather than redirecting it.
+* `readOnly` mounts read-only, and so does every mount of a `READ_ONLY_MANY` volume.
+* `CreateActor` refuses a reference that names no existing volume of the template, a driver without a `CSIDriverConfig`, a handle that no PersistentVolume of the driver holds, and an access mode the PersistentVolume does not permit. The PersistentVolume's `spec.csi.volumeAttributes` are passed to the driver when the volume is mounted, so it must still exist when the actor resumes.
+* An existing volume of the template that the actor does not supply contributes neither the volume nor its mounts.
+* Substrate never creates, deletes or changes an existing volume, and never detaches one from a node, where other actors may be using it. Pause, resume (on another node too) and delete only unmount and mount it.
+* An actor with existing volumes boots from its image instead of the template's golden snapshot, which was captured without their mounts, and cannot be created from a tag. `existingVolumes` is immutable.
+
+---
+
 ## 4. End-to-End Example
 
 The following example demonstrates setting up an NFS CSI driver with Substrate and deploying an `ActorTemplate` that mounts an external NFS volume.

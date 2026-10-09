@@ -16,8 +16,10 @@ package csi
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -221,7 +223,7 @@ func (p *Plugin) AttachVolume(ctx context.Context, req volume.AttachVolumeReques
 	csiReq := &csi.ControllerPublishVolumeRequest{
 		VolumeId:         req.VolumeID,
 		NodeId:           req.Node,
-		VolumeCapability: getStandardCapabilities()[0], // Use primary capability
+		VolumeCapability: mountCapability(req.Mode),
 		Readonly:         false,
 	}
 
@@ -274,8 +276,8 @@ func (p *Plugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest)
 		VolumeId:          req.VolumeID,
 		StagingTargetPath: stagingPath,
 		TargetPath:        req.TargetPath,
-		VolumeCapability:  getStandardCapabilities()[0],
-		Readonly:          false,
+		VolumeCapability:  mountCapability(req.Mode),
+		Readonly:          req.Mode == volume.ReadOnlyMany,
 		VolumeContext:     req.VolumeContext,
 		PublishContext:    req.PublishContext,
 	}
@@ -293,7 +295,7 @@ func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest)
 		return "", nil
 	}
 
-	stagingPath := filepath.Join(p.stagingDirPrefix, req.VolumeID)
+	stagingPath := p.stagingPath(req.VolumeID, req.TargetPath, req.Mode)
 	if err := os.MkdirAll(stagingPath, 0750); err != nil {
 		return "", fmt.Errorf("failed to create staging directory %q: %w", stagingPath, err)
 	}
@@ -301,7 +303,7 @@ func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest)
 	csiReq := &csi.NodeStageVolumeRequest{
 		VolumeId:          req.VolumeID,
 		StagingTargetPath: stagingPath,
-		VolumeCapability:  getStandardCapabilities()[0], // Use primary capability
+		VolumeCapability:  mountCapability(req.Mode),
 		VolumeContext:     req.VolumeContext,
 		PublishContext:    req.PublishContext,
 	}
@@ -321,7 +323,7 @@ func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest)
 
 // UnmountVolume maps to CSI Node NodeUnpublishVolume.
 // It also handles NodeUnstageVolume if staging was used.
-func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, mode volume.AccessMode) error {
 	req := &csi.NodeUnpublishVolumeRequest{
 		VolumeId:   volumeID,
 		TargetPath: targetPath,
@@ -331,17 +333,17 @@ func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath 
 		return fmt.Errorf("CSI NodeUnpublishVolume failed: %w", err)
 	}
 
-	return p.unstageVolume(ctx, volumeID)
+	return p.unstageVolume(ctx, volumeID, targetPath, mode)
 }
 
 // unstageVolume calls NodeUnstageVolume and removes the staging directory if the
 // driver supports staging.
-func (p *Plugin) unstageVolume(ctx context.Context, volumeID string) error {
+func (p *Plugin) unstageVolume(ctx context.Context, volumeID, targetPath string, mode volume.AccessMode) error {
 	if !p.SupportsNodeCapability(csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME) {
 		return nil
 	}
 
-	stagingPath := filepath.Join(p.stagingDirPrefix, volumeID)
+	stagingPath := p.stagingPath(volumeID, targetPath, mode)
 	req := &csi.NodeUnstageVolumeRequest{
 		VolumeId:          volumeID,
 		StagingTargetPath: stagingPath,
@@ -356,7 +358,34 @@ func (p *Plugin) unstageVolume(ctx context.Context, volumeID string) error {
 	}
 
 	removeStagingDir(ctx, stagingPath)
+	if mode.MultiNode() {
+		// The volume's directory of per-target stagings goes with its last one.
+		_ = os.Remove(filepath.Dir(stagingPath))
+	}
 	return nil
+}
+
+// stagingPath is where a volume is staged on the node. A volume of a
+// multi-node mode is staged once per target, so that one actor unmounting it
+// never unstages it under another actor on the same node.
+func (p *Plugin) stagingPath(volumeID, targetPath string, mode volume.AccessMode) string {
+	if !mode.MultiNode() {
+		return filepath.Join(p.stagingDirPrefix, volumeID)
+	}
+	sum := sha256.Sum256([]byte(targetPath))
+	return filepath.Join(p.stagingDirPrefix, volumeID, hex.EncodeToString(sum[:8]))
+}
+
+// mountCapability is the mount capability of an access mode.
+func mountCapability(mode volume.AccessMode) *csi.VolumeCapability {
+	capability := getStandardCapabilities()[0]
+	switch mode {
+	case volume.ReadOnlyMany:
+		capability.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
+	case volume.ReadWriteMany:
+		capability.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
+	}
+	return capability
 }
 
 // removeStagingDir removes an empty staging directory, logging any failure.

@@ -82,6 +82,7 @@ func NewRPCService(
 	sandboxConfigLister listersv1alpha1.SandboxConfigLister,
 	csiDriverConfigLister listersv1alpha1.CSIDriverConfigLister,
 	storageClassLister storagev1listers.StorageClassLister,
+	persistentVolumeLister corev1listers.PersistentVolumeLister,
 	nodeLister corev1listers.NodeLister,
 	dialer *AteletDialer,
 	instruments *Instruments,
@@ -108,7 +109,10 @@ func NewRPCService(
 		actorIDJWTPool:        actorIDJWTPool,
 		actorIDCAPool:         actorIDCAPool,
 	}
+	impl.pluginRegistry = s
+	impl.persistentVolumeLister = persistentVolumeLister
 	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, sandboxConfigLister, storageClassLister, nodeLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStore)
+	s.actorWorkflow.persistentVolumeLister = persistentVolumeLister
 	s.workerWorkflow = NewWorkerWorkflow(impl)
 	return s
 }
@@ -188,6 +192,11 @@ type ServiceImpl struct {
 	store store.Interface
 
 	storageClassLister storagev1listers.StorageClassLister
+
+	// pluginRegistry and persistentVolumeLister resolve what CreateActor
+	// checks an actor's existing volumes against.
+	pluginRegistry         VolumePluginRegistry
+	persistentVolumeLister corev1listers.PersistentVolumeLister
 }
 
 // newServiceImpl creates an instance of the service's middleware
