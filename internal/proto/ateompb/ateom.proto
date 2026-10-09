@@ -206,6 +206,12 @@ message Container {
 message VolumeMount {
   string volume_name = 1;
   string mount_path = 2;
+  // sub_path is the directory of the volume to mount, relative to its root;
+  // empty mounts the root. ateom binds it beside the volume's mount point
+  // before the sandbox starts (internal/volumebind).
+  string sub_path = 3;
+  // read_only mounts it read-only.
+  bool read_only = 4;
 }
 
 // DurableDirVolumeMount is one durable-dir volume mounted into a container.

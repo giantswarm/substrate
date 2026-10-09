@@ -20,10 +20,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
-	"github.com/agent-substrate/substrate/internal/ocispec"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/agent-substrate/substrate/internal/volume/csi"
@@ -49,12 +47,6 @@ func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string,
 		if err := plugin.MountVolume(ctx, ext.GetStorageVolumeId(), hostPath, ext.GetVolumeContext(), accessMode(ext)); err != nil {
 			return fmt.Errorf("failed to mount volume %q to %q: %w", ext.GetStorageVolumeId(), hostPath, err)
 		}
-		for _, vm := range boundMounts(spec, vol.GetName()) {
-			target := filepath.Join(ateletpath.VolumesDir(actorUID), ocispec.ExternalMountDir(vm))
-			if err := bindVolumeDir(hostPath, vm.GetSubPath(), target, vm.GetReadOnly()); err != nil {
-				return fmt.Errorf("volume %q: %w", vol.GetName(), err)
-			}
-		}
 	}
 	return nil
 }
@@ -65,12 +57,6 @@ func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID strin
 		ext := vol.GetExternal()
 		if ext == nil {
 			continue
-		}
-		for _, vm := range boundMounts(spec, vol.GetName()) {
-			target := filepath.Join(ateletpath.VolumesDir(actorUID), ocispec.ExternalMountDir(vm))
-			if err := unbindVolumeDir(target); err != nil {
-				errs = append(errs, fmt.Errorf("volume %q: %w", vol.GetName(), err))
-			}
 		}
 		hostPath := ateletpath.VolumeHostPath(actorUID, vol.GetName())
 		slog.InfoContext(ctx, "Unmounting volume", slog.String("volume_id", ext.GetStorageVolumeId()), slog.String("host_path", hostPath), slog.String("volume_type", ext.GetVolumeType()))
@@ -102,24 +88,6 @@ func accessMode(ext *ateletpb.ExternalVolumeSource) volume.AccessMode {
 	default:
 		return volume.ReadWriteOnce
 	}
-}
-
-// boundMounts returns the containers' mounts of volumeName that bind a
-// directory of their own (ocispec.ExternalMountDir), once per directory.
-func boundMounts(spec *ateletpb.WorkloadSpec, volumeName string) []*ateletpb.VolumeMount {
-	var out []*ateletpb.VolumeMount
-	seen := map[string]bool{}
-	for _, ctr := range spec.GetContainers() {
-		for _, vm := range ctr.GetVolumeMounts() {
-			dir := ocispec.ExternalMountDir(vm)
-			if vm.GetName() != volumeName || dir == volumeName || seen[dir] {
-				continue
-			}
-			seen[dir] = true
-			out = append(out, vm)
-		}
-	}
-	return out
 }
 
 func (s *AteomHerder) getPlugin(ctx context.Context, driverName string) (volume.VolumePluginWorkerPlane, error) {

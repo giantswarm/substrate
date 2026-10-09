@@ -1664,6 +1664,8 @@ func buildAteomWorkloadSpec(spec *ateletpb.WorkloadSpec) (*ateompb.WorkloadSpec,
 				csiMounts = append(csiMounts, &ateompb.VolumeMount{
 					VolumeName: volName,
 					MountPath:  vm.GetMountPath(),
+					SubPath:    vm.GetSubPath(),
+					ReadOnly:   vm.GetReadOnly(),
 				})
 			case *ateletpb.Volume_SystemInfo:
 				siMounts = append(siMounts, &ateompb.SystemInfoVolumeMount{

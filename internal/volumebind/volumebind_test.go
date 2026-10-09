@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package volumebind
 
 import (
 	"os"
@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
+	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,22 +77,43 @@ func TestOpenVolumeDir(t *testing.T) {
 }
 
 func TestBoundMounts(t *testing.T) {
-	spec := &ateletpb.WorkloadSpec{Containers: []*ateletpb.Container{
-		{VolumeMounts: []*ateletpb.VolumeMount{
-			{Name: "ws", MountPath: "/root"},
-			{Name: "ws", MountPath: "/workspace", SubPath: "sessions/a"},
-			{Name: "ws", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
-			{Name: "other", MountPath: "/other", ReadOnly: true},
+	containers := []*ateompb.Container{
+		{CsiVolumeMounts: []*ateompb.VolumeMount{
+			{VolumeName: "ws", MountPath: "/root"},
+			{VolumeName: "ws", MountPath: "/workspace", SubPath: "sessions/a"},
+			{VolumeName: "ws", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
 		}},
-		{VolumeMounts: []*ateletpb.VolumeMount{
-			{Name: "ws", MountPath: "/also", SubPath: "sessions/a"},
+		{CsiVolumeMounts: []*ateompb.VolumeMount{
+			{VolumeName: "ws", MountPath: "/also", SubPath: "sessions/a"},
 		}},
-	}}
+	}
 	var got []string
-	for _, vm := range boundMounts(spec, "ws") {
+	for _, vm := range boundMounts(containers) {
 		got = append(got, vm.GetMountPath())
 	}
 	if want := []string{"/workspace", "/mirrors"}; strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("boundMounts = %v, want %v (one per directory, none for the root mount)", got, want)
+	}
+}
+
+// A mount of a sub-path or a read-only mount binds a directory of its own,
+// one per sub-path and read-only flag, which never names a volume.
+func TestMountDir(t *testing.T) {
+	plain := MountDir("ws", "", false)
+	sub := MountDir("ws", "sessions/a", false)
+	subRO := MountDir("ws", "sessions/a", true)
+	other := MountDir("ws", "sessions/b", false)
+	if plain != "ws" {
+		t.Errorf("plain mount dir = %q, want the volume's own", plain)
+	}
+	seen := map[string]bool{}
+	for _, d := range []string{plain, sub, subRO, other} {
+		if seen[d] {
+			t.Errorf("mount dir %q is not distinct", d)
+		}
+		seen[d] = true
+	}
+	if !strings.HasPrefix(sub, "ws.") {
+		t.Errorf("sub-path mount dir = %q, want ws.<hash>", sub)
 	}
 }

@@ -53,6 +53,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/serverboot"
 	"github.com/agent-substrate/substrate/internal/sizing"
 	"github.com/agent-substrate/substrate/internal/version"
+	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/agent-substrate/substrate/internal/wakeupprobe"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -583,6 +584,11 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	if err := s.tunnel.ActivateEgress(ateomstats.ActorAttributionFromRequest(req), egress); err != nil {
 		return nil, err
 	}
+	// Bind the directories of external volumes the mounts name a sub-path of
+	// or mount read-only, here for the same reason as the rootfs below.
+	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetSpec().GetContainers()); err != nil {
+		return nil, fmt.Errorf("while binding volume directories: %w", err)
+	}
 	// Create and start pause container. The bundle rootfs is composed here —
 	// an overlay of the node's cached image layers plus the bundle's private
 	// upper — because mounting is ateom's job (atelet runs with no
@@ -890,6 +896,9 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 			return nil, fmt.Errorf("while restoring durable-dir volumes: %w", err)
 		}
 	}
+	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetSpec().GetContainers()); err != nil {
+		return nil, fmt.Errorf("while binding volume directories: %w", err)
+	}
 	// Compose the pause rootfs before create (see RunWorkload). runsc restore
 	// only needs the rootfs to hold the correct content; whether it came from
 	// an untar or an overlay of cached layers is transparent to it.
@@ -1026,6 +1035,9 @@ func (s *AteomService) terminateWorkload(ctx context.Context, actorRef resources
 	// the container cleanup above.
 	if err := imagecache.UnmountAllUnder(actorDirs.GetOciBundleDir()); err != nil {
 		errs = append(errs, fmt.Errorf("while unmounting bundle rootfs overlays: %w", err))
+	}
+	if err := volumebind.Release(actorDirs.GetVolumesDir(), containers); err != nil {
+		errs = append(errs, fmt.Errorf("while unbinding volume directories: %w", err))
 	}
 
 	if err := s.unhostActor(ctx, actorUID); err != nil {
