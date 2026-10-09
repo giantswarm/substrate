@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agent-substrate/substrate/internal/volume"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -40,6 +41,7 @@ type mockCSIDriver struct {
 	nodeUnstageVolumeFunc         func(context.Context, *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error)
 	nodePublishVolumeFunc         func(context.Context, *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error)
 	nodeUnpublishVolumeFunc       func(context.Context, *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error)
+	listSnapshotsFunc             func(context.Context, *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error)
 
 	getPluginCapabilitiesFunc func(context.Context, *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error)
 	probeFunc                 func(context.Context, *csi.ProbeRequest) (*csi.ProbeResponse, error)
@@ -86,6 +88,13 @@ func (m *mockCSIDriver) CreateVolume(ctx context.Context, req *csi.CreateVolumeR
 			CapacityBytes: req.GetCapacityRange().GetRequiredBytes(),
 		},
 	}, nil
+}
+
+func (m *mockCSIDriver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+	if m.listSnapshotsFunc != nil {
+		return m.listSnapshotsFunc(ctx, req)
+	}
+	return nil, status.Error(codes.Unimplemented, "ListSnapshots")
 }
 
 func (m *mockCSIDriver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -170,28 +179,121 @@ func startMockCSIDriver(t *testing.T, driver *mockCSIDriver) (string, func()) {
 	return "unix://" + socketPath, cleanup
 }
 
-func TestPlugin_CreateVolume(t *testing.T) {
-	driver := &mockCSIDriver{}
+func newTestPlugin(t *testing.T, driver *mockCSIDriver) *Plugin {
+	t.Helper()
 	endpoint, cleanup := startMockCSIDriver(t, driver)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	client, err := NewCSIClient(endpoint, nil)
 	if err != nil {
 		t.Fatalf("failed to create CSI client: %v", err)
 	}
-	defer client.Close()
+	t.Cleanup(func() { client.Close() })
+	return NewPlugin(client)
+}
 
-	plugin := NewPlugin(client)
+func TestPlugin_CreateVolume(t *testing.T) {
+	var got *csi.CreateVolumeRequest
+	plugin := newTestPlugin(t, &mockCSIDriver{
+		createVolumeFunc: func(_ context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+			got = req
+			return &csi.CreateVolumeResponse{Volume: &csi.Volume{VolumeId: req.GetName()}}, nil
+		},
+	})
 
-	ctx := context.Background()
-	volID, _, err := plugin.CreateVolume(ctx, "test-vol", "1Gi", "standard", nil)
+	resp, err := plugin.CreateVolume(context.Background(), volume.CreateVolumeRequest{Name: "test-vol", Capacity: "1Gi", DriverName: "standard"})
 	if err != nil {
 		t.Fatalf("CreateVolume failed: %v", err)
 	}
-
-	if volID != "test-vol" {
-		t.Errorf("expected volume ID %q, got %q", "test-vol", volID)
+	if resp.VolumeID != "test-vol" {
+		t.Errorf("expected volume ID %q, got %q", "test-vol", resp.VolumeID)
 	}
+	if got.GetVolumeContentSource() != nil {
+		t.Errorf("an unseeded volume was requested with content source %v", got.GetVolumeContentSource())
+	}
+	if resp.ContentSourceSnapshotID != "" {
+		t.Errorf("ContentSourceSnapshotID = %q for an empty volume, want empty", resp.ContentSourceSnapshotID)
+	}
+}
+
+func TestPlugin_CreateVolumeFromSnapshot(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// reportSource is whether the driver echoes the content source.
+		reportSource bool
+		wantSource   string
+	}{
+		{name: "driver reports the restore", reportSource: true, wantSource: "snap-1"},
+		// A driver that ignores the source answers with an empty volume; the
+		// plugin must report that, not the source it asked for.
+		{name: "driver ignores the source", reportSource: false, wantSource: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got *csi.CreateVolumeRequest
+			plugin := newTestPlugin(t, &mockCSIDriver{
+				createVolumeFunc: func(_ context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+					got = req
+					vol := &csi.Volume{VolumeId: req.GetName()}
+					if tc.reportSource {
+						vol.ContentSource = req.GetVolumeContentSource()
+					}
+					return &csi.CreateVolumeResponse{Volume: vol}, nil
+				},
+			})
+
+			resp, err := plugin.CreateVolume(context.Background(), volume.CreateVolumeRequest{Name: "v", Capacity: "1Gi", SourceSnapshotID: "snap-1"})
+			if err != nil {
+				t.Fatalf("CreateVolume failed: %v", err)
+			}
+			if id := got.GetVolumeContentSource().GetSnapshot().GetSnapshotId(); id != "snap-1" {
+				t.Errorf("requested content source snapshot = %q, want %q", id, "snap-1")
+			}
+			if resp.ContentSourceSnapshotID != tc.wantSource {
+				t.Errorf("ContentSourceSnapshotID = %q, want %q", resp.ContentSourceSnapshotID, tc.wantSource)
+			}
+		})
+	}
+}
+
+func TestPlugin_GetSnapshot(t *testing.T) {
+	listing := func(entries ...*csi.Snapshot) func(context.Context, *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+		return func(_ context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+			resp := &csi.ListSnapshotsResponse{}
+			for _, e := range entries {
+				if e.GetSnapshotId() == req.GetSnapshotId() {
+					resp.Entries = append(resp.Entries, &csi.ListSnapshotsResponse_Entry{Snapshot: e})
+				}
+			}
+			return resp, nil
+		}
+	}
+
+	t.Run("found", func(t *testing.T) {
+		plugin := newTestPlugin(t, &mockCSIDriver{listSnapshotsFunc: listing(&csi.Snapshot{SnapshotId: "snap-1", SourceVolumeId: "vol-1", ReadyToUse: true, SizeBytes: 42})})
+		snap, found, err := plugin.GetSnapshot(context.Background(), "snap-1")
+		if err != nil || !found {
+			t.Fatalf("GetSnapshot = found %v, err %v; want found", found, err)
+		}
+		want := volume.Snapshot{SnapshotID: "snap-1", SourceVolumeID: "vol-1", ReadyToUse: true, SizeBytes: 42}
+		if snap != want {
+			t.Errorf("GetSnapshot = %+v, want %+v", snap, want)
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		plugin := newTestPlugin(t, &mockCSIDriver{listSnapshotsFunc: listing(&csi.Snapshot{SnapshotId: "snap-1"})})
+		if _, found, err := plugin.GetSnapshot(context.Background(), "snap-2"); err != nil || found {
+			t.Fatalf("GetSnapshot = found %v, err %v; want not found, no error", found, err)
+		}
+	})
+
+	t.Run("driver cannot list snapshots", func(t *testing.T) {
+		plugin := newTestPlugin(t, &mockCSIDriver{})
+		_, found, err := plugin.GetSnapshot(context.Background(), "snap-1")
+		if status.Code(err) != codes.Unimplemented || found {
+			t.Fatalf("GetSnapshot = found %v, err %v; want code Unimplemented", found, err)
+		}
+	})
 }
 
 func TestPlugin_DeleteVolume(t *testing.T) {

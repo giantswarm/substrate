@@ -39,3 +39,10 @@ func (c *Client) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 func (c *Client) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	return c.controller.ControllerUnpublishVolume(ctx, req)
 }
+
+// ListSnapshots lists snapshots, optionally filtered to one snapshot or source
+// volume. This is the only way the CSI spec offers to read a snapshot's state
+// after CreateSnapshot returns; there is no GetSnapshot RPC.
+func (c *Client) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+	return c.controller.ListSnapshots(ctx, req)
+}

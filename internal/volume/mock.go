@@ -62,10 +62,21 @@ func (p *MockVolumePlugin) DriverName(ctx context.Context) (string, error) {
 }
 
 // CreateVolume simulates volume provisioning.
-func (p *MockVolumePlugin) CreateVolume(ctx context.Context, name string, capacity string, storageClass string, parameters map[string]string) (string, map[string]string, error) {
-	volumeID := "mock-vol-" + name
-	slog.InfoContext(ctx, "MockVolumePlugin.CreateVolume", slog.String("name", name), slog.String("capacity", capacity), slog.String("storageClass", storageClass), slog.String("volumeID", volumeID))
-	return volumeID, parameters, nil
+func (p *MockVolumePlugin) CreateVolume(ctx context.Context, req CreateVolumeRequest) (CreateVolumeResponse, error) {
+	volumeID := "mock-vol-" + req.Name
+	slog.InfoContext(ctx, "MockVolumePlugin.CreateVolume", slog.String("name", req.Name), slog.String("capacity", req.Capacity), slog.String("driver", req.DriverName), slog.String("volumeID", volumeID))
+	return CreateVolumeResponse{
+		VolumeID:                volumeID,
+		VolumeContext:           req.Parameters,
+		ContentSourceSnapshotID: req.SourceSnapshotID,
+	}, nil
+}
+
+// GetSnapshot reports any handle as present and ready. Being stateless, the
+// mock cannot tell a handle it issued from one it did not.
+func (p *MockVolumePlugin) GetSnapshot(ctx context.Context, snapshotID string) (Snapshot, bool, error) {
+	slog.InfoContext(ctx, "MockVolumePlugin.GetSnapshot", slog.String("snapshotID", snapshotID))
+	return Snapshot{SnapshotID: snapshotID, ReadyToUse: true}, true, nil
 }
 
 // DeleteVolume simulates volume deletion.
