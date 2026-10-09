@@ -105,6 +105,65 @@ func TestCreateActor_Success(t *testing.T) {
 	}
 }
 
+func TestCreateActor_SeededExternalVolume(t *testing.T) {
+	ns := namespaceForTest("ns-create-seeded-vol")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+
+	createTemplateWithVolumes(t, tc, ns, []*ateapipb.Volume{{
+		Name: "workspace",
+		ExternalVolumeTemplate: &ateapipb.ExternalVolumeTemplate{
+			StorageClassName: "standard",
+			Capacity:         "1Gi",
+			Seeded:           true,
+		},
+	}}, []*ateapipb.VolumeMount{{Name: "workspace", MountPath: "/workspace"}})
+
+	seeds := []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "substrate.io/mock", SnapshotHandle: "snap-1"}}
+	seeded, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
+		Actor: &ateapipb.Actor{
+			Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "seeded"},
+			ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+			VolumeSeeds:   seeds,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateActor with a seed: %v", err)
+	}
+	if diff := cmp.Diff(seeds, seeded.GetVolumeSeeds(), protocmp.Transform()); diff != "" {
+		t.Errorf("stored seeds mismatch (-want +got):\n%s", diff)
+	}
+	if vols := seeded.GetStatus().GetActorVolumes(); len(vols) != 1 || vols[0].GetVolumeName() != "workspace" {
+		t.Errorf("seeded actor volumes = %v, want the pending workspace volume", vols)
+	}
+	if seeded.GetStatus().GetExternalSnapshot() != nil {
+		t.Errorf("seeded actor borrows snapshot %v, want it to boot without the golden snapshot", seeded.GetStatus().GetExternalSnapshot())
+	}
+
+	unseeded, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
+		Actor: &ateapipb.Actor{
+			Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "unseeded"},
+			ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateActor without a seed: %v", err)
+	}
+	if vols := unseeded.GetStatus().GetActorVolumes(); len(vols) != 0 {
+		t.Errorf("unseeded actor volumes = %v, want none", vols)
+	}
+
+	if _, err := tc.client.CreateActor(context.Background(), &ateapipb.CreateActorRequest{
+		Actor: &ateapipb.Actor{
+			Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: "wrong-driver"},
+			ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+			VolumeSeeds:   []*ateapipb.VolumeSeed{{VolumeName: "workspace", Driver: "other.csi.example.com", SnapshotHandle: "snap-1"}},
+		},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("CreateActor with another driver = %v, want InvalidArgument", err)
+	}
+}
+
 func TestCreateActor_WithExternalVolumes(t *testing.T) {
 	ns := namespaceForTest("ns-create-ext-vols")
 	tc := setupTest(t, ns)
