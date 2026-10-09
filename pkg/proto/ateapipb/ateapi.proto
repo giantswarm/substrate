@@ -1589,9 +1589,10 @@ message VolumeMount {
   // sub_path is the directory of the volume to mount, relative to its root;
   // empty mounts the root. It must be a clean relative path: no leading '/',
   // no '.' or '..' element, no '//', no trailing '/' and no control
-  // characters. Only an existing volume's mount may set it. The directory
-  // must exist, and no element of it may be a symbolic link: a mount that
-  // would need either fails.
+  // characters. Only an existing volume's mount may set it. No element of
+  // the directory may be a symbolic link. A read-write mount's directory is
+  // created when its last component is missing; its parent and a read-only
+  // mount's directory must exist. A mount that would need more fails.
   //
   // +k8s:optional
   // +k8s:maxLength=4096

@@ -586,7 +586,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	}
 	// Bind the directories of external volumes the mounts name a sub-path of
 	// or mount read-only, here for the same reason as the rootfs below.
-	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetSpec().GetContainers()); err != nil {
+	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetActorDirs().GetOciBundleDir(), req.GetSpec().GetContainers()); err != nil {
 		return nil, fmt.Errorf("while binding volume directories: %w", err)
 	}
 	// Create and start pause container. The bundle rootfs is composed here —
@@ -896,7 +896,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 			return nil, fmt.Errorf("while restoring durable-dir volumes: %w", err)
 		}
 	}
-	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetSpec().GetContainers()); err != nil {
+	if err := volumebind.Prepare(req.GetActorDirs().GetVolumesDir(), req.GetActorDirs().GetOciBundleDir(), req.GetSpec().GetContainers()); err != nil {
 		return nil, fmt.Errorf("while binding volume directories: %w", err)
 	}
 	// Compose the pause rootfs before create (see RunWorkload). runsc restore

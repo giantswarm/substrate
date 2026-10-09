@@ -17,11 +17,11 @@ package ocispec
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/agent-substrate/substrate/internal/imagecache"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
-	"github.com/agent-substrate/substrate/internal/volumebind"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
@@ -82,8 +82,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		{"/home/counter", durableDir + "/data", []string{"bind", "rw"}},
 		{"/run/ate", sysInfoDir + "/sysinfo", []string{"bind", "ro"}},
 		{"/mnt/csi", volumesDir + "/csi", []string{"bind", "rw"}},
-		{"/workspace", volumesDir + "/" + volumebind.MountDir("csi", "sessions/a", false), []string{"bind", "rw"}},
-		{"/mirrors", volumesDir + "/" + volumebind.MountDir("csi", "mirrors", true), []string{"bind", "ro"}},
+		{"/workspace", volumesDir + "/" + MountDir("csi", "sessions/a", false), []string{"bind", "rw"}},
+		{"/mirrors", volumesDir + "/" + MountDir("csi", "mirrors", true), []string{"bind", "ro"}},
 		{"/ate", imagecache.ImageVolumeMountPath(bundle, "agent"), []string{"bind", "ro"}},
 	} {
 		m := mountFor(t, spec, tc.dest)
@@ -185,6 +185,28 @@ func TestBuild_NoCapabilitiesForPause(t *testing.T) {
 		if len(set.got) != 0 {
 			t.Errorf("%s = %v, want empty", set.name, set.got)
 		}
+	}
+}
+
+// A mount of a sub-path or a read-only mount binds a directory of its own,
+// one per sub-path and read-only flag, which never names a volume.
+func TestMountDir(t *testing.T) {
+	plain := MountDir("ws", "", false)
+	sub := MountDir("ws", "sessions/a", false)
+	subRO := MountDir("ws", "sessions/a", true)
+	other := MountDir("ws", "sessions/b", false)
+	if plain != "ws" {
+		t.Errorf("plain mount dir = %q, want the volume's own", plain)
+	}
+	seen := map[string]bool{}
+	for _, d := range []string{plain, sub, subRO, other} {
+		if seen[d] {
+			t.Errorf("mount dir %q is not distinct", d)
+		}
+		seen[d] = true
+	}
+	if !strings.HasPrefix(sub, "ws.") {
+		t.Errorf("sub-path mount dir = %q, want ws.<hash>", sub)
 	}
 }
 

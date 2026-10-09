@@ -127,9 +127,10 @@ func runOnVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, cl
 	return string(out)
 }
 
-// prepareVolume provisions a read-write-many PVC, lays out a session
-// directory per actor the probe may write and a mirrors directory with
-// mirrorFile, and returns the claim and its PersistentVolume's name and handle.
+// prepareVolume provisions a read-write-many PVC, lays out the sessions
+// directory with one session directory made ahead (the other is Substrate's
+// to create) and a mirrors directory with mirrorFile, and returns the claim
+// and its PersistentVolume's name and handle.
 func prepareVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns string) (claim, pvName, handle string) {
 	t.Helper()
 	pvc := &corev1.PersistentVolumeClaim{
@@ -146,7 +147,7 @@ func prepareVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns s
 		t.Fatalf("creating PVC: %v", err)
 	}
 	runOnVolume(ctx, t, clients, ns, pvc.Name, "prepare", fmt.Sprintf(
-		"mkdir -m 0777 -p /data/sessions/a /data/sessions/b && mkdir -p /data/mirrors && printf %%s %q > /data/mirrors/%s && sync",
+		"mkdir -p /data/sessions && mkdir -m 0777 /data/sessions/b && mkdir -p /data/mirrors && printf %%s %q > /data/mirrors/%s && sync",
 		mirrorContent, mirrorFile))
 
 	bound, err := clients.K8s.CoreV1().PersistentVolumeClaims(ns).Get(ctx, pvc.Name, metav1.GetOptions{})
@@ -337,14 +338,20 @@ func TestExistingVolumes(t *testing.T) {
 	}
 	mirrorPath := mirrorsPath + "/" + mirrorFile
 
+	// Session a's directory does not exist when the actor is created: the
+	// read-write mount of it creates it, 0770.
 	t.Run("MountsSubPathsAtDeclaredPaths", func(t *testing.T) {
 		startActor(ctx, t, clients, tmpl, actorA, sessionVolumes(handle, "a"))
 		requireContent(ctx, t, router, actorA, mirrorPath, mirrorContent)
 		requireWrite(ctx, t, router, actorA, workspacePath+"/a.txt")
 		requireContent(ctx, t, router, actorA, workspacePath+"/a.txt", probeWrittenContent)
 		requireFiles(t, volumeFiles(ctx, t, clients, ns.Name, claim, "inspect-a"), "./sessions/a/a.txt", "./mirrors/"+mirrorFile)
+		if mode := strings.TrimSpace(runOnVolume(ctx, t, clients, ns.Name, claim, "inspect-a-mode", "stat -c %a /data/sessions/a")); mode != "770" {
+			t.Errorf("the created session directory has mode %s, want 770", mode)
+		}
 	})
 
+	// Session b's directory was made ahead of the actor, as a caller may do.
 	t.Run("ActorsWriteOnlyTheirOwnSubPath", func(t *testing.T) {
 		startActor(ctx, t, clients, tmpl, actorB, sessionVolumes(handle, "b"))
 		requireContent(ctx, t, router, actorB, mirrorPath, mirrorContent)
