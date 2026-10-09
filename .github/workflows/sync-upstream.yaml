@@ -368,6 +368,14 @@ jobs:
           echo "- land #${number}: \`${LINE_BRANCH}\` \`${line:0:12}\` → \`${sha:0:12}\`" >> "$GITHUB_STEP_SUMMARY"
           if [ "${DRY_RUN}" != true ]; then
             git push --force-with-lease="refs/heads/${LINE_BRANCH}:${line}" origin "${sha}:refs/heads/${LINE_BRANCH}"
-            gh pr close "${number}" --repo "${GITHUB_REPOSITORY}" --comment "Landed: \`${LINE_BRANCH}\` is now \`${sha}\`, the head the required checks passed on."
-            git push origin --delete "${CANDIDATE}"
+            # Once the line holds the candidate's head GitHub may mark the pull
+            # request merged and delete its branch; neither is a failed land.
+            landed="Landed: \`${LINE_BRANCH}\` is now \`${sha}\`, the head the required checks passed on."
+            if ! gh pr close "${number}" --repo "${GITHUB_REPOSITORY}" --comment "${landed}"; then
+              [ "$(gh pr view "${number}" --repo "${GITHUB_REPOSITORY}" --json state --jq .state)" != OPEN ] || exit 1
+              gh pr comment "${number}" --repo "${GITHUB_REPOSITORY}" --body "${landed}"
+            fi
+            if git ls-remote --exit-code --heads origin "${CANDIDATE}" >/dev/null; then
+              git push origin --delete "${CANDIDATE}"
+            fi
           fi
