@@ -289,4 +289,6 @@ images:
   # runs in. By digest: each snapshot's manifest records it and a restore
   # rebuilds the sandbox from the same image. A platform that ships its own
   # pause image, or a cluster that pulls through a mirror, names it here.
-  pause: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
+  # Upstream's registry.k8s.io pin under its gsoci copy, the same digest, so
+  # a cluster whose egress admits only gsoci boots its sandboxes too.
+  pause: gsoci.azurecr.io/giantswarm/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
