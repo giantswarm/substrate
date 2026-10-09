@@ -284,3 +284,9 @@ images:
   agentgateway: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.3.0
   # Not rendered by any template of this chart; kept as upstream keeps it.
   busybox: gsoci.azurecr.io/giantswarm/busybox:1.36
+  # The root container of every gVisor sandbox (`spec.pauseImage` of the
+  # SandboxConfig `gvisor-default`), the image whose namespaces the sandbox
+  # runs in. By digest: each snapshot's manifest records it and a restore
+  # rebuilds the sandbox from the same image. A platform that ships its own
+  # pause image, or a cluster that pulls through a mirror, names it here.
+  pause: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
