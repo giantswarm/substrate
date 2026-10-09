@@ -134,7 +134,7 @@ existingVolumes:
 ```
 
 * An existing volume's `subPath` is the directory this actor sees as the volume's root; a mount's own `subPath` is relative to it. So one template serves every actor, each in a directory of its own. One volume may be mounted at several paths.
-* The directory must exist on the volume: Substrate never creates one. It is resolved beneath the volume's root without following any symbolic link, so a link that another actor wrote on the volume fails the mount rather than redirecting it.
+* The directory is resolved beneath the volume's root without following any symbolic link, so a link that another actor wrote on the volume fails the mount rather than redirecting it. A read-write mount's directory is created when its last component is missing, mode `0770` and owned by the user the mounting container runs as, so a caller may name a directory of its own for the actor in the create request; its parent must exist. A read-only mount's directory must exist, and so must every directory of a `READ_ONLY_MANY` volume.
 * `readOnly` mounts read-only, and so does every mount of a `READ_ONLY_MANY` volume.
 * `CreateActor` refuses a reference that names no existing volume of the template, a driver without a `CSIDriverConfig`, a handle that no PersistentVolume of the driver holds, and an access mode the PersistentVolume does not permit. The PersistentVolume's `spec.csi.volumeAttributes` are passed to the driver when the volume is mounted, so it must still exist when the actor resumes.
 * An existing volume of the template that the actor does not supply contributes neither the volume nor its mounts.
