@@ -74,6 +74,7 @@ See `values.yaml` for the full set; the important keys:
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
 | `otel.logs.enabled` | `true` | Enable OTLP actor events from ateapi and the ateoms, plus the router access log. Actor events go to stdout when OTLP logs are disabled |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
+| `images.pause` | `registry.k8s.io/pause:3.10.2@sha256:f548e0e8…` | The root container of every gVisor sandbox (`spec.pauseImage` of the SandboxConfig `gvisor-default`), by digest: a platform that ships its own pause image, or a cluster that pulls through a mirror, names it here |
 
 ## PostgreSQL setup
 
