@@ -31,6 +31,10 @@ if [[ $# -gt 0 ]]; then
       echo "Configured through the environment:"
       echo "  KIND_CLUSTER_NAME  Name of the cluster to create (default: kind)."
       echo "  IP_FAMILY          Address families for pods and Services: ipv4, ipv6 or dual (default: ipv4)."
+      echo "  DOCKER_HUB_MIRROR  URL of a pull-through cache of Docker Hub, e.g. https://mirror.gcr.io: the registry,"
+      echo "                     the KVM probe and the node image are pulled through it, and the nodes' containerd"
+      echo "                     resolves docker.io through it (default: none, every pull goes to Docker Hub)."
+      echo "  KIND_NODE_IMAGE    The node image kind runs (default: kind's own)."
       exit 0
       ;;
   esac
@@ -49,6 +53,52 @@ case "${IP_FAMILY}" in
 esac
 
 mkdir -p "${ROOT}/bin"
+
+# Docker Hub pulls go through DOCKER_HUB_MIRROR when it is set, a pull-through
+# cache of Docker Hub such as https://mirror.gcr.io: the host pulls the
+# registry, the KVM probe's busybox and the node image from it under their
+# Docker Hub names, so docker finds them locally, and the nodes' containerd
+# resolves docker.io through it (step 3). Unset, every pull goes to Docker
+# Hub, whose unauthenticated rate limit a shared IP (a hosted CI runner)
+# exhausts.
+DOCKER_HUB_MIRROR="${DOCKER_HUB_MIRROR:-}"
+KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-}"
+
+# kind's own default node image, read from the kind module hack/kind.sh runs.
+kind_default_node_image() {
+  local module
+  module="$(cd "${ROOT}/hack/tools/kind" && go mod download sigs.k8s.io/kind && go list -m -f '{{.Dir}}' sigs.k8s.io/kind)"
+  sed -n 's/^const Image = "\(.*\)"$/\1/p' "${module}/pkg/apis/config/defaults/image.go"
+}
+
+# Pulls one Docker Hub image through the mirror and tags it under its Docker
+# Hub name. A digest pins the pull; the local tag is the name in front of it.
+pull_through_mirror() {
+  local image="$1" name="${1%%@*}" digest="" path
+  if [[ "${image}" == *@* ]]; then
+    digest="${image#*@}"
+  fi
+  path="${name}"
+  if [[ "${path}" != */* ]]; then
+    path="library/${path}"
+  fi
+  local mirrored="${DOCKER_HUB_MIRROR#https://}/${path}${digest:+@${digest}}"
+  docker pull "${mirrored}"
+  docker tag "${mirrored}" "${name}"
+}
+
+node_image="${KIND_NODE_IMAGE}"
+if [[ -n "${DOCKER_HUB_MIRROR}" ]]; then
+  if [[ -z "${node_image}" ]]; then
+    node_image="$(kind_default_node_image)"
+  fi
+  echo "Pulling Docker Hub images through ${DOCKER_HUB_MIRROR}..."
+  pull_through_mirror registry:3
+  pull_through_mirror busybox
+  pull_through_mirror "${node_image}"
+  # kind looks the image up by the tag the pull left behind, not by the digest.
+  node_image="${node_image%%@*}"
+fi
 
 # 1. Create registry container unless it already exists
 echo "Setting up local docker registry '${reg_name}' on port ${reg_port}..."
@@ -91,6 +141,11 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
 EOF
+if [[ -n "${node_image}" ]]; then
+  cat <<EOF >> "${ROOT}/bin/kind-config.yaml"
+  image: ${node_image}
+EOF
+fi
 if [ "${HAS_KVM}" = "1" ]; then
   cat <<EOF >> "${ROOT}/bin/kind-config.yaml"
   # Bind-mount /dev/kvm into the node so micro-VM (kata + cloud-hypervisor)
@@ -200,6 +255,22 @@ for node in $("${ROOT}"/hack/kind.sh get nodes --name "${KIND_CLUSTER_NAME}"); d
 [host."http://${reg_name}:5000"]
 EOF
 done
+
+# The nodes resolve docker.io through the mirror, Docker Hub itself as the
+# fallback. containerd reads the host file at every pull: nothing restarts.
+if [[ -n "${DOCKER_HUB_MIRROR}" ]]; then
+  echo "Routing the nodes' Docker Hub pulls through ${DOCKER_HUB_MIRROR}..."
+  MIRROR_DIR="/etc/containerd/certs.d/docker.io"
+  for node in $("${ROOT}"/hack/kind.sh get nodes --name "${KIND_CLUSTER_NAME}"); do
+    docker exec "${node}" mkdir -p "${MIRROR_DIR}"
+    cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${MIRROR_DIR}/hosts.toml"
+server = "https://registry-1.docker.io"
+
+[host."${DOCKER_HUB_MIRROR}"]
+  capabilities = ["pull", "resolve"]
+EOF
+  done
+fi
 
 # 4. Connect the registry to the cluster network if not already connected
 echo "Connecting local registry to cluster network..."

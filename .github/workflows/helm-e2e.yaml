@@ -30,6 +30,12 @@ jobs:
       E2E_ATENET_DATAPLANE: agentgateway
       E2E_CREDENTIAL_PROVIDER: "1"
       ARTIFACTS: ${{ github.workspace }}/_artifacts
+      # Fork: create-kind-cluster.sh pulls the registry, the KVM probe and the
+      # node image through Docker Hub's public cache and routes the node's
+      # pulls (prometheus, the otel collector, jaeger, …) through it. The
+      # hosted runners share IPs that exhaust Docker Hub's unauthenticated
+      # pull limit.
+      DOCKER_HUB_MIRROR: https://mirror.gcr.io
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
