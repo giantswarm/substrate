@@ -20,13 +20,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/agent-substrate/substrate/internal/e2e"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+// actorHostname is the UTS hostname every actor runs under (ocispec.Hostname),
+// written out so that a rename is a deliberate two-place edit.
+const actorHostname = "actor"
 
 const probeTemplate = "probe"
 
@@ -40,6 +47,11 @@ type whoamiResponse struct {
 	UID      string `json:"uid"`
 	Trust    string `json:"trust"`
 	Hostname string `json:"hostname"`
+	// Hosts is the actor's /etc/hosts and Resolved what its hostname resolves
+	// to: ateom names the hostname there, so the lookup never leaves the
+	// sandbox.
+	Hosts    string `json:"hosts"`
+	Resolved string `json:"resolved"`
 	// Held is the actor id read through a file descriptor the probe opened at
 	// startup and holds across checkpoints — the snapshot therefore carries an
 	// open guest handle on a system-info file, and restore must re-bind it to
@@ -150,6 +162,8 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 			t.Errorf("actor %q and %q both report uid %q — actors are not distinct", id, other, got.UID)
 		}
 		seenUIDs[got.UID] = id
+
+		assertOwnHostnameResolvesLocally(t, id, got)
 	}
 
 	// Live refresh: rotate the pool while both actors run and wait until each
@@ -193,11 +207,69 @@ func TestActorIdentity_AfterRestore_IsOwnID_NotGolden(t *testing.T) {
 	if wantUID := seenUIDFor(t, seenUIDs, id); got.UID != wantUID {
 		t.Errorf("after suspend/resume: /run/ate/actor-uid = %q, want %q (probe read error: %q)", got.UID, wantUID, got.Error)
 	}
+	assertOwnHostnameResolvesLocally(t, "after suspend/resume: "+id, got)
 	waitForTrust(t, ctx, rc, id, rotatedTrust, 10*time.Second)
 
 	// The other actor never cycled: the second rotation must reach it live,
 	// undisturbed by a sibling of the same bundle suspending and resuming.
 	waitForTrust(t, ctx, rc, ids[1], rotatedTrust, 2*time.Minute)
+
+	// Every lookup of the hostname above was answered from /etc/hosts: the DNS
+	// relay of neither actor's worker saw a query for it.
+	for _, id := range ids {
+		assertNoRelayWarningForHostname(t, ctx, clients, id)
+	}
+}
+
+// assertOwnHostnameResolvesLocally checks the actor's /etc/hosts names its
+// hostname on a loopback address and that the lookup returned exactly that.
+func assertOwnHostnameResolvesLocally(t *testing.T, id string, got whoamiResponse) {
+	t.Helper()
+	if got.Hostname != actorHostname {
+		t.Errorf("actor %q: hostname = %q, want %q", id, got.Hostname, actorHostname)
+	}
+	if !strings.Contains(got.Hosts, "127.0.1.1\t"+actorHostname+"\n") {
+		t.Errorf("actor %q: /etc/hosts = %q, want a line 127.0.1.1 %s (probe read error: %q)", id, got.Hosts, actorHostname, got.Error)
+	}
+	if got.Resolved != "127.0.1.1" {
+		t.Errorf("actor %q: hostname resolved to %q, want 127.0.1.1 (probe error: %q)", id, got.Resolved, got.Error)
+	}
+}
+
+// assertNoRelayWarningForHostname reads every container log of the actor's
+// worker pod and fails on a DNS relay warning for the actor's hostname.
+func assertNoRelayWarningForHostname(t *testing.T, ctx context.Context, clients *e2e.Clients, id string) {
+	t.Helper()
+	actor, err := clients.SubstrateAPI.GetActor(ctx, &ateapipb.GetActorRequest{Actor: &ateapipb.ObjectRef{Atespace: probeNamespace, Name: id}})
+	if err != nil {
+		t.Fatalf("GetActor %q: %v", id, err)
+	}
+	assignment := actor.GetStatus().GetWorkerAssignment()
+	if assignment.GetWorkerPod() == "" {
+		t.Fatalf("actor %q has no worker pod assigned", id)
+	}
+	pods := clients.K8s.CoreV1().Pods(assignment.GetWorkerNamespace())
+	pod, err := pods.Get(ctx, assignment.GetWorkerPod(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("getting worker pod %s/%s: %v", assignment.GetWorkerNamespace(), assignment.GetWorkerPod(), err)
+	}
+	query := actorHostname + ". "
+	var warnings []string
+	for _, c := range pod.Spec.Containers {
+		logs, err := pods.GetLogs(pod.Name, &corev1.PodLogOptions{Container: c.Name}).DoRaw(ctx)
+		if err != nil {
+			t.Fatalf("reading logs of %s/%s container %s: %v", pod.Namespace, pod.Name, c.Name, err)
+		}
+		for line := range strings.SplitSeq(string(logs), "\n") {
+			if strings.Contains(line, "dns relay") && strings.Contains(line, query) {
+				warnings = append(warnings, line)
+			}
+		}
+	}
+	t.Logf("actor %q: worker %s/%s logged %d DNS relay warnings for %q", id, pod.Namespace, pod.Name, len(warnings), actorHostname+".")
+	if len(warnings) > 0 {
+		t.Errorf("actor %q: the DNS relay was asked for its own hostname:\n%s", id, strings.Join(warnings, "\n"))
+	}
 }
 
 // waitForTrust polls the probe until its projected trust bundle equals want;

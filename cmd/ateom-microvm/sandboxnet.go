@@ -22,13 +22,18 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateomnet"
 	"github.com/agent-substrate/substrate/internal/ateomnet/dns"
+	"github.com/agent-substrate/substrate/internal/ocispec"
 )
 
-// writeActorResolvConf points the guest resolver at its fixed gateway address.
-func writeActorResolvConf(rootfs string) error {
+// writeActorNameFiles points the guest resolver at its fixed gateway address
+// and names the guest's own hostname in its /etc/hosts.
+func writeActorNameFiles(rootfs string) error {
 	pod, err := os.ReadFile("/etc/resolv.conf")
 	if err != nil {
 		return fmt.Errorf("reading the worker pod resolv.conf: %w", err)
 	}
-	return dns.WriteRootfsResolvConf(rootfs, dns.SandboxResolvConf(ateomnet.ActorVethGateway, pod))
+	if err := dns.WriteRootfsResolvConf(rootfs, dns.SandboxResolvConf(ateomnet.ActorVethGateway, pod)); err != nil {
+		return err
+	}
+	return dns.WriteRootfsHosts(rootfs, ocispec.Hostname)
 }

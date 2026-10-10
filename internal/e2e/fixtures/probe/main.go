@@ -173,11 +173,18 @@ func whoami(w http.ResponseWriter, _ *http.Request) {
 	host, _ := os.Hostname()
 
 	resp := map[string]string{"hostname": host}
+	// The actor's own hostname must resolve from its /etc/hosts, never from DNS.
+	if addrs, err := net.LookupHost(host); err == nil {
+		resp["resolved"] = strings.Join(addrs, ",")
+	} else {
+		resp["error"] += "resolving the hostname: " + err.Error() + "; "
+	}
 	for key, path := range map[string]string{
 		"file":     identityFile,
 		"atespace": atespaceFile,
 		"uid":      uidFile,
 		"trust":    trustFile,
+		"hosts":    "/etc/hosts",
 	} {
 		if b, err := os.ReadFile(path); err == nil {
 			resp[key] = string(b)
