@@ -169,7 +169,7 @@ func (w *ActorWorkflow) ensureAteletPaused(ctx context.Context, actorRef resourc
 	assignment := actor.GetStatus().GetWorkerAssignment()
 	if assignment == nil {
 		// Missing active worker pod reference in PAUSING state indicates corrupted store state.
-		if err := crashActor(ctx, w.store, actorRef, ateattr.OperationPause, crashMessageWorkerAssignmentMissing); err != nil {
+		if err := w.crashActor(ctx, actorRef, actorTemplate, ateattr.OperationPause, crashMessageWorkerAssignmentMissing); err != nil {
 			slog.ErrorContext(ctx, "Failed to crash actor", slog.String("err", err.Error()))
 		}
 		return "", status.Errorf(codes.FailedPrecondition, "CallAteletPause prerequisite not met for Actor: %s. No worker assignment", actorRef)
@@ -208,7 +208,7 @@ func (w *ActorWorkflow) ensureAteletPaused(ctx context.Context, actorRef resourc
 	wireSnapshotScope = ateattr.SnapshotScopeValue(req.Scope)
 
 	if _, err = client.Checkpoint(ctx, req); err != nil {
-		return wireSnapshotScope, handleAteletError(ctx, w.store, actorRef, ateattr.OperationPause, "Checkpoint", false, err)
+		return wireSnapshotScope, w.handleAteletError(ctx, actorRef, actorTemplate, ateattr.OperationPause, "Checkpoint", false, err)
 	}
 	return wireSnapshotScope, nil
 }

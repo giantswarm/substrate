@@ -144,6 +144,63 @@ func TestDeleteActorWorkflow_ExecutionPaths(t *testing.T) {
 	}
 }
 
+// A crashed actor whose workload is still placed is deleted only once that
+// workload is torn down: while atelet cannot stop the sandbox, the delete is
+// refused with FailedPrecondition and the record keeps its worker assignment,
+// so the retry reaches the same sandbox. A delete that merely happens to find
+// no node to reach would otherwise leave a running sandbox behind.
+func TestDeleteActor_TeardownFailureRefusesWithFailedPrecondition(t *testing.T) {
+	ctx := context.Background()
+	st, cleanup := storetest.SetupTestStore(t)
+	defer cleanup()
+	w := newTestActorWorkflow(t, st, "ns", "tmpl1")
+	atelet := &terminatingAtelet{err: status.Error(codes.Internal, "while unmounting volumes")}
+	w.dialer = newFakeAteletDialer(t, atelet)
+
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
+	seedWorkflowActor(t, ctx, st, actorRef, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_CRASHED, func(actor *ateapipb.Actor) {
+		actor.Status.WorkerAssignment = &ateapipb.WorkerAssignment{
+			Worker:       &ateapipb.ObjectRef{Name: "uid"},
+			WorkerPodUid: "uid",
+			NodeName:     "node-1",
+		}
+	})
+	seedWorker(t, ctx, st, actorRef)
+
+	_, err := w.DeleteActor(ctx, actorRef, false, store.DeletePreconditions{})
+	if got := status.Code(err); got != codes.FailedPrecondition {
+		t.Fatalf("status.Code(DeleteActor()) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
+	}
+	kept, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor after the refused delete: %v", err)
+	}
+	if got := kept.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_DELETING {
+		t.Errorf("state after the refused delete = %v, want DELETING", got)
+	}
+	if kept.GetStatus().GetWorkerAssignment() == nil {
+		t.Error("WorkerAssignment cleared by the refused delete, want kept for the retry")
+	}
+	if firstAssignment(t, st, "uid") == nil {
+		t.Error("worker assignment = nil, want the worker still hosting the actor")
+	}
+
+	// Once atelet can tear the workload down, the retry finishes.
+	atelet.err = nil
+	if _, err := w.DeleteActor(ctx, actorRef, false, store.DeletePreconditions{}); err != nil {
+		t.Fatalf("retried DeleteActor failed: %v", err)
+	}
+	if _, err := st.GetActor(ctx, actorRef); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetActor after the retried delete = %v, want not found", err)
+	}
+	if got := len(atelet.terminateRequests()); got != 2 {
+		t.Errorf("got %d Terminate requests, want one per delete", got)
+	}
+	if firstAssignment(t, st, "uid") != nil {
+		t.Error("worker assignment still present after the delete, want released")
+	}
+}
+
 func TestEnsureMarkedDeleting_StateMatrix(t *testing.T) {
 	tests := []struct {
 		name     string

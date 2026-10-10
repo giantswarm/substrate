@@ -62,13 +62,18 @@ func ValidateActorTemplateUpdate(ctx context.Context, fldPath *field.Path, newVa
 }
 
 // ValidateCustom_CreateActorTemplateRequest_ActorTemplate rejects container
-// volume mounts that reference volumes the template does not declare, and a
-// sub_path or read_only on a mount of any volume but an existing one.
+// volume mounts that reference volumes the template does not declare, a
+// sub_path or read_only on a mount of any volume but an existing one, and a
+// DATA snapshot scope on a template no container of which mounts a
+// durable-dir volume: a DATA snapshot is the durable-dir volumes and nothing
+// else, so without one every pause or suspend of its actors would fail on the
+// node and crash them.
 func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *ateapipb.ActorTemplate) field.ErrorList {
 	declared := make(map[string]*ateapipb.Volume, len(value.GetVolumes()))
 	for _, vol := range value.GetVolumes() {
 		declared[vol.GetName()] = vol
 	}
+	mountsDurableDir := false
 	var errs field.ErrorList
 	for i, ctr := range value.GetContainers() {
 		for j, mount := range ctr.GetVolumeMounts() {
@@ -82,6 +87,9 @@ func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, 
 				errs = append(errs, field.Invalid(mountPath.Child("name"), name, "must reference a volume declared in the template"))
 				continue
 			}
+			if vol.GetDurableDir() != nil {
+				mountsDurableDir = true
+			}
 			if vol.GetExistingVolume() != nil {
 				continue
 			}
@@ -90,6 +98,20 @@ func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, 
 			}
 			if mount.GetReadOnly() {
 				errs = append(errs, field.Invalid(mountPath.Child("read_only"), true, "may be set only on a mount of an existing volume"))
+			}
+		}
+	}
+	if !mountsDurableDir {
+		snapshotConfig := fldPath.Child("snapshot_config")
+		for _, scope := range []struct {
+			field string
+			value ateapipb.SnapshotContentScope
+		}{
+			{"on_pause", value.GetSnapshotConfig().GetOnPause()},
+			{"on_commit", value.GetSnapshotConfig().GetOnCommit()},
+		} {
+			if scope.value == ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA {
+				errs = append(errs, field.Invalid(snapshotConfig.Child(scope.field), scope.value.String(), "DATA snapshots capture only durable-dir volumes, and no container mounts one"))
 			}
 		}
 	}
