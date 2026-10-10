@@ -172,6 +172,29 @@ atenetEgress:
   # nothing here. A change rolls the gateway: the roots are read at start.
   upstreamTrust:
     caBundle: ""
+  # The gateway container's resources (requests and limits, as the pod spec
+  # takes them). Only the ephemeral storage is bounded by default: the
+  # container writes nothing but its logs. CPU and memory are the operator's
+  # to size. Null renders no resources.
+  resources:
+    requests:
+      ephemeral-storage: 16Mi
+    limits:
+      ephemeral-storage: 256Mi
+  extProc:
+    # The ext-proc container's resources, the same way. It writes the drain
+    # marker (below) and nothing else.
+    resources:
+      requests:
+        ephemeral-storage: 16Mi
+      limits:
+        ephemeral-storage: 256Mi
+  # The emptyDir the ext-proc writes its drain marker to (/var/run/atenet):
+  # one small file, so its sizeLimit is tight. Null renders an unbounded
+  # emptyDir, which a cluster policy requiring bounded ephemeral storage
+  # (Kyverno's require-emptydir-requests-and-limits) then reports.
+  drainSignal:
+    sizeLimit: 16Mi
 
 # ate-api-server deployment overrides. Its snapshot-store client reaches the
 # same object store as atelet's: the ServiceAccount annotations carry the pod
