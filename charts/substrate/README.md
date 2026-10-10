@@ -87,34 +87,6 @@ See `values.yaml` for the full set; the important keys:
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
 | `otel.logs.enabled` | `true` | Enable OTLP actor events from ateapi and the ateoms, plus the router access log. Actor events go to stdout when OTLP logs are disabled |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
-
-## PostgreSQL setup
-
-The chart does not deploy or initialize PostgreSQL. Prepare the database,
-schema, login users, and the configured `readWriteRole` and `ownerRole` before
-installing the chart. For development Helm installations in `ate-system`,
-run `hack/install-postgres.sh` after installing the separate certificate
-controller and its CA pools. It deploys certificate-protected PostgreSQL,
-runs the shared bootstrap SQL, and creates both connection Secrets. Use `--kind`
-for the smaller Kind deployment; set `KUBECTL_CONTEXT` to select a cluster.
-Standalone manifest installations can continue to use `ate-setup`.
-
-When using `hack/install-postgres.sh`, install the application chart with
-`--set postgres.clientCertificates.enabled=true`. Its connection Secrets use
-the projected owner and runtime certificates. For external databases using
-password or provider-managed authentication, leave this setting disabled.
-Service-DNS and pod-identity certificates remain enabled for Substrate's
-internal connections. Standalone manifest generation enables the PostgreSQL
-certificates for the bundled development database.
-
-For an operator-managed database, the operator must provision the identities,
-schema, and grants, and create both connection Secrets in the release namespace.
-
-Substrate runs `SET ROLE` for each new connection. It rejects a login without
-the required membership.
-
-Create both group roles and all grants before installation, then set
-`postgres.readWriteRole` and `postgres.ownerRole` to those names. Use distinct
-roles and table schemas for separate installs sharing one database. Give each
-install separate logins and grant each login membership only in its install's
-roles.
+| `atenetEgress.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `agentgateway` container, as the pod spec takes them; the default bounds the ephemeral storage only (the container writes nothing but its logs), CPU and memory are the operator's to size; `null` renders none |
+| `atenetEgress.extProc.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `ext-proc` container, the same way |
+| `atenetEgress.drainSignal.sizeLimit` | `16Mi` | `sizeLimit` of the `drain-signal` emptyDir the ext-proc writes its drain marker to; `null` renders an unbounded emptyDir, which a cluster policy that requires bounded ephemeral storage then reports |

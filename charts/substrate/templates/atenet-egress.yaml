@@ -179,6 +179,10 @@ spec:
             path: /healthz/ready
             port: readiness
           periodSeconds: 1
+        {{- with .Values.atenetEgress.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         volumeMounts:
         - name: egress-mitm
           mountPath: /run/egress-mitm
@@ -247,6 +251,10 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 2
           failureThreshold: 3
+        {{- with .Values.atenetEgress.extProc.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         volumeMounts:
         - name: servicedns
           mountPath: /run/servicedns.podcert.ate.dev
@@ -276,6 +284,13 @@ spec:
       - name: config
         configMap:
           name: {{ include "substrate.fullname" (list "atenet-egress-agentgateway-config" .) }}
+      - name: drain-signal
+        {{- with .Values.atenetEgress.drainSignal.sizeLimit }}
+        emptyDir:
+          sizeLimit: {{ . }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
       - name: servicedns
         projected:
           sources:
