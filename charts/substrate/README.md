@@ -74,3 +74,6 @@ See `values.yaml` for the full set; the important keys:
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
 | `otel.logs.enabled` | `true` | Set to `false` to export no logs. Gates both OTLP log sources: ateapi's actor lifecycle events and the router access log |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
+| `atenetEgress.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `agentgateway` container, as the pod spec takes them; the default bounds the ephemeral storage only (the container writes nothing but its logs), CPU and memory are the operator's to size; `null` renders none |
+| `atenetEgress.extProc.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `ext-proc` container, the same way |
+| `atenetEgress.drainSignal.sizeLimit` | `16Mi` | `sizeLimit` of the `drain-signal` emptyDir the ext-proc writes its drain marker to; `null` renders an unbounded emptyDir, which a cluster policy that requires bounded ephemeral storage then reports |
