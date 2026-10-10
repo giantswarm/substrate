@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // Package dns answers an actor's DNS from its sandbox's gateway namespace and
-// writes the resolv.conf that points the actor at it.
+// writes the resolv.conf that points the actor at it and the hosts file that
+// names the actor itself.
 package dns
 
 import (
@@ -113,12 +114,17 @@ func clusterSearchDomains(domains []string) []string {
 }
 
 // WriteRootfsResolvConf installs content at /etc/resolv.conf inside rootfs.
-//
-// os.Root confines path traversal; unlinking prevents writes through existing links.
 func WriteRootfsResolvConf(rootfs string, content []byte) error {
 	if len(content) == 0 {
 		return fmt.Errorf("dns: refusing to write an empty resolv.conf")
 	}
+	return writeRootfsEtcFile(rootfs, "resolv.conf", content)
+}
+
+// writeRootfsEtcFile installs content at /etc/<name> inside rootfs.
+//
+// os.Root confines path traversal; unlinking prevents writes through existing links.
+func writeRootfsEtcFile(rootfs, name string, content []byte) error {
 	root, err := os.OpenRoot(rootfs)
 	if err != nil {
 		return fmt.Errorf("opening rootfs %q: %w", rootfs, err)
@@ -127,19 +133,20 @@ func WriteRootfsResolvConf(rootfs string, content []byte) error {
 	if err := root.Mkdir("etc", 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("creating %q: %w", filepath.Join(rootfs, "etc"), err)
 	}
-	if err := root.Remove("etc/resolv.conf"); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("removing existing resolv.conf: %w", err)
+	path := "etc/" + name
+	if err := root.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("removing existing %s: %w", name, err)
 	}
-	f, err := root.OpenFile("etc/resolv.conf", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := root.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
-		return fmt.Errorf("creating resolv.conf: %w", err)
+		return fmt.Errorf("creating %s: %w", name, err)
 	}
 	_, err = f.Write(content)
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		return fmt.Errorf("writing resolv.conf: %w", err)
+		return fmt.Errorf("writing %s: %w", name, err)
 	}
 	return nil
 }

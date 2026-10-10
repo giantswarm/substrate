@@ -27,6 +27,8 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateomnet"
 	"github.com/agent-substrate/substrate/internal/ateomnet/dns"
+	"github.com/agent-substrate/substrate/internal/imagecache"
+	"github.com/agent-substrate/substrate/internal/ocispec"
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 )
 
@@ -55,4 +57,18 @@ func removeActorResolvConf(ctx context.Context, path string) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		slog.WarnContext(ctx, "Failed to remove the actor resolv.conf", slog.Any("err", err))
 	}
+}
+
+// composeActorRootfs composes an application container's bundle rootfs and
+// names the actor's hostname in its /etc/hosts. The file lands in the bundle's
+// private upper, so the OCI spec's mounts stay those of every existing
+// snapshot (runsc restore refuses a mount set that differs).
+func composeActorRootfs(bundle string) error {
+	if err := imagecache.SetupBundleRootfs(bundle); err != nil {
+		return err
+	}
+	if err := dns.WriteRootfsHosts(filepath.Join(bundle, "rootfs"), ocispec.Hostname); err != nil {
+		return fmt.Errorf("while writing the actor hosts: %w", err)
+	}
+	return nil
 }
