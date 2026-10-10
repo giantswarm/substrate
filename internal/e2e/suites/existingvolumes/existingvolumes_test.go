@@ -25,16 +25,19 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/agent-substrate/substrate/internal/e2e"
+	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -87,26 +90,12 @@ func eventually(t *testing.T, timeout time.Duration, what string, check func() (
 	}
 }
 
-// runOnVolume runs script in a pod that mounts the claim at /data and
-// returns its output.
-func runOnVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, claim, name, script string) string {
+// runPod creates a pod that runs to completion and returns its output. The
+// finished pod is deleted: a claim it mounted stays protected from deletion
+// while it exists.
+func runPod(ctx context.Context, t *testing.T, clients *e2e.Clients, pod *corev1.Pod) string {
 	t.Helper()
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers: []corev1.Container{{
-				Name:         "sh",
-				Image:        busybox,
-				Command:      []string{"sh", "-c", script},
-				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
-			}},
-			Volumes: []corev1.Volume{{
-				Name:         "data",
-				VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim}},
-			}},
-		},
-	}
+	ns, name := pod.Namespace, pod.Name
 	if _, err := clients.K8s.CoreV1().Pods(ns).Create(ctx, pod, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("creating pod %s: %v", name, err)
 	}
@@ -124,17 +113,141 @@ func runOnVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, cl
 	if err != nil {
 		t.Fatalf("reading the logs of pod %s: %v", name, err)
 	}
+	if err := clients.K8s.CoreV1().Pods(ns).Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+		t.Fatalf("deleting pod %s: %v", name, err)
+	}
 	return string(out)
 }
 
-// prepareVolume provisions a read-write-many PVC, lays out the sessions
-// directory with one session directory made ahead (the other is Substrate's
-// to create) and a mirrors directory with mirrorFile, and returns the claim
-// and its PersistentVolume's name and handle.
-func prepareVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns string) (claim, pvName, handle string) {
+// runOnVolume runs script in a pod that mounts the claim at /data and
+// returns its output.
+func runOnVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, claim, name, script string) string {
+	t.Helper()
+	return runPod(ctx, t, clients, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{{
+				Name:         "sh",
+				Image:        busybox,
+				Command:      []string{"sh", "-c", script},
+				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name:         "data",
+				VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: claim}},
+			}},
+		},
+	})
+}
+
+// runOnNode runs script on node, in the host's PID namespace and with the
+// node's Substrate directory mounted at its own path, and returns its output.
+// The actor's UID reaches the script as $ACTOR_UID rather than in its text, so
+// the pod's own processes never match a search of the node's command lines
+// for it.
+func runOnNode(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, node, actorUID, name, script string) string {
+	t.Helper()
+	return runPod(ctx, t, clients, &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			NodeName:      node,
+			HostPID:       true,
+			Containers: []corev1.Container{{
+				Name:         "sh",
+				Image:        busybox,
+				Command:      []string{"sh", "-c", script},
+				Env:          []corev1.EnvVar{{Name: "ACTOR_UID", Value: actorUID}},
+				VolumeMounts: []corev1.VolumeMount{{Name: "ate", MountPath: nodepath.BasePath}},
+			}},
+			Volumes: []corev1.Volume{{
+				Name:         "ate",
+				VolumeSource: corev1.VolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: nodepath.BasePath}},
+			}},
+		},
+	})
+}
+
+// nodeActorState is what a node holds of an actor: its directory under
+// nodepath.ActorsDir, the mounts under it in the host's mount namespace, and
+// the processes naming its UID (the sandbox's runsc processes run with the
+// actor's bundle path on their command line).
+type nodeActorState struct {
+	Dir    bool
+	Mounts int
+	Procs  int
+}
+
+// inspectNode reads what node holds of the actor.
+func inspectNode(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, node, actorUID, name string) nodeActorState {
+	t.Helper()
+	out := runOnNode(ctx, t, clients, ns, node, actorUID, name, fmt.Sprintf(`
+dir=%s/$ACTOR_UID
+if [ -d "$dir" ]; then echo dir=present; else echo dir=absent; fi
+echo mounts=$(grep -c "/actors/$ACTOR_UID/" /proc/1/mountinfo)
+printf %%s "$ACTOR_UID" > /tmp/uid
+n=0
+for c in /proc/[0-9]*/cmdline; do
+  [ "$c" = "/proc/$$/cmdline" ] && continue
+  grep -q -F -f /tmp/uid "$c" 2>/dev/null && n=$((n+1))
+done
+echo procs=$n
+`, nodepath.ActorsDir))
+	var state nodeActorState
+	for _, line := range strings.Fields(out) {
+		key, value, _ := strings.Cut(line, "=")
+		n, _ := strconv.Atoi(value)
+		switch key {
+		case "dir":
+			state.Dir = value == "present"
+		case "mounts":
+			state.Mounts = n
+		case "procs":
+			state.Procs = n
+		}
+	}
+	t.Logf("node %s holds of actor %s: %+v", node, actorUID, state)
+	return state
+}
+
+// blockCheckpoint makes the actor's checkpoint-state path on its node a file,
+// so the node's next checkpoint of it fails creating that directory before it
+// touches the sandbox: the suspend fails, the sandbox stays up.
+func blockCheckpoint(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, node, actorUID string) {
+	t.Helper()
+	// The directory name is atelet's (ateletpath.CheckpointStateDir).
+	runOnNode(ctx, t, clients, ns, node, actorUID, "block-checkpoint",
+		fmt.Sprintf(`p=%s/$ACTOR_UID/checkpoint-state && rm -rf "$p" && touch "$p" && ls -l "$p"`, nodepath.ActorsDir))
+}
+
+func getActor(ctx context.Context, t *testing.T, clients *e2e.Clients, ref resources.ActorRef) *ateapipb.Actor {
+	t.Helper()
+	actor, err := clients.SubstrateAPI.GetActor(ctx, &ateapipb.GetActorRequest{Actor: ref.ToObjectRef()})
+	if err != nil {
+		t.Fatalf("GetActor %s: %v", ref, err)
+	}
+	return actor
+}
+
+// allocatedActors returns how many actors the worker reports allocated.
+func allocatedActors(ctx context.Context, t *testing.T, clients *e2e.Clients, worker string) int32 {
+	t.Helper()
+	got, err := clients.SubstrateAPI.GetWorker(ctx, &ateapipb.GetWorkerRequest{Worker: &ateapipb.ObjectRef{Name: worker}})
+	if err != nil {
+		t.Fatalf("GetWorker %s: %v", worker, err)
+	}
+	return got.GetStatus().GetAllocated().GetActors()
+}
+
+// prepareVolume provisions a read-write-many PVC named claim, lays out the
+// sessions directory with one session directory made ahead (the others are
+// Substrate's to create) and a mirrors directory with mirrorFile, and returns
+// the claim and its PersistentVolume's name and handle.
+func prepareVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns, claim string) (_, pvName, handle string) {
 	t.Helper()
 	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: "workspace", Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: claim, Namespace: ns},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 			StorageClassName: &e2e.StorageClass,
@@ -146,7 +259,7 @@ func prepareVolume(ctx context.Context, t *testing.T, clients *e2e.Clients, ns s
 	if _, err := clients.K8s.CoreV1().PersistentVolumeClaims(ns).Create(ctx, pvc, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("creating PVC: %v", err)
 	}
-	runOnVolume(ctx, t, clients, ns, pvc.Name, "prepare", fmt.Sprintf(
+	runOnVolume(ctx, t, clients, ns, pvc.Name, "prepare-"+claim, fmt.Sprintf(
 		"mkdir -p /data/sessions && mkdir -m 0777 /data/sessions/b && mkdir -p /data/mirrors && printf %%s %q > /data/mirrors/%s && sync",
 		mirrorContent, mirrorFile))
 
@@ -320,7 +433,7 @@ func TestExistingVolumes(t *testing.T) {
 	requireNFS(ctx, t, clients)
 
 	ns := e2e.CreateNamespace(t)
-	claim, pvName, handle := prepareVolume(ctx, t, clients, ns.Name)
+	claim, pvName, handle := prepareVolume(ctx, t, clients, ns.Name, "workspace")
 	t.Logf("existing volume: PersistentVolume %s, handle %s", pvName, handle)
 	tmpl := createTemplate(ctx, t, clients, ns)
 
@@ -444,5 +557,85 @@ func TestExistingVolumes(t *testing.T) {
 				t.Logf("refused as expected: %v", err)
 			})
 		}
+	})
+
+	// A suspend that fails on the node crashes the actor while its sandbox is
+	// still up, mounts and all. The crash tears the workload down and frees
+	// the worker, the crashed record deletes, and nothing of the actor is left
+	// on the node or holding the volume. Its own volume, so that the
+	// PersistentVolume's deletion at the end proves the last point: the NFS
+	// driver refuses to delete a volume a sandbox still has files open on.
+	t.Run("DeleteAfterFailedSuspend", func(t *testing.T) {
+		claim, pvName, handle := prepareVolume(ctx, t, clients, ns.Name, "failed-suspend")
+		t.Logf("existing volume: PersistentVolume %s, handle %s", pvName, handle)
+		ref := resources.ActorRef{Atespace: atespace, Name: "failed-suspend-" + ns.Name}
+		deleteActorAtEnd(t, clients, ref)
+		startActor(ctx, t, clients, tmpl, ref, sessionVolumes(handle, "c"))
+		requireWrite(ctx, t, router, ref, workspacePath+"/c.txt")
+
+		actor := getActor(ctx, t, clients, ref)
+		uid := actor.GetMetadata().GetUid()
+		assignment := actor.GetStatus().GetWorkerAssignment()
+		node, worker := assignment.GetNodeName(), assignment.GetWorker().GetName()
+		if uid == "" || node == "" || worker == "" {
+			t.Fatalf("%s runs with uid %q on node %q, worker %q", ref, uid, node, worker)
+		}
+		// The inspection has to see the running actor, or its later silence
+		// proves nothing.
+		if before := inspectNode(ctx, t, clients, ns.Name, node, uid, "inspect-running"); !before.Dir || before.Mounts == 0 || before.Procs == 0 {
+			t.Fatalf("node %s shows nothing of the running actor (%+v): the inspection cannot prove a teardown", node, before)
+		}
+		allocated := allocatedActors(ctx, t, clients, worker)
+
+		blockCheckpoint(ctx, t, clients, ns.Name, node, uid)
+		_, err := clients.SubstrateAPI.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: ref.ToObjectRef()})
+		if err == nil {
+			t.Fatal("SuspendActor succeeded with the actor's checkpoint directory blocked")
+		}
+		t.Logf("SuspendActor failed as arranged: %v", err)
+		eventually(t, time.Minute, "the actor to be CRASHED", func() (bool, error) {
+			actor = getActor(ctx, t, clients, ref)
+			state := actor.GetStatus().GetState()
+			return state == ateapipb.ActorState_ACTOR_STATE_CRASHED, fmt.Errorf("state %v", state)
+		})
+		if msg := actor.GetStatus().GetCrash().GetMessage(); !strings.Contains(msg, "Checkpoint") {
+			t.Errorf("crash message %q, want the failed Checkpoint", msg)
+		}
+		if got := actor.GetStatus().GetWorkerAssignment(); got != nil {
+			t.Errorf("the crashed actor still holds its worker (%v): the crash did not tear its workload down", got)
+		}
+		if after := inspectNode(ctx, t, clients, ns.Name, node, uid, "inspect-crashed"); after.Dir || after.Mounts != 0 || after.Procs != 0 {
+			t.Errorf("node %s still holds the crashed actor: %+v", node, after)
+		}
+		if got := allocatedActors(ctx, t, clients, worker); got != allocated-1 {
+			t.Errorf("worker %s allocated actors = %d after the crash, want %d", worker, got, allocated-1)
+		}
+
+		if _, err := clients.SubstrateAPI.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref.ToObjectRef()}); err != nil {
+			t.Fatalf("DeleteActor: %v", err)
+		}
+		eventually(t, time.Minute, "the actor to be gone", func() (bool, error) {
+			_, err := clients.SubstrateAPI.GetActor(ctx, &ateapipb.GetActorRequest{Actor: ref.ToObjectRef()})
+			return status.Code(err) == codes.NotFound, fmt.Errorf("GetActor: %v", err)
+		})
+		if final := inspectNode(ctx, t, clients, ns.Name, node, uid, "inspect-deleted"); final.Dir || final.Mounts != 0 || final.Procs != 0 {
+			t.Errorf("node %s still holds the deleted actor: %+v", node, final)
+		}
+
+		// Nothing of the actor holds the volume: its PersistentVolume deletes
+		// with the claim.
+		if err := clients.K8s.CoreV1().PersistentVolumeClaims(ns.Name).Delete(ctx, claim, metav1.DeleteOptions{}); err != nil {
+			t.Fatalf("deleting PVC %s: %v", claim, err)
+		}
+		eventually(t, 2*time.Minute, "PersistentVolume "+pvName+" to be deleted", func() (bool, error) {
+			pv, err := clients.K8s.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			if err != nil {
+				return false, err
+			}
+			return false, fmt.Errorf("phase %s", pv.Status.Phase)
+		})
 	})
 }

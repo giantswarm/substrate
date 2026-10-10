@@ -56,7 +56,10 @@ func (w *ActorWorkflow) DeleteActor(ctx context.Context, actorRef resources.Acto
 
 	// DeleteActor will attempt best-effort cleanup across all steps, collecting any errors.
 	// If any step fails, errors are returned so the caller can retry, and the actor record
-	// is retained in the store in the DELETING state.
+	// is retained in the store in the DELETING state. The record never goes while the
+	// actor's workload may still be placed: a sandbox that could not be stopped, or a
+	// volume that could not be released, refuses the delete with FailedPrecondition and
+	// keeps the worker assignment the retry needs to reach them.
 	// TODO: Ensure GC collects all the remaining resources if the cleanup fails.
 	var errs []error
 	// Cleanup stays best-effort: an unresolvable template is recorded and
@@ -100,6 +103,10 @@ func (w *ActorWorkflow) DeleteActor(ctx context.Context, actorRef resources.Acto
 	}
 	w.ensureLocalCheckpointsReleased(ctx, actor)
 
+	if atletTerminatedErr != nil || volumesDetachedErr != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "actor %s still has its workload placed on worker %s and it could not be torn down; retry once it can: %v",
+			actorRef, actor.GetStatus().GetWorkerAssignment().GetWorker().GetName(), errors.Join(errs...))
+	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -222,7 +229,7 @@ func (w *ActorWorkflow) ensureAteletTerminated(ctx context.Context, actorRef res
 			slog.InfoContext(ctx, "workload already terminated on atelet", slog.Any("actor", actorRef))
 			return nil
 		}
-		return handleAteletError(ctx, w.store, actorRef, opName, "Terminate", true, err)
+		return w.handleAteletError(ctx, actorRef, actorTemplate, opName, "Terminate", true, err)
 	}
 
 	return nil

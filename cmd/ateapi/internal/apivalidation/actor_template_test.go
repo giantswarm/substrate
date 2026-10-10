@@ -64,7 +64,7 @@ func TestValidateCreateActorTemplateRequest(t *testing.T) {
 		field.ErrorList{field.Invalid(field.NewPath("actor_template", "metadata", "name"), "Tmpl_A", "").WithOrigin("format=k8s-short-name")},
 	}, {
 		"valid data-scoped snapshots",
-		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapipb.ActorTemplate) {
+		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(mountDurableDir, func(tmpl *ateapipb.ActorTemplate) {
 			tmpl.SnapshotConfig.OnPause = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 			tmpl.SnapshotConfig.OnCommit = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 		})},
@@ -200,7 +200,7 @@ func TestValidateCreateActorTemplateRequest(t *testing.T) {
 		field.ErrorList{field.Invalid(field.NewPath("actor_template", "snapshot_config", "storage_location"), "gs://my-bucket/snapshots?versions=true", "")},
 	}, {
 		"on_commit broader than on_pause",
-		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapipb.ActorTemplate) {
+		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(mountDurableDir, func(tmpl *ateapipb.ActorTemplate) {
 			tmpl.SnapshotConfig.OnPause = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 			tmpl.SnapshotConfig.OnCommit = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL
 		})},
@@ -210,7 +210,7 @@ func TestValidateCreateActorTemplateRequest(t *testing.T) {
 		// violation (on_commit has no default of its own) and a subset
 		// violation (UNSPECIFIED is not DATA).
 		"on_commit unset with data on_pause",
-		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapipb.ActorTemplate) {
+		&ateapipb.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(mountDurableDir, func(tmpl *ateapipb.ActorTemplate) {
 			tmpl.SnapshotConfig.OnPause = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
 			tmpl.SnapshotConfig.OnCommit = ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_UNSPECIFIED
 		})},
@@ -242,6 +242,95 @@ func TestValidateCreateActorTemplateRequest(t *testing.T) {
 			assertValidateErr(t, ValidateCreateActorTemplateRequest(context.Background(), tt.req), tt.want)
 		})
 	}
+}
+
+// A DATA snapshot scope is accepted only when a container mounts a
+// durable-dir volume: a DATA snapshot captures those volumes and nothing else,
+// so an actor of a template without one has nothing to snapshot, and its
+// pause or suspend fails on the node and crashes it. Declaring the volume is
+// not enough; the node snapshots the mounted directory.
+func TestValidateCreateActorTemplateRequest_DataScopeNeedsMountedDurableDir(t *testing.T) {
+	onPause := field.NewPath("actor_template", "snapshot_config", "on_pause")
+	onCommit := field.NewPath("actor_template", "snapshot_config", "on_commit")
+	full := ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL
+	data := ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA
+
+	volumes := []struct {
+		name    string
+		mutate  func(*ateapipb.ActorTemplate)
+		mounted bool
+	}{
+		{name: "no volumes"},
+		{
+			name: "durable dir declared but not mounted",
+			mutate: func(tmpl *ateapipb.ActorTemplate) {
+				tmpl.Volumes = []*ateapipb.Volume{{Name: "data", DurableDir: &ateapipb.DurableDirVolumeSource{}}}
+			},
+		},
+		{
+			name: "existing volume mounted",
+			mutate: func(tmpl *ateapipb.ActorTemplate) {
+				tmpl.Volumes = []*ateapipb.Volume{{Name: "workspace", ExistingVolume: &ateapipb.ExistingVolumeSource{}}}
+				tmpl.Containers[0].VolumeMounts = []*ateapipb.VolumeMount{{Name: "workspace", MountPath: "/workspace"}}
+			},
+		},
+		{name: "durable dir mounted", mutate: mountDurableDir, mounted: true},
+		{
+			name: "durable dir mounted by a second container",
+			mutate: func(tmpl *ateapipb.ActorTemplate) {
+				tmpl.Volumes = []*ateapipb.Volume{{Name: "data", DurableDir: &ateapipb.DurableDirVolumeSource{}}}
+				tmpl.Containers = append(tmpl.Containers, &ateapipb.Container{
+					Name:         "sidecar",
+					Image:        tmpl.Containers[0].Image,
+					VolumeMounts: []*ateapipb.VolumeMount{{Name: "data", MountPath: "/var/data"}},
+				})
+			},
+			mounted: true,
+		},
+	}
+	scopes := []struct {
+		name              string
+		onPause, onCommit ateapipb.SnapshotContentScope
+		wantUnmounted     field.ErrorList
+	}{
+		{name: "FULL/FULL", onPause: full, onCommit: full},
+		{
+			name: "FULL/DATA", onPause: full, onCommit: data,
+			wantUnmounted: field.ErrorList{field.Invalid(onCommit, "SNAPSHOT_CONTENT_SCOPE_DATA", "")},
+		},
+		{
+			name: "DATA/DATA", onPause: data, onCommit: data,
+			wantUnmounted: field.ErrorList{
+				field.Invalid(onPause, "SNAPSHOT_CONTENT_SCOPE_DATA", ""),
+				field.Invalid(onCommit, "SNAPSHOT_CONTENT_SCOPE_DATA", ""),
+			},
+		},
+	}
+	for _, vol := range volumes {
+		for _, scope := range scopes {
+			t.Run(vol.name+" "+scope.name, func(t *testing.T) {
+				tmpl := validActorTemplate(func(tmpl *ateapipb.ActorTemplate) {
+					tmpl.SnapshotConfig.OnPause = scope.onPause
+					tmpl.SnapshotConfig.OnCommit = scope.onCommit
+				})
+				if vol.mutate != nil {
+					vol.mutate(tmpl)
+				}
+				var want field.ErrorList
+				if !vol.mounted {
+					want = scope.wantUnmounted
+				}
+				assertValidateErr(t, ValidateCreateActorTemplateRequest(context.Background(), &ateapipb.CreateActorTemplateRequest{ActorTemplate: tmpl}), want)
+			})
+		}
+	}
+}
+
+// mountDurableDir declares a durable-dir volume and mounts it in the
+// template's first container, as a template with DATA snapshot scopes must.
+func mountDurableDir(tmpl *ateapipb.ActorTemplate) {
+	tmpl.Volumes = append(tmpl.Volumes, &ateapipb.Volume{Name: "data", DurableDir: &ateapipb.DurableDirVolumeSource{}})
+	tmpl.Containers[0].VolumeMounts = append(tmpl.Containers[0].VolumeMounts, &ateapipb.VolumeMount{Name: "data", MountPath: "/var/data"})
 }
 
 func TestValidateGetActorTemplateRequest(t *testing.T) {
