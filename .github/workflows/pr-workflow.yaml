@@ -45,6 +45,10 @@ jobs:
       # Where each runner writes its JUnit. Every invocation needs its own file;
       # a shared path means the last writer wins.
       ARTIFACTS: ${{ github.workspace }}/_artifacts
+      # Fork: the Postgres test containers come from Docker Hub through its
+      # public cache, mirror.gcr.io. The hosted runners share IPs that exhaust
+      # Docker Hub's unauthenticated pull limit.
+      TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: mirror.gcr.io
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -119,6 +123,19 @@ jobs:
           name: test-results-unit
           path: ${{ env.ARTIFACTS }}
           if-no-files-found: error
+      - name: Install the pinned Weaver
+        # Fork: hack/verify/metrics.sh runs a weaver of the version it pins
+        # instead of pulling its Docker Hub image, which the shared runner IPs
+        # are refused.
+        run: |
+          version=$(sed -n 's/^WEAVER_VERSION="\(.*\)"$/\1/p' hack/verify/metrics.sh)
+          archive=weaver-x86_64-unknown-linux-gnu.tar.xz
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/open-telemetry/weaver/releases/download/${version}/${archive}"
+          curl -fsSLO "https://github.com/open-telemetry/weaver/releases/download/${version}/${archive}.sha256"
+          sha256sum -c "${archive}.sha256"
+          sudo tar -xJf "$archive" --strip-components=1 -C /usr/local/bin "${archive%.tar.xz}/weaver"
+          weaver --version
       - name: verify
         run: hack/verify-all.sh
   # One kind cluster exercises BOTH runtimes. Free x86-64 ubuntu-latest runners
@@ -149,6 +166,11 @@ jobs:
       # The NFS driver is installed below, so the existingvolumes suite fails
       # rather than skips without it.
       E2E_CSI_NFS: "1"
+      # Fork: create-kind-cluster.sh pulls the registry, the KVM probe and the
+      # node image through Docker Hub's public cache and routes the node's
+      # pulls (postgres, rustfs, prometheus, …) through it. The hosted runners
+      # share IPs that exhaust Docker Hub's unauthenticated pull limit.
+      DOCKER_HUB_MIRROR: https://mirror.gcr.io
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
