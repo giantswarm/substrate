@@ -262,7 +262,7 @@ func TestAssignWorkerAttempt_PausedActorLocalSnapshotNode(t *testing.T) {
 				}
 			})
 			wc := startedWorkerCache(t, ctx, persistence, tc.fleet, tc.busy...)
-			w := &ActorWorkflow{store: persistence, workerCache: wc, scheduler: scheduling.New(wc)}
+			w := &ActorWorkflow{store: persistence, workerCache: wc, scheduler: scheduling.New(wc), dialer: newDanglingDialer()}
 			if !tc.noLister {
 				w.nodeLister = nodeListerOf(t, tc.nodes...)
 			}
@@ -316,6 +316,7 @@ func TestResumeActor_PausedOnGoneNodeCrashes(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
 	w := newTestActorWorkflow(t, st, "team-a", "tmpl1")
+	w.dialer = newDanglingDialer()
 	actorRef := resources.ActorRef{Atespace: "team-a", Name: "paused"}
 	seedPausedActor(t, ctx, st, nil)
 	wc := startedWorkerCache(t, ctx, st, []*ateapipb.Worker{activeWorker("w2", "gvisor", "node2")})

@@ -82,7 +82,7 @@ const crashMessageLocalSnapshotGone = "local snapshot lost with its node and no 
 // The status is DataLoss either way: a dataplane parks a request on
 // ResourceExhausted, FailedPrecondition and Unavailable, and this is not a
 // condition another operation moves the actor out of.
-func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, opName string, nodes []string) error {
+func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, actorTemplate *ateapipb.ActorTemplate, opName string, nodes []string) error {
 	snapshot := actor.GetStatus().GetLocalSnapshot().GetSnapshotName()
 	attrs := ateattr.ActorRefLogAttrs(actorRef)
 	attrs = append(attrs, slog.String("snapshot", snapshot), slog.Any("nodes", nodes))
@@ -93,7 +93,7 @@ func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resource
 	}
 
 	slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its local snapshot is lost with its node and it has no durable copy of it", attrs...)
-	if cerr := crashActor(ctx, w.store, actorRef, opName, fmt.Sprintf("%s: snapshot %q on node(s) %v", crashMessageLocalSnapshotGone, snapshot, nodes)); cerr != nil {
+	if cerr := w.crashActor(ctx, actorRef, actorTemplate, opName, fmt.Sprintf("%s: snapshot %q on node(s) %v", crashMessageLocalSnapshotGone, snapshot, nodes)); cerr != nil {
 		return cerr
 	}
 	return apierror.DataLoss("actor %s crashed: its local snapshot %q is on node(s) %v, which no longer exist in the cluster, and it has no durable copy of it", actorRef, snapshot, nodes)
@@ -114,7 +114,7 @@ func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resource
 //
 // A node is gone only when no ACTIVE worker of any pool reports it and the
 // Node object is absent; either signal alone keeps the actor waiting.
-func (w *ActorWorkflow) noFreeWorkerError(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, err error) error {
+func (w *ActorWorkflow) noFreeWorkerError(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, actorTemplate *ateapipb.ActorTemplate, err error) error {
 	var restricted *scheduling.NoCapacityError
 	if !errors.As(err, &restricted) {
 		return apierror.ResourceExhausted("no worker has room for the actor")
@@ -133,5 +133,5 @@ func (w *ActorWorkflow) noFreeWorkerError(ctx context.Context, actorRef resource
 	if !gone {
 		return apierror.ResourceExhausted("actor's local snapshot is on node(s) %v but no workers exist on those nodes", nodes)
 	}
-	return w.localSnapshotLost(ctx, actorRef, actor, ateattr.OperationResume, nodes)
+	return w.localSnapshotLost(ctx, actorRef, actor, actorTemplate, ateattr.OperationResume, nodes)
 }
