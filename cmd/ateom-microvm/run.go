@@ -654,9 +654,10 @@ func (s *AteomService) buildActorContainers(actorDirs *ateompb.ActorDirs, contai
 			return nil, fmt.Errorf("while composing rootfs for %q: %w", cn, err)
 		}
 		bundleRootfs := filepath.Join(bundle, "rootfs")
-		// Set guest DNS before serving the rootfs over virtio-fs, on boot and restore.
-		if err := writeActorResolvConf(bundleRootfs); err != nil {
-			return nil, fmt.Errorf("while writing guest resolv.conf for %q: %w", cn, err)
+		// Set guest DNS and hosts before serving the rootfs over virtio-fs, on
+		// boot and restore.
+		if err := writeActorNameFiles(bundleRootfs); err != nil {
+			return nil, fmt.Errorf("while writing guest resolv.conf and hosts for %q: %w", cn, err)
 		}
 		ctrs[i] = actorContainer{
 			name:         cn,
