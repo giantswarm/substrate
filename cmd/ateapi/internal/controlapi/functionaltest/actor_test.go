@@ -2944,11 +2944,15 @@ func createDataCommitTemplate(t *testing.T, tc *testContext, ns string) *ateapip
 				SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR,
 				ConfigName:   "gvisor-default",
 			},
+			// A DATA snapshot captures the durable-dir volumes and nothing
+			// else, so the scope is only accepted with one mounted.
 			Containers: []*ateapipb.Container{{
-				Name:    "main",
-				Image:   "main@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-				Command: []string{"/main"},
+				Name:         "main",
+				Image:        "main@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+				Command:      []string{"/main"},
+				VolumeMounts: []*ateapipb.VolumeMount{{Name: "data", MountPath: "/data"}},
 			}},
+			Volumes: []*ateapipb.Volume{{Name: "data", DurableDir: &ateapipb.DurableDirVolumeSource{}}},
 			WorkerSelector: &ateapipb.Selector{
 				MatchLabels: map[string]string{poolLabelKey: ns},
 			},
@@ -4194,6 +4198,7 @@ func TestResumeActor_CrashesIfAssignedWorkerIsDraining(t *testing.T) {
 			WorkerPod:       "worker-a",
 			WorkerPodUid:    podA,
 			WorkerPodIps:    []string{"127.0.0.1"},
+			NodeName:        "node1",
 		}
 		return nil
 	}); err != nil {
@@ -4709,8 +4714,8 @@ func TestSuspendActor_FromPaused_UploadFailureCrashes(t *testing.T) {
 }
 
 // TestCheckpointFailureCrashes: an atelet Checkpoint error while pausing or
-// suspending a running actor crashes it, records atelet's error text, and
-// releases its worker.
+// suspending a running actor crashes it, records atelet's error text, tears
+// the sandbox down on its worker, and releases the worker.
 func TestCheckpointFailureCrashes(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -4763,6 +4768,12 @@ func TestCheckpointFailureCrashes(t *testing.T) {
 			}
 			if !tc.fakeAtelet.CheckpointCalled {
 				t.Error("expected atelet Checkpoint to be called")
+			}
+			// The crash tears the sandbox down on the worker before freeing it.
+			if !tc.fakeAtelet.TerminateCalled {
+				t.Error("expected atelet Terminate to be called by the crash")
+			} else if got := tc.fakeAtelet.TerminateRequest.GetTargetAteomUid(); got != podUID {
+				t.Errorf("Terminate TargetAteomUid = %q, want the worker pod %q", got, podUID)
 			}
 
 			crashed, err := tc.client.GetActor(context.Background(), &ateapipb.GetActorRequest{Actor: ref})
@@ -5439,8 +5450,9 @@ func TestRevertActor_TerminateFailureLeavesActorReverting(t *testing.T) {
 }
 
 // TestDeleteActor_TerminateFailureLeavesActorDeleting verifies that an atelet
-// error while terminating a running actor leaves it DELETING on its worker,
-// and that the next delete terminates it and removes it.
+// error while terminating a running actor refuses the delete with
+// FailedPrecondition and leaves the actor DELETING on its worker, and that the
+// next delete terminates it and removes it.
 func TestDeleteActor_TerminateFailureLeavesActorDeleting(t *testing.T) {
 	ns := namespaceForTest("ns-delete-terminate-fail")
 	tc := setupTest(t, ns)
@@ -5467,8 +5479,9 @@ func TestDeleteActor_TerminateFailureLeavesActorDeleting(t *testing.T) {
 	tc.fakeAtelet.Lock.Lock()
 	tc.fakeAtelet.FailTerminate = status.Error(codes.Internal, "injected terminate failure")
 	tc.fakeAtelet.Lock.Unlock()
-	if _, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref, AnyState: true}); err == nil {
-		t.Fatal("DeleteActor succeeded despite failing terminate")
+	_, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref, AnyState: true})
+	if got := status.Code(err); got != codes.FailedPrecondition {
+		t.Fatalf("DeleteActor status code = %v, want %v while the sandbox cannot be stopped (err: %v)", got, codes.FailedPrecondition, err)
 	}
 
 	actor, err := tc.persistence.GetActor(ctx, actorRef)
@@ -5500,6 +5513,108 @@ func TestDeleteActor_TerminateFailureLeavesActorDeleting(t *testing.T) {
 	tc.fakeAtelet.Lock.Unlock()
 	if !terminated {
 		t.Error("retried delete did not call atelet Terminate")
+	}
+}
+
+// TestDeleteActor_CrashedWithPlacedWorkload covers an actor whose crash could
+// not tear its sandbox down: a failed suspend crashes it, and since atelet
+// cannot terminate the sandbox either, the actor stays CRASHED on its worker
+// and the worker stays allocated to it. DeleteActor refuses with
+// FailedPrecondition while that holds, and succeeds, freeing the worker, once
+// atelet can stop the sandbox.
+func TestDeleteActor_CrashedWithPlacedWorkload(t *testing.T) {
+	ns := namespaceForTest("ns-delete-crashed-placed")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+
+	createTemplate(t, tc, ns)
+	podUID := createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+
+	ctx := context.Background()
+	const name = "id1"
+	ref := &ateapipb.ObjectRef{Atespace: testAtespace, Name: name}
+	actorRef := resources.ActorRef{Atespace: testAtespace, Name: name}
+
+	if _, err := tc.client.CreateActor(ctx, &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+		Metadata:      &ateapipb.ResourceMetadata{Atespace: testAtespace, Name: name},
+		ActorTemplate: &ateapipb.ObjectRef{Atespace: testAtespace, Name: "tmpl1"},
+	}}); err != nil {
+		t.Fatalf("CreateActor failed: %v", err)
+	}
+	if _, err := tc.client.ResumeActor(ctx, &ateapipb.ResumeActorRequest{Actor: ref}); err != nil {
+		t.Fatalf("ResumeActor failed: %v", err)
+	}
+
+	allocatedActors := func() int32 {
+		t.Helper()
+		worker, err := tc.persistence.GetWorker(ctx, podUID)
+		if err != nil {
+			t.Fatalf("GetWorker(%s) failed: %v", podUID, err)
+		}
+		return worker.GetStatus().GetAllocated().GetActors()
+	}
+
+	tc.fakeAtelet.Reset()
+	tc.fakeAtelet.FailCheckpoint = status.Error(codes.Internal, "injected checkpoint failure")
+	tc.fakeAtelet.FailTerminate = status.Error(codes.Internal, "injected terminate failure")
+	if _, err := tc.client.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: ref}); err == nil {
+		t.Fatal("SuspendActor succeeded despite failing checkpoint")
+	}
+	assertActorCrashStatus(t, tc, name, "suspend failed: atelet Checkpoint: injected checkpoint failure")
+	if !tc.fakeAtelet.TerminateCalled {
+		t.Error("expected the crash to call atelet Terminate")
+	}
+
+	actor, err := tc.persistence.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("failed to get actor from store: %v", err)
+	}
+	if got := actor.GetStatus().GetWorkerAssignment().GetWorker().GetName(); got != podUID {
+		t.Errorf("assigned worker after the crash = %q, want %q kept while the sandbox is up", got, podUID)
+	}
+	if got := allocatedActors(); got != 1 {
+		t.Errorf("worker allocated actors after the crash = %d, want 1 while the sandbox is up", got)
+	}
+
+	tc.fakeAtelet.Lock.Lock()
+	tc.fakeAtelet.TerminateCalled = false
+	tc.fakeAtelet.Lock.Unlock()
+	_, err = tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref})
+	if got := status.Code(err); got != codes.FailedPrecondition {
+		t.Fatalf("DeleteActor status code = %v, want %v while the sandbox cannot be stopped (err: %v)", got, codes.FailedPrecondition, err)
+	}
+	if !tc.fakeAtelet.TerminateCalled {
+		t.Error("expected the delete to call atelet Terminate")
+	}
+	actor, err = tc.persistence.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("failed to get actor from store after the refused delete: %v", err)
+	}
+	if got := actor.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_DELETING {
+		t.Errorf("state after the refused delete = %v, want DELETING", got)
+	}
+	if got := actor.GetStatus().GetWorkerAssignment().GetWorker().GetName(); got != podUID {
+		t.Errorf("assigned worker after the refused delete = %q, want %q kept for the retry", got, podUID)
+	}
+	if got := allocatedActors(); got != 1 {
+		t.Errorf("worker allocated actors after the refused delete = %d, want 1", got)
+	}
+
+	tc.fakeAtelet.Lock.Lock()
+	tc.fakeAtelet.FailTerminate = nil
+	tc.fakeAtelet.TerminateCalled = false
+	tc.fakeAtelet.Lock.Unlock()
+	if _, err := tc.client.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: ref}); err != nil {
+		t.Fatalf("retried DeleteActor failed: %v", err)
+	}
+	if !tc.fakeAtelet.TerminateCalled {
+		t.Error("retried delete did not call atelet Terminate")
+	}
+	if _, err := tc.client.GetActor(ctx, &ateapipb.GetActorRequest{Actor: ref}); status.Code(err) != codes.NotFound {
+		t.Errorf("GetActor after the retried delete err = %v, want NotFound", err)
+	}
+	if got := allocatedActors(); got != 0 {
+		t.Errorf("worker allocated actors after the delete = %d, want 0", got)
 	}
 }
 
