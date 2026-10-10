@@ -1113,13 +1113,32 @@ func wireTestAssignment() *ateapipb.WorkerAssignment {
 }
 
 // newWireCaptureWorkflow builds an ActorWorkflow whose atelet dialer resolves
-// to an in-process capturing fake. The dialer's conn cache is pre-warmed with
-// a bufconn-backed connection for the atelet pod's UID and IP, so
-// DialForAteletOnNode returns it without dialing the pod IP.
+// to an in-process capturing fake.
 func newWireCaptureWorkflow(t *testing.T, persistence store.Interface) (*ActorWorkflow, *capturingAtelet) {
 	t.Helper()
 
 	fake := &capturingAtelet{}
+	dialer := newFakeAteletDialer(t, fake)
+
+	lister := sandboxConfigListerFor(t, []*atev1alpha1.SandboxConfig{{
+		ObjectMeta: metav1.ObjectMeta{Name: "gvisor"},
+		Spec: atev1alpha1.SandboxConfigSpec{
+			SandboxClass: atev1alpha1.SandboxClassGvisor,
+			PauseImage:   "pause@sha256:abc",
+			Assets:       testAssets(),
+		},
+	}})
+
+	return &ActorWorkflow{store: persistence, dialer: dialer, sandboxConfigLister: lister}, fake
+}
+
+// newFakeAteletDialer builds an atelet dialer that resolves node-1 to the
+// in-process fake. The dialer's conn cache is pre-warmed with a bufconn-backed
+// connection for the atelet pod's UID and IP, so DialForAteletOnNode returns
+// it without dialing the pod IP.
+func newFakeAteletDialer(t *testing.T, fake ateletpb.AteomHerderServer) *AteletDialer {
+	t.Helper()
+
 	srv := grpc.NewServer()
 	ateletpb.RegisterAteomHerderServer(srv, fake)
 	lis := bufconn.Listen(1 << 20)
@@ -1148,17 +1167,7 @@ func newWireCaptureWorkflow(t *testing.T, persistence store.Interface) (*ActorWo
 	}
 	dialer := NewAteletDialer(newTestAteletIndexer(t, ateletPod), installdefaults.SystemNamespace, "", "")
 	dialer.ateletConns.Add("atelet-uid", &ateletConn{ip: "10.0.0.1", conn: conn})
-
-	lister := sandboxConfigListerFor(t, []*atev1alpha1.SandboxConfig{{
-		ObjectMeta: metav1.ObjectMeta{Name: "gvisor"},
-		Spec: atev1alpha1.SandboxConfigSpec{
-			SandboxClass: atev1alpha1.SandboxClassGvisor,
-			PauseImage:   "pause@sha256:abc",
-			Assets:       testAssets(),
-		},
-	}})
-
-	return &ActorWorkflow{store: persistence, dialer: dialer, sandboxConfigLister: lister}, fake
+	return dialer
 }
 
 // TestResumeActor_AteletWireRequest is the characteristic test for the

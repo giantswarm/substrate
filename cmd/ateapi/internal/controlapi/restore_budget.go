@@ -23,6 +23,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -130,7 +131,7 @@ func (w *ActorWorkflow) restoreAttempt(ctx context.Context, restore func(context
 // record is written detached from the workflow context, under its own bound, so
 // it lands when the failure was the workflow deadline itself; a restore that
 // kept exceeding its budget names the budget in its message.
-func (w *ActorWorkflow) crashOnRestoreFailure(ctx context.Context, actorRef resources.ActorRef, err error) error {
+func (w *ActorWorkflow) crashOnRestoreFailure(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -139,7 +140,7 @@ func (w *ActorWorkflow) crashOnRestoreFailure(ctx context.Context, actorRef reso
 	}
 	timedOut, budgetExceeded := errors.AsType[*restoreTimedOutError](err)
 	if !budgetExceeded && ctx.Err() == nil {
-		return handleAteletError(ctx, w.store, actorRef, ateattr.OperationResume, "Restore", false, err)
+		return w.handleAteletError(ctx, actorRef, actorTemplate, ateattr.OperationResume, "Restore", false, err)
 	}
 	message := ateletCrashMessage("Restore", err)
 	if budgetExceeded {
@@ -149,7 +150,7 @@ func (w *ActorWorkflow) crashOnRestoreFailure(ctx context.Context, actorRef reso
 		append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", err))...)
 	crashCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), crashRecordTimeout)
 	defer cancel()
-	if cerr := crashActor(crashCtx, w.store, actorRef, ateattr.OperationResume, message); cerr != nil {
+	if cerr := w.crashActor(crashCtx, actorRef, actorTemplate, ateattr.OperationResume, message); cerr != nil {
 		return cerr
 	}
 	return fmt.Errorf("actor %s crashed: %w", actorRef, err)
