@@ -44,7 +44,9 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Setup Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.3.0
       - name: Test Helm chart
         run: |
           helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.0.3 --verify=false
