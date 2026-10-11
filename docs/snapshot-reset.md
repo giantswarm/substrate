@@ -1,56 +1,79 @@
 # Snapshot reset runbook
 
-When a Substrate release changes what a snapshot holds or how it is laid
-out, every snapshot written before it is useless to it, and the reverse.
-On this line the first such release is **1.8.0** (the PATH_MAX-safe
-snapshot tars: one rootfs-upper tar per container and one tar per durable
-volume, the restore creating the layout before it extracts; FORK.md names
-the carried commits). Upstream ships no migration for it: Substrate is
-pre-1.0 and the change is a security fix. This runbook resets every
-snapshot kagent holds on an installation — golden and session — once such
-a release has rolled, in either direction. Upstream's
-[rolling upgrade runbook](upgrade.md) keeps actor state across a roll and
-does not apply here: the snapshots themselves are what changed.
+This runbook resets every snapshot kagent holds on an installation —
+golden and session — and lets every Agent take its golden again. It is
+the remedy for a corrupted snapshot store only: a store whose snapshots
+the running release can neither restore nor convert, so that every
+resume of a session and every create from a golden fails. No release
+step on this line needs it, and every conversation ends with it.
 
-The same reset serves a roll after which runsc refuses the checkpoints it
-finds. runsc refuses to restore a checkpoint into a container whose user
-or working directory differ from the checkpoint's; the line's release that
-made actors run as their image's `USER` in its `WORKDIR` needed every
-gVisor template recreated after it. A Harness image pinned by digest never
-changes under a revision — a new digest is a new revision with a new
-golden, and sessions move onto it data-only — so a `USER` or `WORKDIR`
-change in a Harness image needs no reset by itself. An image re-pushed
-under a mutable reference with a changed `USER` or `WORKDIR` hits the
-refusal on every template whose golden predates it; the reset is the
-remedy.
+**The step from 1.7 to 1.8.1 needs no reset and no manual step.** 1.8.0
+changed the snapshot layout (the PATH_MAX-safe snapshot tars: one
+rootfs-upper tar per container and one tar per durable volume, the
+restore creating the layout before it extracts; FORK.md names the
+carried commits), and 1.8.1 migrates the snapshots written before it on
+its own: each actor's durable snapshot in the 1.7 layout is converted on
+its first resume, and every golden written in an older layout is taken
+again on the new workers (see below and the 1.7 to 1.8 note of the
+[rolling upgrade runbook](upgrade.md#the-17-to-18-step)). Conversations
+and durable volumes survive the step. 1.8.0 itself is no step target:
+it refuses to restore a 1.7 durable snapshot.
 
-## What breaks, and how it shows
+A roll after which runsc refuses the checkpoints it finds leaves such a
+store too. runsc refuses to restore a checkpoint into a container whose
+user or working directory differ from the checkpoint's; the line's
+release that made actors run as their image's `USER` in its `WORKDIR`
+needed every gVisor template recreated after it. A Harness image pinned
+by digest never changes under a revision — a new digest is a new
+revision with a new golden, and sessions move onto it data-only — so a
+`USER` or `WORKDIR` change in a Harness image needs no reset by itself.
+An image re-pushed under a mutable reference with a changed `USER` or
+`WORKDIR` hits the refusal on every template whose golden predates it;
+the reset is the remedy.
+
+## The 1.7 to 1.8 step, and how a missed migration shows
 
 Rehearsed in agentlab between 1.7.0 and 1.8.0-rc.6, on the Go ADK and the
-claude Harness:
+claude Harness, before the migration existed:
 
-- **Forward (1.7.0 snapshots on 1.8.0):** the restore reports no error.
-  The actor's memory comes back, its durable directory does not — the new
-  reader finds no per-volume tar in the old snapshot and restores nothing
-  — and the harness runs on an empty `/data`. The failure shows at the
-  workload: the Go ADK fails its first turn with `failed to fetch app
-  state: SQL logic error: no such table: app_states`, the claude harness
-  with `Harness runtime execution failed`. The Agent stays `Ready`, every
-  new session on its golden fails at once, and the checkpoint after the
-  failed turn uploads an empty durable tar. Since the refusal and the
-  conversion FORK.md carries, a gVisor ateom converts such a snapshot's
-  `durable-dir.tar` into the per-volume tars on its first restore, and
-  refuses with `FailedPrecondition` and the cause one that does not
-  convert; since the golden re-take FORK.md carries, the ActorTemplate
-  reconciler takes every golden recorded in an older layout, or without
-  one, again in the current layout once the release has rolled, a create
-  on the template answering `Unavailable` until the new golden is
-  complete. Until the forward step is rehearsed again with both, the reset
-  stays the remedy.
-- **Backward (1.8.0 snapshots on 1.7.0):** the restore fails and the actor
+- **Forward (1.7.0 snapshots on 1.8.0-rc.6):** the restore reported no
+  error. The actor's memory came back, its durable directory did not —
+  the new reader found no per-volume tar in the old snapshot and restored
+  nothing — and the harness ran on an empty `/data`. The failure showed
+  at the workload: the Go ADK failed its first turn with `failed to fetch
+  app state: SQL logic error: no such table: app_states`, the claude
+  harness with `Harness runtime execution failed`. The Agent stayed
+  `Ready`, every new session on its golden failed at once, and the
+  checkpoint after the failed turn uploaded an empty durable tar. 1.8.0
+  refuses such a restore with `FailedPrecondition` instead
+  ([#265](https://github.com/giantswarm/substrate/pull/265)): the actor
+  crashes rather than run on an empty `/data`.
+- **Backward (1.8 snapshots on 1.7.0):** the restore fails and the actor
   crashes: `while restoring durable-dir volumes … opening tar
   "…/restore-state/durable-dir.tar": no such file or directory`. A turn
-  answers `runtime lost: Actor … crashed; start a new conversation`.
+  answers `runtime lost: Actor … crashed; start a new conversation`. The
+  line steps forward only; a store left behind by a forced roll back
+  below 1.8 is one the running release cannot read, and the reset is its
+  remedy.
+
+Since 1.8.1 the forward step migrates on its own:
+
+- **Session snapshots:** a gVisor ateom converts a durable snapshot in
+  the 1.7 layout on the actor's first resume — `durable-dir.tar` is split
+  into one `durable-dir-<volume>.tar` per declared volume, tar to tar,
+  all or nothing, and each volume is restored like a current snapshot;
+  the next checkpoint writes the per-volume layout
+  ([#277](https://github.com/giantswarm/substrate/pull/277)). A snapshot
+  that does not convert — an unreadable archive, an entry outside every
+  declared volume, a hardlink across volumes — is refused with
+  `FailedPrecondition` and the cause, never restored with empty volumes.
+- **Golden snapshots:** once the new ate-api-server serves, the
+  ActorTemplate reconciler takes every golden recorded in an older
+  layout, or without one, again on the new workers in the current layout
+  and then deletes the old one
+  ([#282](https://github.com/giantswarm/substrate/pull/282)). Until a
+  template's new golden is complete, a create on the template answers
+  `Unavailable` and succeeds on retry.
 
 What a reset covers:
 
@@ -67,10 +90,11 @@ What a reset covers:
 kagent re-takes no golden on a Substrate roll: it keys an ActorTemplate by
 the Agent's revision — its UID, Harness image and environment, template —
 never by the Substrate release. Substrate's ActorTemplate reconciler does,
-since the golden re-take FORK.md carries: a golden whose recorded snapshot
-layout is older than the one the workers write, or unrecorded, is taken
-again once the release has rolled, and a golden in the current layout is
-restored as its tag names it.
+since 1.8.1: a golden whose recorded snapshot layout is older than the one
+the workers write, or unrecorded, is taken again once the release has
+rolled, and a golden in the current layout is restored as its tag names
+it. A corrupted golden in the current layout is not taken again; the
+reset below takes it.
 
 ## The reset
 
