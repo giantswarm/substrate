@@ -564,6 +564,32 @@ fails the template as `GoldenSnapshotLost` with what is missing:
 recreate the template. Until a template is migrated, a create of an
 actor from the template answers `Unavailable`; retry it.
 
+### The 1.7 to 1.8 step
+
+1.8.0 changed the snapshot layout: one rootfs-upper tar per container
+and one tar per durable volume, where 1.7 wrote every durable volume
+into a single `durable-dir.tar`. **Step from 1.7 to 1.8.1 or later,
+never to 1.8.0**: 1.8.0 refuses to restore a 1.7 durable snapshot
+([#265](https://github.com/giantswarm/substrate/pull/265)), so every
+actor suspended on 1.7 crashes on its first resume there. From 1.8.1
+the step migrates automatically, with no snapshot reset and no manual
+step; conversations and durable volumes survive it:
+
+- Each actor's durable snapshot in the 1.7 layout is converted to the
+  per-volume layout on its first resume, and its next checkpoint writes
+  the new layout ([#277](https://github.com/giantswarm/substrate/pull/277)).
+  A snapshot that does not convert is refused with `FailedPrecondition`
+  and the cause instead of restoring empty volumes.
+- Once the new ate-api-server serves, its ActorTemplate reconciler takes
+  every golden written in an older layout again on the new workers, in
+  the current layout, and deletes the old one
+  ([#282](https://github.com/giantswarm/substrate/pull/282)). Until a
+  template's new golden is complete, a create of an actor from the
+  template answers `Unavailable`; retry it.
+
+The [snapshot reset runbook](snapshot-reset.md) is not part of this
+step: it stays the remedy for a corrupted snapshot store only.
+
 ### After the roll, on GKE
 
 > [!WARNING]
