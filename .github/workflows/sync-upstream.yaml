@@ -78,7 +78,7 @@ env:
   LINE_BRANCH: ${{ inputs.line || 'giantswarm' }}
   UPSTREAM_REPO: kagent-dev/substrate
   # The checks the line's ruleset requires on every update of the line.
-  REQUIRED_CHECKS: run-tests govulncheck
+  REQUIRED_CHECKS: run-tests govulncheck fork-ledger
 
 jobs:
   sync:
