@@ -100,10 +100,14 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 	switch {
 	case tagRef == nil && len(inActor.GetExistingVolumes()) > 0:
 	case tagRef == nil:
-		if legacyGoldenSnapshot(template.GetStatus().GetGoldenSnapshotStatus()) {
+		snapshotStatus := template.GetStatus().GetGoldenSnapshotStatus()
+		if legacyGoldenSnapshot(snapshotStatus) {
 			return nil, goldenSnapshotAwaitingMigration(template)
 		}
-		tagRef = template.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
+		if goldenSnapshotRetakePending(snapshotStatus) {
+			return nil, goldenSnapshotAwaitingRetake(template)
+		}
+		tagRef = snapshotStatus.GetGoldenTag()
 	case len(inActor.GetExistingVolumes()) > 0:
 		// A tag does not record which existing volumes its guest state was
 		// captured with.
