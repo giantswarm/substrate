@@ -6,7 +6,8 @@ Agent Platform's kagent (API v2) runs every agent as a Substrate actor; this for
 Substrate is pinned, built, scanned and published. It answers one question from one place: **which Substrate
 are we running, and why does it differ from upstream?**
 
-Tracking (both upstream repositories and this fork have issues disabled): the line
+Tracking: this fork's own work in [its issues](https://github.com/giantswarm/substrate/issues) (both upstream
+repositories have issues disabled); the line
 [giantswarm/giantswarm#37757](https://github.com/giantswarm/giantswarm/issues/37757), upstream engagement
 [giantswarm/giantswarm#37742](https://github.com/giantswarm/giantswarm/issues/37742) (Substrate rows), the
 kagent line built the same way [giantswarm/giantswarm#37010](https://github.com/giantswarm/giantswarm/issues/37010)
@@ -483,12 +484,18 @@ here:
 | **1.6.1** (2026-10-09, tag on `315b9ff5` = 1.6.0 + the sandbox's resolv.conf keeping only the cluster's search domains, the gVisor and microVM ateom both (#216), and Go 1.27.2 with `golang.org/x/net` v0.60.0 (#214)) | v0.4.0-alpha1 | images `ateapi` `sha256:72a4bf2e…`, `atecontroller` `sha256:44fe482d…`, `atelet` `sha256:c2e66b0f…`, `atenet` `sha256:8c1c4dcf…`, `podcertcontroller` `sha256:75a635b4…`, `ateom-gvisor` `sha256:c9631f21…`, `kubernetes-secrets` `sha256:8094b9ea…`; charts `substrate` `sha256:e96c124e…`, `substrate-crds` `sha256:c7ca8ab6…`; dataplane `gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.3.0` |
 | **1.6.2** (2026-10-09, tag on `07c1474c` = 1.6.1 + the egress ext-proc's telemetry named `atenet-egress` instead of `atenet-router` (#217)) | v0.4.0-alpha1 | images `ateapi` `sha256:2d4460b6…`, `atecontroller` `sha256:6a87f26b…`, `atelet` `sha256:5229bee6…`, `atenet` `sha256:05a857a9…`, `podcertcontroller` `sha256:f458ee1d…`, `ateom-gvisor` `sha256:e170ef02…`, `kubernetes-secrets` `sha256:b2227fde…`; charts `substrate` `sha256:c05fc0b9…`, `substrate-crds` `sha256:e22bfc51…`; dataplane `gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.3.0` |
 | **1.6.3** (2026-10-09, tag on `e650362f` = 1.6.2 + the gVisor SandboxConfig's pause image as the chart value `images.pause`, defaulting to its gsoci copy at upstream's digest (#225), and the platform-standard file alignment (#226)) | v0.4.0-alpha1 | images `ateapi` `sha256:bf4b2d46…`, `atecontroller` `sha256:b97599f6…`, `atelet` `sha256:10c609cd…`, `atenet` `sha256:3914a556…`, `podcertcontroller` `sha256:1229f718…`, `ateom-gvisor` `sha256:6784f03e…`, `kubernetes-secrets` `sha256:4b39d82a…`; charts `substrate` `sha256:85ec6f7c…`, `substrate-crds` `sha256:953e7017…`; dataplane `gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.3.0` |
+| **1.7.0** (2026-10-10, tag on `90654619` = 1.6.3 + an existing volume mounted per actor at a sub-path and repeated message fields compared with `proto.Equal` (#234), a missing read-write `sub_path` created at the bind (#239), Docker Hub images of the line's CI pulled through `mirror.gcr.io` (#242), and the actor's hostname in its `/etc/hosts` (#243)) | v0.4.0-alpha1 | images `ateapi` `sha256:06d0a3be…`, `atecontroller` `sha256:a3368f0f…`, `atelet` `sha256:7a630a40…`, `atenet` `sha256:04fdaf5a…`, `podcertcontroller` `sha256:9efe7585…`, `ateom-gvisor` `sha256:917bef78…`, `kubernetes-secrets` `sha256:fc7ad9bd…`; charts `substrate` `sha256:9b542c50…`, `substrate-crds` `sha256:06d157e5…`; dataplane `gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.3.0`; [pipeline 567](https://app.circleci.com/pipelines/gh/giantswarm/substrate/567), `scan` green |
+
 **Scans.** Every own image is scanned with Trivy (HIGH and CRITICAL, fixable only) after the push and before the
 charts that reference it are published. A fixable finding fails the publish: bump the module (upstream first) or,
 when upstream has no fix, add a time-boxed entry to `.trivyignore` (`CVE-… exp:YYYY-MM-DD # reason, tracking
 issue`) — an expired entry fails again and is re-triaged, not extended. The agentgateway image is scanned
 report-only here: it is the agentgateway line's build, its scan gates its own publish and a finding is fixed there. `govulncheck` covers the Go module graph on every push, pull
-request and weekly.
+request and weekly. The line runs no nancy: `govulncheck` is its Go dependency scan, required on every pull request
+and on a re-pin's landing, so every commit a release tag points at passed it, and it reports only vulnerabilities
+the code reaches, where nancy would flag every module version with a second ignore file to keep; the
+`.nancy-ignore.generated` the repository alignment writes here is read by nothing, as on the kagent and
+agentgateway lines.
 
 ## Consumers
 
