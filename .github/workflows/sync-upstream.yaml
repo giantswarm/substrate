@@ -165,9 +165,14 @@ jobs:
           # onto agent-substrate and has no release tag as an ancestor, so the
           # merge-base with it cannot serve.)
           upstream_tags=$(git ls-remote --tags --refs upstream 'refs/tags/v[0-9]*' | awk -F/ '{ print $NF }')
+          # grep exits 1 when no reachable tag is upstream's; the run says so
+          # instead of ending on a bare exit code.
           current=$(git tag --merged HEAD --list 'v[0-9]*' | grep -Fx -f <(printf '%s\n' "${upstream_tags}") |
-            while read -r tag; do echo "$(git rev-list --count "${tag}..HEAD") ${tag}"; done | sort -n | awk 'NR == 1 { print $2 }')
-          test -n "${current}"
+            while read -r tag; do echo "$(git rev-list --count "${tag}..HEAD") ${tag}"; done | sort -n | awk 'NR == 1 { print $2 }') || true
+          if [ -z "${current}" ]; then
+            echo "::error::no release tag of ${UPSTREAM_REPO} is reachable from ${LINE_BRANCH}: the line's pin is not an upstream tag (FORK.md, \"Pin\")"
+            exit 1
+          fi
           new="${INPUT_PIN:-${current}}"
           if ! git rev-parse --verify --quiet "${new}^{commit}" >/dev/null; then
             echo "::error::pin '${new}' is not a known upstream tag or commit"
