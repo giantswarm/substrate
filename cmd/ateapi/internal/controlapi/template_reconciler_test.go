@@ -28,6 +28,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/apivalidation"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/snapshotlayout"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -1644,6 +1645,124 @@ func TestReconcileOne_RetakesGoldenInOlderLayout(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// serviceCreateControl is a fakeGoldenControl whose CreateActor is the Control
+// service's own against the store the template lives in, the fake recording
+// the golden actor it simulates once the service created it: the reconciler's
+// golden-actor create then meets every check a create on the template meets.
+type serviceCreateControl struct {
+	*fakeGoldenControl
+	service *RPCService
+	created []*ateapipb.Actor
+}
+
+func (c *serviceCreateControl) CreateActor(ctx context.Context, req *ateapipb.CreateActorRequest) (*ateapipb.Actor, error) {
+	created, err := c.service.CreateActor(ctx, proto.CloneOf(req))
+	if err != nil {
+		return nil, err
+	}
+	c.created = append(c.created, created)
+	return c.fakeGoldenControl.CreateActor(ctx, req)
+}
+
+// TestReconcileOne_RetakeCreatesGoldenActorThroughControl drives a template
+// whose golden is in an older layout through reconcileOne with the golden
+// actor created through the Control service, as in production: a create on
+// the template is refused while the re-take is pending, and the golden actor's
+// own create is not such a create, nor does it start from the golden being
+// replaced.
+func TestReconcileOne_RetakeCreatesGoldenActorThroughControl(t *testing.T) {
+	for _, layout := range []int32{snapshotlayout.Unrecorded, snapshotlayout.SingleDurableTar} {
+		t.Run(fmt.Sprintf("layout %d", layout), func(t *testing.T) {
+			ctx := t.Context()
+			persistence := newTestPersistence(t)
+			storetest.MustCreateAtespace(t, ctx, persistence, resources.GoldenActorAtespace)
+			created, err := persistence.CreateActorTemplate(ctx, &ateapipb.ActorTemplate{
+				Metadata:       &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "tmpl"},
+				SnapshotConfig: &ateapipb.SnapshotConfig{StorageLocation: "gs://ate-snapshots/team-a/"},
+				SandboxConfig:  &ateapipb.SandboxConfig{SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR, ConfigName: "gvisor"},
+				// With a wakeup probe on every container the golden is
+				// snapshotted right after the resume, without a warmup.
+				Containers: []*ateapipb.Container{{Name: "main", Image: "img", WakeupProbe: &ateapipb.ContainerWakeupProbe{}}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ref := resources.ActorTemplateRefFromActorTemplate(created)
+			tmpl, err := persistence.GetActorTemplate(ctx, ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldRef := goldenActorRefFor(tmpl)
+			oldTag := &ateapipb.Tag{
+				Metadata:    &ateapipb.ResourceMetadata{Atespace: oldRef.GetAtespace(), Name: oldRef.GetName()},
+				SourceActor: oldRef,
+				Scope:       ateapipb.TagScope_TAG_SCOPE_PUBLISHED,
+				Status: &ateapipb.TagStatus{
+					ActorTemplateUid: tmpl.GetMetadata().GetUid(),
+					Snapshot:         &ateapipb.ExternalSnapshot{SnapshotUri: "gs://ate-snapshots/team-a/atespaces/ate-golden/tags/old-tag-uid", ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL},
+				},
+			}
+			if _, err := persistence.CreateTag(ctx, oldTag); err != nil {
+				t.Fatal(err)
+			}
+			if tmpl, err = persistence.UpdateActorTemplate(ctx, ref, store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
+				db.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: &ateapipb.GoldenSnapshotStatus{GoldenTag: oldRef, SnapshotLayout: layout}}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			service := &RPCService{impl: newServiceImpl(persistence, nil)}
+
+			// A create on the template waits for the re-take.
+			_, err = service.CreateActor(ctx, &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor"},
+				ActorTemplate: ref.ToObjectRef(),
+			}})
+			if status.Code(err) != codes.Unavailable {
+				t.Fatalf("CreateActor on the template during the re-take = %v, want %v", err, codes.Unavailable)
+			}
+
+			newSnapshot := "gs://ate-snapshots/team-a/atespaces/ate-golden/actors/" + tmpl.GetMetadata().GetUid() + "/snapshots/snap-2"
+			control := &serviceCreateControl{
+				fakeGoldenControl: &fakeGoldenControl{snapshot: newSnapshot, tags: goldenTags(oldTag)},
+				service:           service,
+			}
+			r := newTestTemplateReconciler(persistence, control)
+			defer r.queue.ShutDown()
+
+			after, err := r.reconcileOne(ctx, ref)
+			if err != nil || after != 0 {
+				t.Fatalf("reconcileOne = (%v, %v), want the golden taken again without requeue", after, err)
+			}
+			if len(control.created) != 1 {
+				t.Fatalf("golden actor creates through the service = %d, want 1", len(control.created))
+			}
+			golden := control.created[0]
+			if resources.ActorRefFromActor(golden) != resources.ActorRefFromObjectRef(oldRef) {
+				t.Errorf("created actor = %v, want the golden actor %v", resources.ActorRefFromActor(golden), oldRef)
+			}
+			if snapshot := golden.GetStatus().GetExternalSnapshot(); snapshot != nil {
+				t.Errorf("golden actor created from source snapshot %v, want a fresh boot", snapshot)
+			}
+			stored, err := persistence.GetActorTemplate(ctx, ref)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshotStatus := stored.GetStatus().GetGoldenSnapshotStatus()
+			newRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: retakenGoldenTagName(tmpl.GetMetadata().GetUid())}
+			if !proto.Equal(snapshotStatus.GetGoldenTag(), newRef) || snapshotStatus.GetSnapshotLayout() != snapshotlayout.Current || snapshotStatus.GetErrorMessage() != "" {
+				t.Errorf("stored status = %v, want the re-taken tag %v in layout %d", snapshotStatus, newRef, snapshotlayout.Current)
+			}
+			if !goldenSnapshotDone(snapshotStatus) || goldenSnapshotRetakePending(snapshotStatus) {
+				t.Error("re-taken golden is not done")
+			}
+			if _, kept := control.tags[oldRef.GetName()]; kept {
+				t.Error("the replaced golden tag was not deleted")
+			}
+		})
 	}
 }
 
