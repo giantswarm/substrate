@@ -32,6 +32,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/localca"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/internal/snapshotlayout"
 	"github.com/agent-substrate/substrate/internal/substratex509"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/go-cmp/cmp"
@@ -933,7 +934,7 @@ func rpcServiceWithActor(t *testing.T, actor *ateapipb.Actor) (*RPCService, *ate
 }
 
 func TestCreateActor_GoldenTagDefault(t *testing.T) {
-	for _, scenario := range []string{"default", "explicit tag", "own snapshot", "missing", "pending", "wrong template", "data scope", "legacy golden"} {
+	for _, scenario := range []string{"default", "explicit tag", "own snapshot", "missing", "pending", "wrong template", "data scope", "legacy golden", "golden without a layout", "golden in an older layout", "failed re-take"} {
 		t.Run(scenario, func(t *testing.T) {
 			ctx := t.Context()
 			persistence := newTestPersistence(t)
@@ -967,6 +968,13 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 				// The template's golden snapshot was recorded before golden
 				// tags and awaits its migration: a refusal a retry outlives.
 				wantCode = codes.Unavailable
+			case "golden without a layout", "golden in an older layout":
+				// The golden is being taken again in the current snapshot
+				// layout: a refusal a retry outlives.
+				wantCode = codes.Unavailable
+			case "failed re-take":
+				// The re-take failed for good: the old golden stays the
+				// template's and a create starts from it.
 			}
 			if scenario != "missing" {
 				if _, err := persistence.CreateTag(ctx, tag); err != nil {
@@ -974,9 +982,17 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 				}
 			}
 			if _, err := persistence.UpdateActorTemplate(ctx, resources.ActorTemplateRefFromActorTemplate(tmpl), store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
-				goldenStatus := &ateapipb.GoldenSnapshotStatus{GoldenTag: ref}
-				if scenario == "legacy golden" {
+				goldenStatus := &ateapipb.GoldenSnapshotStatus{GoldenTag: ref, SnapshotLayout: snapshotlayout.Current}
+				switch scenario {
+				case "legacy golden":
 					goldenStatus = legacyGoldenStatus(t, tag.GetStatus().GetSnapshot().GetSnapshotUri())
+				case "golden without a layout":
+					goldenStatus.SnapshotLayout = snapshotlayout.Unrecorded
+				case "golden in an older layout":
+					goldenStatus.SnapshotLayout = snapshotlayout.SingleDurableTar
+				case "failed re-take":
+					goldenStatus.SnapshotLayout = snapshotlayout.SingleDurableTar
+					goldenStatus.ErrorMessage = reasonGoldenActorCrashed + ": golden actor crashed before its snapshot was taken"
 				}
 				db.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: goldenStatus}
 				return nil

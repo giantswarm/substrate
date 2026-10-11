@@ -47,13 +47,17 @@ func (w *ActorWorkflow) DeleteActorTemplate(ctx context.Context, templateRef res
 		return nil, err
 	}
 
-	// Both are named after the template's uid, in the reserved atespace.
+	// The golden actor is named after the template's uid, in the reserved
+	// atespace; the tags are the ones the golden flow may have made for it,
+	// named after the uid and, for a golden taken again, the layout.
 	goldenName := deleted.GetMetadata().GetUid()
 	if err := w.ensureGoldenActorDeleted(ctx, resources.ActorRef{Atespace: resources.GoldenActorAtespace, Name: goldenName}); err != nil {
 		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden actor %s/%s is not: %w", templateRef, resources.GoldenActorAtespace, goldenName, err)
 	}
-	if err := w.ensureGoldenTagDeleted(ctx, resources.TagRef{Atespace: resources.GoldenActorAtespace, Name: goldenName}); err != nil {
-		return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden tag %s/%s is not: %w", templateRef, resources.GoldenActorAtespace, goldenName, err)
+	for _, goldenTagRef := range goldenTagRefs(deleted) {
+		if err := w.ensureGoldenTagDeleted(ctx, goldenTagRef); err != nil {
+			return nil, fmt.Errorf("ActorTemplate %s is deleted, its golden tag %s is not: %w", templateRef, goldenTagRef, err)
+		}
 	}
 	return deleted, nil
 }
