@@ -464,6 +464,22 @@ func withFailed(reason string) func(*ateapipb.ActorTemplate) {
 	}
 }
 
+// withFailedMessage records a golden failure with the given error message, as
+// the reconciler wrote it.
+func withFailedMessage(msg string) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		seededGoldenStatus(tmpl).ErrorMessage = msg
+	}
+}
+
+// Crash messages a golden actor records when a rolling worker pool interrupts
+// its resume, and one no retry outlives.
+const (
+	drainingCrash      = "resume failed: " + crashMessageWorkerDraining
+	ateomSocketCrash   = "resume failed: atelet RunWorkload: ateom.RunWorkload: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial unix /run/ate/workers/w-1/ateom.sock: connect: no such file or directory\""
+	manifestUnknownMsg = "resume failed: atelet Run: while creating workload from spec: MANIFEST_UNKNOWN: manifest unknown"
+)
+
 func newTestTemplateReconciler(persistence templateReconcilerStore, control goldenActorControl) *ActorTemplateReconciler {
 	return NewActorTemplateReconciler(persistence, control, 7*time.Second)
 }
@@ -942,6 +958,8 @@ func TestResync_QueuesOnlyActionableTemplates(t *testing.T) {
 		{"golden snapshot taken again in the current layout", []func(*ateapipb.ActorTemplate){withRetakenGoldenTag()}, false},
 		{"failed", []func(*ateapipb.ActorTemplate){withFailed(reasonGoldenActorCrashed)}, false},
 		{"failed re-take", []func(*ateapipb.ActorTemplate){withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailed(reasonGoldenActorCrashed)}, false},
+		{"failed for a transient golden actor crash", []func(*ateapipb.ActorTemplate){withFailedMessage(reasonGoldenActorCrashed + ": actor ate-golden/x crashed: " + drainingCrash)}, true},
+		{"failed re-take for a transient golden actor crash", []func(*ateapipb.ActorTemplate){withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(reasonGoldenActorCrashed + ": actor ate-golden/x crashed: " + ateomSocketCrash)}, true},
 	}
 
 	// Seed one template per row, resync once, and check membership per row.
@@ -1796,4 +1814,195 @@ func TestReconcileOne_RetakeRestartsWarmup(t *testing.T) {
 	if !proto.Equal(snapshotStatus.GetGoldenTag(), oldRef) || !goldenSnapshotRetakePending(snapshotStatus) {
 		t.Errorf("stored status = %v, want the old golden kept while the re-take warms up", snapshotStatus)
 	}
+}
+
+func TestTransientGoldenCrash(t *testing.T) {
+	tests := []struct {
+		crash string
+		want  bool
+	}{
+		{drainingCrash, true},
+		{"resume failed: " + crashMessageWorkerGone, true},
+		{"resume failed: " + crashMessageWorkerReassigned, true},
+		{crashMessageWorkerPodGone, true},
+		{crashMessageAteomRestarted, true},
+		{ateomSocketCrash, true},
+		{"resume failed: atelet Restore: selected atelet \"ate-system/atelet-x\" has no assigned IPs", true},
+		{"resume failed: atelet Restore: found 2 atelet pods on node \"n-1\", expected 1", true},
+		{"resume failed: atelet Run: connection error: desc = \"transport: Error while dialing: dial tcp 10.0.0.1:8080: connect: connection refused\"", true},
+		{manifestUnknownMsg, false},
+		{"resume failed: atelet Run: no runnable process in container", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED, Crash: &ateapipb.ActorCrash{Message: tt.crash}}}
+		if got := transientGoldenCrash(actor); got != tt.want {
+			t.Errorf("transientGoldenCrash(%q) = %v, want %v", tt.crash, got, tt.want)
+		}
+		recorded := reasonGoldenActorCrashed + ": " + goldenActorCrashMessage(&ateapipb.Actor{
+			Metadata: &ateapipb.ResourceMetadata{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID},
+			Status:   actor.Status,
+		})
+		if got := transientGoldenFailure(recorded); got != tt.want {
+			t.Errorf("transientGoldenFailure(%q) = %v, want %v", recorded, got, tt.want)
+		}
+	}
+	// Only a golden actor crash is retried: another reason naming the same
+	// words stays terminal.
+	if transientGoldenFailure(reasonGoldenActorInvalid + ": " + drainingCrash) {
+		t.Errorf("transientGoldenFailure(%s with a draining worker) = true, want false", reasonGoldenActorInvalid)
+	}
+}
+
+// TestReconcileOne_TransientGoldenCrashRetries drives a first golden and a
+// golden taken again through a golden actor crash a rolling worker pool
+// causes: the crashed golden actor is deleted, the pass errors for the work
+// queue's backoff with nothing recorded, and the retry once the pool is ready
+// takes the golden.
+func TestReconcileOne_TransientGoldenCrashRetries(t *testing.T) {
+	oldRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	oldSnapshot := "s3://bucket/root/atespaces/ate-golden/tags/old-tag-uid"
+	newSnapshot := "s3://bucket/root/atespaces/ate-golden/actors/" + testTemplateUID + "/snapshots/snap-2"
+	for _, crash := range []string{drainingCrash, ateomSocketCrash} {
+		for _, retake := range []bool{false, true} {
+			for _, observed := range []string{"crashed on resume", "found crashed"} {
+				t.Run(fmt.Sprintf("%s/retake %v/%s", crash[:24], retake, observed), func(t *testing.T) {
+					var opts []func(*ateapipb.ActorTemplate)
+					control := &fakeGoldenControl{exists: true, goldenCrash: crash, snapshot: newSnapshot}
+					if retake {
+						opts = append(opts, withGoldenTagInLayout(snapshotlayout.SingleDurableTar))
+						control.tags = goldenTags(goldenTestTag(oldRef, oldSnapshot))
+					}
+					if observed == "crashed on resume" {
+						control.goldenState, control.resumeCrashes = ateapipb.ActorState_ACTOR_STATE_SUSPENDED, true
+					} else {
+						control.goldenState = ateapipb.ActorState_ACTOR_STATE_CRASHED
+					}
+					st := newFakeTemplateStore(testTemplate(opts...))
+					r := newTestTemplateReconciler(st, control)
+					defer r.queue.ShutDown()
+
+					if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+						t.Fatal("reconcileOne after a transient golden actor crash returned no error, want one for the backoff")
+					}
+					snapshotStatus := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+					if snapshotStatus.GetErrorMessage() != "" {
+						t.Errorf("stored error message = %q, want none for a transient crash", snapshotStatus.GetErrorMessage())
+					}
+					if goldenSnapshotDone(snapshotStatus) {
+						t.Error("golden is done after a transient crash, want it retried")
+					}
+					if control.exists {
+						t.Error("the crashed golden actor was not deleted")
+					}
+					if retake {
+						if _, kept := control.tags[oldRef.GetName()]; !kept || !proto.Equal(snapshotStatus.GetGoldenTag(), oldRef) {
+							t.Errorf("stored status = %v, want the old golden kept", snapshotStatus)
+						}
+					}
+					r.resync(t.Context())
+					if r.queue.Len() != 1 {
+						t.Error("resync did not queue the template for the retry")
+					}
+
+					// The pool is ready: the retry boots a fresh golden actor.
+					control.resumeCrashes = false
+					if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+						t.Fatalf("retry reconcileOne: %v", err)
+					}
+					retried := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+					if retried.GetGoldenTag() == nil || retried.GetSnapshotLayout() != snapshotlayout.Current || retried.GetErrorMessage() != "" {
+						t.Errorf("status after the retry = %v, want a golden tag in layout %d", retried, snapshotlayout.Current)
+					}
+					if creates, _, _ := control.callCounts(); creates != 1 {
+						t.Errorf("CreateActor calls = %d, want 1 for the fresh golden actor", creates)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestReconcileOne_TransientGoldenCrashDeleteFails keeps the template
+// untouched when the crashed golden actor cannot be deleted yet.
+func TestReconcileOne_TransientGoldenCrashDeleteFails(t *testing.T) {
+	control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: drainingCrash,
+		deleteErr: status.Error(codes.Unavailable, "atelet unreachable")}
+	st := newFakeTemplateStore(testTemplate())
+	r := newTestTemplateReconciler(st, control)
+	if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+		t.Fatal("reconcileOne returned no error, want the delete's")
+	}
+	if msg := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetErrorMessage(); msg != "" {
+		t.Errorf("stored error message = %q, want none", msg)
+	}
+}
+
+// TestReconcileOne_HealsRecordedTransientFailure takes again a golden a
+// release before the retry failed on a transient golden actor crash: the
+// recorded failure is cleared, the crashed golden actor deleted and the golden
+// taken in the current layout, the old golden staying recorded until then. A
+// failure for another cause stays terminal.
+func TestReconcileOne_HealsRecordedTransientFailure(t *testing.T) {
+	oldRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	newRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: retakenGoldenTagName(testTemplateUID)}
+	oldSnapshot := "s3://bucket/root/atespaces/ate-golden/tags/old-tag-uid"
+	newSnapshot := "s3://bucket/root/atespaces/ate-golden/actors/" + testTemplateUID + "/snapshots/snap-2"
+	recorded := func(crash string) string {
+		return reasonGoldenActorCrashed + ": actor " + resources.GoldenActorAtespace + "/" + testTemplateUID + " crashed: " + crash
+	}
+
+	for _, crash := range []string{drainingCrash, ateomSocketCrash} {
+		t.Run(crash[:24], func(t *testing.T) {
+			control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: crash,
+				snapshot: newSnapshot, tags: goldenTags(goldenTestTag(oldRef, oldSnapshot))}
+			st := newFakeTemplateStore(testTemplate(withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(recorded(crash))))
+			r := newTestTemplateReconciler(st, control)
+			defer r.queue.ShutDown()
+
+			r.resync(t.Context())
+			if r.queue.Len() != 1 {
+				t.Fatal("resync did not queue the template failed on a transient crash")
+			}
+			// The first pass clears the failure and releases the crashed
+			// golden actor, which the old release left behind.
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+				t.Fatal("first reconcileOne returned no error, want one for the backoff after releasing the crashed golden actor")
+			}
+			cleared := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if cleared.GetErrorMessage() != "" || !proto.Equal(cleared.GetGoldenTag(), oldRef) {
+				t.Errorf("status after the first pass = %v, want the failure cleared and the old golden kept", cleared)
+			}
+			if control.exists {
+				t.Error("the crashed golden actor was not deleted")
+			}
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+				t.Fatalf("second reconcileOne: %v", err)
+			}
+			retaken := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if !proto.Equal(retaken.GetGoldenTag(), newRef) || retaken.GetSnapshotLayout() != snapshotlayout.Current || retaken.GetErrorMessage() != "" {
+				t.Errorf("status after the re-take = %v, want %v in layout %d", retaken, newRef, snapshotlayout.Current)
+			}
+			if _, kept := control.tags[oldRef.GetName()]; kept {
+				t.Error("the replaced golden tag was not deleted")
+			}
+		})
+	}
+
+	t.Run("a failure for another cause stays terminal", func(t *testing.T) {
+		control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: manifestUnknownMsg,
+			tags: goldenTags(goldenTestTag(oldRef, oldSnapshot))}
+		msg := recorded(manifestUnknownMsg)
+		st := newFakeTemplateStore(testTemplate(withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(msg)))
+		r := newTestTemplateReconciler(st, control)
+		if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+			t.Fatalf("reconcileOne: %v", err)
+		}
+		if got := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetErrorMessage(); got != msg {
+			t.Errorf("stored error message = %q, want %q kept", got, msg)
+		}
+		if !control.exists || len(control.deleteReqs) != 0 {
+			t.Error("the golden actor of a terminal failure was deleted")
+		}
+	})
 }

@@ -96,6 +96,18 @@ rolled, and a golden in the current layout is restored as its tag names
 it. A corrupted golden in the current layout is not taken again; the
 reset below takes it.
 
+A golden take the roll itself interrupts is retried, never failed. A
+golden actor can crash because its worker drained or went away, because
+atelet had no IP yet or ran two pods on the node, or because ateom's socket
+was not there yet. The reconciler deletes that golden actor, which frees
+its worker, and takes the golden again with a backoff capped at a minute
+until the pool is ready. A release before the retry recorded such a crash
+as a terminal `GoldenActorCrashed` error. The reconciler clears that error
+and takes the golden again once a release with the retry runs, with no
+reset. Rolling that release out is the whole procedure. A
+`GoldenActorCrashed` error for another cause, such as an image the registry
+refuses, stays terminal.
+
 ## The reset
 
 Precondition: the roll is complete. Every pod in `ate-system`, the atelet
