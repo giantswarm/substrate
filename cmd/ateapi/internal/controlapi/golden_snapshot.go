@@ -25,6 +25,23 @@ import (
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 )
 
+// goldenActorRefFor names the template's golden actor: the actor the golden
+// flow boots and snapshots for the golden tag. It lives in the reserved golden
+// atespace, which the suspend workflow always takes a full snapshot in, and is
+// named after the template UID, so templates recreated under one name never
+// collide.
+func goldenActorRefFor(tmpl *ateapipb.ActorTemplate) *ateapipb.ObjectRef {
+	return &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: tmpl.GetMetadata().GetUid()}
+}
+
+// isGoldenActor reports whether actor is the golden actor of tmpl, its
+// template. The golden actor boots fresh: its snapshot becomes the golden the
+// other actors of the template start from, so the golden the template records,
+// awaiting its migration or being taken again, is no concern of its create.
+func isGoldenActor(actor *ateapipb.Actor, tmpl *ateapipb.ActorTemplate) bool {
+	return resources.ActorRefFromActor(actor) == resources.ActorRefFromObjectRef(goldenActorRefFor(tmpl))
+}
+
 // legacyGoldenSnapshot reports whether the status still holds the golden
 // snapshot a release before golden tags recorded. Field 1 of
 // GoldenSnapshotStatus was then an ExternalSnapshot; read as the ObjectRef it

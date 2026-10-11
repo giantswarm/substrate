@@ -1043,6 +1043,66 @@ func TestCreateActor_GoldenTagDefault(t *testing.T) {
 	}
 }
 
+// TestCreateActor_GoldenActorStartsFresh pins that the template's golden actor
+// is created without a source snapshot whatever the template's golden status:
+// its snapshot becomes the golden, so the golden the template records, and the
+// migration or re-take that refuses the other creates on the template for the
+// moment, are no concern of its create.
+func TestCreateActor_GoldenActorStartsFresh(t *testing.T) {
+	for _, scenario := range []string{"no golden", "golden", "legacy golden", "golden without a layout", "golden in an older layout", "failed re-take"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx := t.Context()
+			persistence := newTestPersistence(t)
+			storetest.MustCreateAtespace(t, ctx, persistence, resources.GoldenActorAtespace)
+			tmpl := seedSubstrateTemplate(t, ctx, persistence, "tmpl")
+			goldenRef := goldenActorRefFor(tmpl)
+			if scenario != "no golden" {
+				tag := &ateapipb.Tag{
+					Metadata:    &ateapipb.ResourceMetadata{Atespace: goldenRef.Atespace, Name: goldenRef.Name},
+					SourceActor: goldenRef,
+					Scope:       ateapipb.TagScope_TAG_SCOPE_PUBLISHED,
+					Status: &ateapipb.TagStatus{
+						ActorTemplateUid: tmpl.GetMetadata().GetUid(),
+						Snapshot:         &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/atespaces/ate-golden/tags/" + someActorUID, ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_FULL},
+					},
+				}
+				if _, err := persistence.CreateTag(ctx, tag); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := persistence.UpdateActorTemplate(ctx, resources.ActorTemplateRefFromActorTemplate(tmpl), store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
+					goldenStatus := &ateapipb.GoldenSnapshotStatus{GoldenTag: goldenRef, SnapshotLayout: snapshotlayout.Current}
+					switch scenario {
+					case "legacy golden":
+						goldenStatus = legacyGoldenStatus(t, tag.GetStatus().GetSnapshot().GetSnapshotUri())
+					case "golden without a layout":
+						goldenStatus.SnapshotLayout = snapshotlayout.Unrecorded
+					case "golden in an older layout":
+						goldenStatus.SnapshotLayout = snapshotlayout.SingleDurableTar
+					case "failed re-take":
+						goldenStatus.SnapshotLayout = snapshotlayout.SingleDurableTar
+						goldenStatus.ErrorMessage = reasonGoldenActorCrashed + ": golden actor crashed before its snapshot was taken"
+					}
+					db.Status = &ateapipb.ActorTemplateStatus{GoldenSnapshotStatus: goldenStatus}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			svc := &RPCService{impl: newServiceImpl(persistence, nil)}
+			created, err := svc.CreateActor(ctx, &ateapipb.CreateActorRequest{Actor: &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Atespace: goldenRef.Atespace, Name: goldenRef.Name},
+				ActorTemplate: resources.ActorTemplateRefFromActorTemplate(tmpl).ToObjectRef(),
+			}})
+			if err != nil {
+				t.Fatalf("CreateActor of the golden actor = %v, want it created", err)
+			}
+			if got := created.GetStatus(); got.GetState() != ateapipb.ActorState_ACTOR_STATE_SUSPENDED || got.GetExternalSnapshot() != nil {
+				t.Fatalf("golden actor status = %v, want SUSPENDED without a source snapshot", got)
+			}
+		})
+	}
+}
+
 type fakeActorServiceStore struct {
 	serviceStore
 	actors map[resources.ActorRef]*ateapipb.Actor
