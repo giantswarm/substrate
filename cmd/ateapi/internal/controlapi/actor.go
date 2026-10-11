@@ -94,10 +94,15 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapipb.Actor) 
 	// Resolve the explicit tag, or freeze the template's current golden default.
 	// The golden actor supplies no existing volumes, so its snapshot was
 	// captured without their mounts: an actor that supplies any boots fresh
-	// instead of restoring guest state built under another mount set.
+	// instead of restoring guest state built under another mount set. The
+	// golden actor itself boots fresh too: its snapshot is the golden, so the
+	// golden the template records is never its source, and one awaiting its
+	// migration or being taken again, which holds the other creates on the
+	// template, does not hold the golden actor's that takes it.
 	tagRef := inActor.GetSourceTag()
 	switch {
 	case tagRef == nil && len(inActor.GetExistingVolumes()) > 0:
+	case tagRef == nil && isGoldenActor(inActor, template):
 	case tagRef == nil:
 		snapshotStatus := template.GetStatus().GetGoldenSnapshotStatus()
 		if legacyGoldenSnapshot(snapshotStatus) {

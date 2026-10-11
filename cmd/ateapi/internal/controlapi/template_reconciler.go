@@ -199,16 +199,7 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 		return 0, err
 	}
 
-	goldenActorRef := &ateapipb.ObjectRef{
-		// Golden actors live in the reserved ate-golden atespace, because
-		// the suspend workflow relies on the ate-golden system atespace to
-		// always take a full snapshot of the golden actor.
-		// https://github.com/agent-substrate/substrate/blob/cb7c8385ef2bb489c3d5f7bfa71820fd33935d91/cmd/ateapi/internal/controlapi/workflow_suspend.go#L170-L173
-		Atespace: resources.GoldenActorAtespace,
-		// Use the template's UID as golden actor's name to prevent collision
-		// when templates are recreated with the same name.
-		Name: tmpl.GetMetadata().GetUid(),
-	}
+	goldenActorRef := goldenActorRefFor(tmpl)
 
 	// Each iteration observes the golden actor, takes the one action that
 	// fact demands, and re-observes; the pass ends at a terminal condition,
