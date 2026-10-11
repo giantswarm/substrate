@@ -41,8 +41,12 @@ claude Harness:
   conversion FORK.md carries, a gVisor ateom converts such a snapshot's
   `durable-dir.tar` into the per-volume tars on its first restore, and
   refuses with `FailedPrecondition` and the cause one that does not
-  convert. Until the forward step is rehearsed again with the conversion,
-  the reset stays the remedy.
+  convert; since the golden re-take FORK.md carries, the ActorTemplate
+  reconciler takes every golden recorded in an older layout, or without
+  one, again in the current layout once the release has rolled, a create
+  on the template answering `Unavailable` until the new golden is
+  complete. Until the forward step is rehearsed again with both, the reset
+  stays the remedy.
 - **Backward (1.8.0 snapshots on 1.7.0):** the restore fails and the actor
   crashes: `while restoring durable-dir volumes … opening tar
   "…/restore-state/durable-dir.tar": no such file or directory`. A turn
@@ -60,10 +64,13 @@ What a reset covers:
   took them. The WorkerPool's worker image follows the chart's Substrate
   pin, so the roll replaces every worker and these are gone with it.
 
-Nothing re-takes a golden on a Substrate roll by itself: kagent keys an
-ActorTemplate by the Agent's revision — its UID, Harness image and
-environment, template — never by the Substrate release, and Substrate
-restores whatever the tag names.
+kagent re-takes no golden on a Substrate roll: it keys an ActorTemplate by
+the Agent's revision — its UID, Harness image and environment, template —
+never by the Substrate release. Substrate's ActorTemplate reconciler does,
+since the golden re-take FORK.md carries: a golden whose recorded snapshot
+layout is older than the one the workers write, or unrecorded, is taken
+again once the release has rolled, and a golden in the current layout is
+restored as its tag names it.
 
 ## The reset
 
