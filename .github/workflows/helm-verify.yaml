@@ -27,8 +27,10 @@ jobs:
   helm-verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v4.3.0
       - name: Lint the chart
         run: helm lint charts/substrate charts/substrate-crds charts/substrate-podcert
       - name: Verify committed manifests match the chart output
