@@ -17,9 +17,15 @@
 # "no-ledger: <reason>" line in its description; on a maintenance branch,
 # every pull request merged into it is in the branch's own copy. A workflow
 # of its own beside pr-workflow, so a label or a description edit re-runs
-# this check alone, not the suites.
+# this check alone, not the suites. A re-pin candidate (sync/**, FORK.md,
+# "Re-pin") is a rebased branch whose pull request runs no pull_request
+# workflow, and the line's ruleset requires this check on the head the landing
+# pushes: the push of the candidate reports it, with no row to check, as a
+# candidate is closed by its landing, never merged.
 name: fork-ledger
 on:
+  push:
+    branches: ["sync/**"]
   pull_request:
     branches: [giantswarm, "release-*"]
     types: [opened, synchronize, reopened, edited, labeled, unlabeled]
@@ -27,7 +33,7 @@ permissions:
   contents: read
   pull-requests: read
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   fork-ledger:
@@ -45,11 +51,12 @@ jobs:
       - name: Fixture runs of the check
         run: .github/scripts/fork-ledger-test.sh
       - name: This pull request's row
+        if: github.event_name == 'pull_request'
         run: |
           gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" --json "${FIELDS}" >"${RUNNER_TEMP}/pr.json"
           .github/scripts/fork-ledger.sh pr "${RUNNER_TEMP}/pr.json" FORK.md
       - name: Every merged pull request's row
-        if: startsWith(github.base_ref, 'release-')
+        if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'release-')
         run: |
           gh pr list --repo "${GITHUB_REPOSITORY}" --base "${BASE}" --state merged --limit 1000 \
             --json "${FIELDS}" >"${RUNNER_TEMP}/merged.json"
