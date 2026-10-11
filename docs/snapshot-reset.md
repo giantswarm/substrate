@@ -37,7 +37,12 @@ claude Harness:
   state: SQL logic error: no such table: app_states`, the claude harness
   with `Harness runtime execution failed`. The Agent stays `Ready`, every
   new session on its golden fails at once, and the checkpoint after the
-  failed turn uploads an empty durable tar.
+  failed turn uploads an empty durable tar. Since the refusal and the
+  conversion FORK.md carries, a gVisor ateom converts such a snapshot's
+  `durable-dir.tar` into the per-volume tars on its first restore, and
+  refuses with `FailedPrecondition` and the cause one that does not
+  convert. Until the forward step is rehearsed again with the conversion,
+  the reset stays the remedy.
 - **Backward (1.8.0 snapshots on 1.7.0):** the restore fails and the actor
   crashes: `while restoring durable-dir volumes … opening tar
   "…/restore-state/durable-dir.tar": no such file or directory`. A turn
