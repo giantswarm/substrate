@@ -664,13 +664,14 @@ func TestResumeActor_TrustBundleGuardCrashStaysWhileTemplateNamesNone(t *testing
 
 // TestRecoverTransientCrash returns a transiently crashed actor to the
 // state its resume started from, keeping a pause snapshot the resume was
-// restoring, returns one a checkpoint crashed to its external snapshot,
-// dropping its pause snapshot, and leaves any other actor alone.
+// restoring, returns one a checkpoint or a lost worker crashed to its own
+// external snapshot, dropping its pause snapshot, and leaves any other actor,
+// and one whose external snapshot is its template's golden, alone.
 func TestRecoverTransientCrash(t *testing.T) {
-	const keptURI = "gs://snapshots/team-a/actors/keep/snapshot"
 	tests := []struct {
 		name          string
 		crash         string
+		golden        bool
 		local         *ateapipb.LocalSnapshot
 		dropsLocal    bool
 		wantRecovered bool
@@ -682,7 +683,11 @@ func TestRecoverTransientCrash(t *testing.T) {
 		{name: "another cause stays crashed", crash: "resume failed: atelet Run: no runnable process in container", wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 		{name: "checkpoint returns to the external snapshot", crash: "suspend failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
 			dropsLocal: true, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
-		{name: "a crash without an operation stays crashed", crash: crashMessageWorkerPodGone, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+		{name: "a lost worker returns to the external snapshot", crash: crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
+			dropsLocal: true, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		// The golden carries none of what the actor did since it booted.
+		{name: "a lost worker on the golden stays crashed", crash: crashMessageWorkerPodGone, golden: true, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+		{name: "a checkpoint on the golden stays crashed", crash: "suspend failed: " + crashMessageWorkerPodGone, golden: true, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 		{name: "trust-bundle guard returns to the snapshot", crash: trustBundleNamesCrash, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
 		{name: "trust-bundle guard keeps the pause", crash: trustBundleNamesCrash, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
 			wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_PAUSED},
@@ -697,9 +702,9 @@ func TestRecoverTransientCrash(t *testing.T) {
 			storetest.MustCreateAtespace(t, ctx, st, "team-a")
 			seedWorkflowActor(t, ctx, st, actorRef, "ns", "tmpl1", ateapipb.ActorState_ACTOR_STATE_CRASHED, func(a *ateapipb.Actor) {
 				a.Status.Crash = &ateapipb.ActorCrash{Message: tt.crash}
-				a.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: keptURI}
 				a.Status.LocalSnapshot = tt.local
 			})
+			keptURI := seedExternalSnapshot(t, ctx, st, actorRef, tt.golden)
 
 			crash, recovered, err := w.recoverTransientCrash(ctx, actorRef)
 			if err != nil {
@@ -733,6 +738,28 @@ func TestRecoverTransientCrash(t *testing.T) {
 			}
 		})
 	}
+}
+
+// seedExternalSnapshot records an external snapshot on the stored actor and
+// returns its URI: one the actor wrote, or its template's golden.
+func seedExternalSnapshot(t *testing.T, ctx context.Context, st store.Interface, actorRef resources.ActorRef, golden bool) string {
+	t.Helper()
+	actor, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	tmpl, err := st.GetActorTemplate(ctx, resources.ActorTemplateRef{Atespace: "ns", Name: "tmpl1"})
+	if err != nil {
+		t.Fatalf("GetActorTemplate: %v", err)
+	}
+	uri := mustActorSnapshotURI(t, tmpl, actor, "keep").String()
+	if golden {
+		uri = mustTagSnapshotURI(t, tmpl, resources.GoldenActorAtespace, "golden-1").String()
+	}
+	mustUpdateActorStatus(t, ctx, st, actor, func(s *ateapipb.ActorStatus) {
+		s.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: uri}
+	})
+	return uri
 }
 
 // assertOneWorkerHosts checks that exactly the worker the actor names hosts

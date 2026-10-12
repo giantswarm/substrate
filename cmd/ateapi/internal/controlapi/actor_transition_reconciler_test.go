@@ -101,9 +101,11 @@ func crashedActor(name, message string, age time.Duration) *ateapipb.Actor {
 	return actor
 }
 
-// withSnapshot gives the actor an external snapshot to return to.
-func withSnapshot(actor *ateapipb.Actor) *ateapipb.Actor {
-	actor.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/team-a/" + actor.GetMetadata().GetName() + "/snap-1"}
+// withSnapshot gives the actor an external snapshot of its own to return to.
+func withSnapshot(t *testing.T, actor *ateapipb.Actor) *ateapipb.Actor {
+	t.Helper()
+	actor.Metadata.Uid = someActorUID
+	actor.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, actor.GetMetadata().GetAtespace(), "snap-1")}
 	return actor
 }
 
@@ -134,8 +136,8 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		crashedActor("resume-crashed-trust-bundle", trustBundleNamesCrash, time.Hour),
 		crashedActor("resume-crashed-manifest", "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", time.Hour),
 		crashedActor("suspend-crashed-pod-gone", "suspend failed: "+crashMessageWorkerPodGone, time.Hour),
-		withSnapshot(crashedActor("suspend-crashed-pod-gone-snapshot", "suspend failed: "+crashMessageWorkerPodGone, time.Second)),
-		withSnapshot(crashedActor("suspend-crashed-disk-full", "suspend failed: atelet Checkpoint: no space left on device", time.Hour)),
+		withSnapshot(t, crashedActor("suspend-crashed-pod-gone-snapshot", "suspend failed: "+crashMessageWorkerPodGone, time.Second)),
+		withSnapshot(t, crashedActor("suspend-crashed-disk-full", "suspend failed: atelet Checkpoint: no space left on device", time.Hour)),
 	}}
 	r := newTestTransitionReconciler(st, &fakeTransitionControl{})
 	defer r.queue.ShutDown()
@@ -191,7 +193,7 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 		},
 		{
 			name:          "crashed by a checkpoint a rolling worker pool interrupted",
-			actor:         withSnapshot(crashedActor("a", checkpointCutCrash, time.Second)),
+			actor:         withSnapshot(t, crashedActor("a", checkpointCutCrash, time.Second)),
 			wantRecovered: []string{"a"},
 		},
 		{

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
@@ -141,16 +142,24 @@ var checkpointCrashPrefixes = []string{
 // suspend records when atelet fails to upload the pause snapshot.
 const pausedUploadCrashMessage = "atelet UploadPausedCheckpoint: "
 
+// ownsExternalSnapshot reports whether the actor's external snapshot is one
+// the actor wrote itself. An actor that never suspended holds its template's
+// golden snapshot, which carries none of what the actor did: returning a
+// running actor to it would reset it.
+func ownsExternalSnapshot(actor *ateapipb.Actor) bool {
+	uri, err := resources.ParseSnapshotURI(actor.GetStatus().GetExternalSnapshot().GetSnapshotUri())
+	return err == nil && uri.OwnedBy(actorSnapshotOwner(actor))
+}
+
 // transientCheckpointCrash reports whether the actor is CRASHED by a suspend
 // or a pause that a rolling worker pool interrupted while it checkpointed the
-// running workload, and holds an external snapshot. The workload went with
-// its worker, so that snapshot is the latest state of the actor that
-// survives: returning the actor to it loses nothing the crash has not lost
-// already. A paused-origin suspend checkpoints no workload: the pause snapshot
+// running workload, and holds an external snapshot of its own
+// (ownsExternalSnapshot). The workload went with its worker, so that snapshot
+// is the latest state of the actor that survives: returning the actor to it
+// loses nothing the crash has not lost already. A paused-origin suspend checkpoints no workload: the pause snapshot
 // it uploads stays on its node, so its crash is not one.
 func transientCheckpointCrash(actor *ateapipb.Actor) bool {
-	if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_CRASHED ||
-		actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() == "" {
+	if actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_CRASHED || !ownsExternalSnapshot(actor) {
 		return false
 	}
 	msg := actor.GetStatus().GetCrash().GetMessage()
@@ -162,12 +171,39 @@ func transientCheckpointCrash(actor *ateapipb.Actor) bool {
 	return false
 }
 
+// workerLossCrashMessages are the crashes recorded with no operation in flight
+// for an actor whose workload went with its worker: the worker's pod went
+// away, or its ateom restarted, under the running workload.
+var workerLossCrashMessages = []string{
+	crashMessageWorkerPodGone,
+	crashMessageAteomRestarted,
+}
+
+// transientWorkerLossCrash reports whether the actor is CRASHED with no
+// operation in flight because its worker went away under the running
+// workload, and holds an external snapshot of its own (ownsExternalSnapshot).
+// As for transientCheckpointCrash, the workload went with its worker, so that
+// snapshot is the latest state of the actor that survives.
+func transientWorkerLossCrash(actor *ateapipb.Actor) bool {
+	return actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED &&
+		ownsExternalSnapshot(actor) &&
+		slices.Contains(workerLossCrashMessages, actor.GetStatus().GetCrash().GetMessage())
+}
+
+// lostWorkloadCrash reports whether the actor is CRASHED for a transient cause
+// that took its running workload, and returns it to its external snapshot: a
+// checkpoint a rolling worker pool interrupted (transientCheckpointCrash) or a
+// worker lost with no operation in flight (transientWorkerLossCrash).
+func lostWorkloadCrash(actor *ateapipb.Actor) bool {
+	return transientCheckpointCrash(actor) || transientWorkerLossCrash(actor)
+}
+
 // transientCrash reports whether the actor is CRASHED for a transient cause
-// that returns it to a snapshot: a resume (transientResumeCrash) or a
-// checkpoint (transientCheckpointCrash) that a rolling worker pool
-// interrupted.
+// that returns it to a snapshot: a resume (transientResumeCrash) that a
+// rolling worker pool interrupted, or a running workload it took
+// (lostWorkloadCrash).
 func transientCrash(actor *ateapipb.Actor) bool {
-	return transientResumeCrash(actor) || transientCheckpointCrash(actor)
+	return transientResumeCrash(actor) || lostWorkloadCrash(actor)
 }
 
 // recoveryCandidate reports whether the actor is CRASHED for a cause that may
