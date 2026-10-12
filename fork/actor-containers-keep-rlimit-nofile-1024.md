@@ -1,7 +1,7 @@
 # Actor containers keep RLIMIT_NOFILE at 1024
 
 - **Status:** carried
-- **Upstream:** none: upstream raised the limit with no compatibility before its 1.0; the general fix (a restore under the limit its checkpoint was taken with) is to file
+- **Upstream:** [agent-substrate/substrate#2530](https://github.com/agent-substrate/substrate/issues/2530) (open): restore each checkpoint under its own limit; this commit is dropped once a release carries that
 - **Our commit:** [#353](https://github.com/giantswarm/substrate/pull/353) (`fix(ocispec): keep RLIMIT_NOFILE at 1024 so earlier checkpoints restore`)
 
 ## Change
