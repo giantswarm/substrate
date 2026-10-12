@@ -397,6 +397,73 @@ func TestResumeActor_RestoreCutByWorkerLeaving(t *testing.T) {
 	}
 }
 
+// TestResumeActor_RecoveryCutUntilTheCallEnds resumes an actor whose worker
+// pod goes away mid-restore and whose ateom stays unreachable, so neither the
+// crash's teardown nor the recovery's reaches it before the call ends. The call
+// answers Unavailable naming the crash, never the restore's Internal, and the
+// actor returns to rest once its worker can be torn down.
+func TestResumeActor_RecoveryCutUntilTheCallEnds(t *testing.T) {
+	gone := make([]error, 20)
+	for i := range gone {
+		gone[i] = ateomGone
+	}
+	atelet := &flakyAtelet{restoreErrs: []error{runscKilled}, terminateErrs: gone}
+	w, st, actorRef := newResumeRetryFixture(t, atelet)
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+
+	_, _, err := w.ResumeActor(ctx, actorRef, nil)
+	if got := status.Code(err); got != codes.Unavailable {
+		t.Fatalf("ResumeActor error = %v, want Unavailable", err)
+	}
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, crashMessageWorkerUnreachable) {
+		t.Errorf("ResumeActor error message = %q, want the crash's cause named", msg)
+	}
+
+	atelet.mu.Lock()
+	atelet.terminateErrs = nil
+	atelet.mu.Unlock()
+	if _, recovered, err := w.recoverTransientResumeCrash(context.Background(), actorRef); err != nil || !recovered {
+		t.Fatalf("recoverTransientResumeCrash = (%v, %v), want the actor recovered", recovered, err)
+	}
+	stored, err := st.GetActor(context.Background(), actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED || stored.GetStatus().GetCrash() != nil {
+		t.Errorf("status = %v, want SUSPENDED and no crash", stored.GetStatus())
+	}
+}
+
+// TestResumeActor_TransientCrashAfterTheCallEnded answers Unavailable for an
+// actor a resume crashed for a transient cause when the call's context has
+// already ended: the crash is read regardless and the actor returned to rest.
+func TestResumeActor_TransientCrashAfterTheCallEnded(t *testing.T) {
+	ctx := context.Background()
+	atelet := &flakyAtelet{}
+	w, st, actorRef := newResumeRetryFixture(t, atelet, func(s *ateapipb.ActorStatus) {
+		s.State = ateapipb.ActorState_ACTOR_STATE_CRASHED
+		s.Crash = &ateapipb.ActorCrash{Message: wakeupProbeCancelledCrash}
+	})
+	ended, cancel := context.WithCancel(ctx)
+	cancel()
+
+	_, _, err := w.ResumeActor(ended, actorRef, nil)
+	if got := status.Code(err); got != codes.Unavailable {
+		t.Fatalf("ResumeActor error = %v, want Unavailable", err)
+	}
+	if msg := status.Convert(err).Message(); !strings.Contains(msg, "wakeup probe cancelled") {
+		t.Errorf("ResumeActor error message = %q, want the crash's cause named", msg)
+	}
+	stored, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED || stored.GetStatus().GetCrash() != nil {
+		t.Errorf("status = %v, want SUSPENDED and no crash", stored.GetStatus())
+	}
+}
+
 // TestResumeActor_SandboxKilledOnALiveWorkerStaysCrashed keeps the crash of a
 // sandbox killed on a worker that is still there, as the kernel kills one for
 // its memory: its teardown reaches the worker, so no retry outlives it.
@@ -405,8 +472,9 @@ func TestResumeActor_SandboxKilledOnALiveWorkerStaysCrashed(t *testing.T) {
 	atelet := &flakyAtelet{restoreErrs: []error{runscKilled}}
 	w, st, actorRef := newResumeRetryFixture(t, atelet)
 
-	if _, _, err := w.ResumeActor(ctx, actorRef, nil); err == nil {
-		t.Fatal("ResumeActor returned no error, want the crash")
+	_, _, err := w.ResumeActor(ctx, actorRef, nil)
+	if got := status.Code(err); got != codes.Internal {
+		t.Fatalf("ResumeActor error = %v, want the crash's Internal", err)
 	}
 	stored, err := st.GetActor(ctx, actorRef)
 	if err != nil {
