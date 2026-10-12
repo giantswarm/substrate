@@ -67,6 +67,7 @@ func TestTransientResumeCrash(t *testing.T) {
 		{"two atelet pods", crashed, `resume failed: atelet Restore: found 2 atelet pods on node "n-1", expected 1`, true},
 		{"wakeup probe cancelled under a rolling worker", crashed, wakeupProbeCancelledCrash, true},
 		{"worker unreachable after the failure", crashed, "resume failed: atelet Restore: " + runscKilled.Error() + " (" + crashMessageWorkerUnreachable + ")", true},
+		{"runsc killed on a draining worker", crashed, "resume failed: " + ateletCrashMessage("Restore", runscKilled) + " (" + crashMessageWorkerDraining + ")", true},
 		{"runsc killed on a live worker", crashed, "resume failed: " + ateletCrashMessage("Restore", runscKilled), false},
 		{"manifest unknown", crashed, "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", false},
 		{"no runnable process", crashed, "resume failed: atelet Run: no runnable process in container", false},
@@ -317,6 +318,82 @@ func TestResumeActor_WorkerGoneUnderRestore(t *testing.T) {
 	}
 	if restores, terminates := atelet.counts(); restores != 2 || terminates != 2 {
 		t.Errorf("atelet calls = %d Restore, %d Terminate, want 2 and 2: the crash's teardown failed, the recovery's tore it down", restores, terminates)
+	}
+}
+
+// TestResumeActor_RestoreCutByWorkerLeaving resumes an actor whose worker pod
+// is deleted mid-restore while atelet stays reachable: the sandbox is killed,
+// the crash's teardown succeeds, and the worker is draining or already gone.
+// The crash records the worker's state, the actor goes back to its snapshot
+// and the retry resumes it on the other worker.
+func TestResumeActor_RestoreCutByWorkerLeaving(t *testing.T) {
+	tests := []struct {
+		name  string
+		leave func(t *testing.T, st store.Interface, worker *ateapipb.Worker)
+		// terminates is 0 for a worker whose record is gone: nothing is
+		// left to tear down on it.
+		terminates int
+	}{
+		{"draining", func(t *testing.T, st store.Interface, worker *ateapipb.Worker) {
+			if _, err := st.UpdateWorker(context.Background(), worker.GetMetadata().GetName(), store.PreconditionFrom(worker), func(toUpdate *ateapipb.Worker) error {
+				toUpdate.Status.State = ateapipb.WorkerState_WORKER_STATE_DRAINING
+				return nil
+			}); err != nil {
+				t.Errorf("UpdateWorker: %v", err)
+			}
+		}, 1},
+		{"gone", func(t *testing.T, st store.Interface, worker *ateapipb.Worker) {
+			if _, err := st.DeleteWorker(context.Background(), worker.GetMetadata().GetName(), store.DeletePreconditions{}); err != nil {
+				t.Errorf("DeleteWorker: %v", err)
+			}
+		}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			var st store.Interface
+			var actorRef resources.ActorRef
+			var cutWorker string
+			atelet := &flakyAtelet{restoreErrs: []error{runscKilled}}
+			atelet.onRestore = func(n int) {
+				if n != 1 {
+					return
+				}
+				actor, err := st.GetActor(ctx, actorRef)
+				if err != nil {
+					t.Errorf("GetActor: %v", err)
+					return
+				}
+				name, err := st.FindWorkerHostingActor(ctx, actor.GetMetadata().GetUid())
+				if err != nil {
+					t.Errorf("FindWorkerHostingActor: %v", err)
+					return
+				}
+				worker, err := st.GetWorker(ctx, name)
+				if err != nil {
+					t.Errorf("GetWorker: %v", err)
+					return
+				}
+				cutWorker = name
+				tt.leave(t, st, worker)
+			}
+			w, fixtureStore, ref := newResumeRetryFixture(t, atelet)
+			st, actorRef = fixtureStore, ref
+
+			actor, resumed, err := w.ResumeActor(ctx, actorRef, nil)
+			if err != nil {
+				t.Fatalf("ResumeActor: %v", err)
+			}
+			if !resumed || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING || actor.GetStatus().GetCrash() != nil {
+				t.Errorf("ResumeActor = (status %v, resumed %v), want RUNNING, resumed and no crash", actor.GetStatus(), resumed)
+			}
+			if got := actor.GetStatus().GetWorkerAssignment().GetWorker().GetName(); got == cutWorker {
+				t.Errorf("actor runs on worker %q, want the other worker", got)
+			}
+			if restores, terminates := atelet.counts(); restores != 2 || terminates != tt.terminates {
+				t.Errorf("atelet calls = %d Restore, %d Terminate, want 2 and %d", restores, terminates, tt.terminates)
+			}
+		})
 	}
 }
 
