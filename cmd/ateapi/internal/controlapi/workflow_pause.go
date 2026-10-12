@@ -30,11 +30,22 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// PauseActor executes the workflow to pause a running actor. Idempotent:
+// PauseActor runs pauseActorOnce; a checkpoint a rolling worker pool interrupts
+// returns the actor to its last durable snapshot and answers Unavailable
+// (checkpointInterrupted).
+func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (*ateapipb.Actor, error) {
+	actor, err := w.pauseActorOnce(ctx, actorRef, token)
+	if err != nil {
+		return nil, w.checkpointInterrupted(ctx, actorRef, ateattr.OperationPause, err)
+	}
+	return actor, nil
+}
+
+// pauseActorOnce executes the workflow to pause a running actor. Idempotent:
 // a re-entered workflow fast-forwards past the steps a previous attempt
 // completed, deriving progress from the persisted actor alone. A non-nil
 // token fences the request (see ensureFencingTokenAdmitted).
-func (w *ActorWorkflow) PauseActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
+func (w *ActorWorkflow) pauseActorOnce(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate
