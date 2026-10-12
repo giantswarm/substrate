@@ -59,13 +59,13 @@ type restoreTelemetry struct {
 	WireSnapshotScope string
 }
 
-// ResumeActor executes the workflow to resume a suspended actor. Idempotent:
+// resumeActorOnce executes the workflow to resume a suspended actor. Idempotent:
 // a re-entered workflow fast-forwards past the steps a previous attempt
 // completed, deriving progress from the persisted actor alone. A non-nil
 // token fences the request (see ensureFencingTokenAdmitted); a token newer
 // than the recorded one is recorded even on a running actor, which is how a
 // lease taker fences out the previous holder without changing the actor.
-func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, resumed bool, err error) {
+func (w *ActorWorkflow) resumeActorOnce(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, resumed bool, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate

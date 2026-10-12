@@ -52,6 +52,7 @@ type actorTransitionStore interface {
 type actorTransitionControl interface {
 	SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error)
 	PauseActor(ctx context.Context, req *ateapipb.PauseActorRequest) (*ateapipb.PauseActorResponse, error)
+	RecoverTransientResumeCrash(ctx context.Context, actorRef resources.ActorRef) (bool, error)
 }
 
 // ActorTransitionReconciler finishes the suspends and pauses whose ate-api
@@ -68,6 +69,11 @@ type actorTransitionControl interface {
 // SUSPENDED or PAUSED once the atelet answers, or CRASHED with the reason when
 // the atelet call fails. The actor lease keeps the re-entry from racing a
 // client that retries at the same time.
+//
+// It also returns to rest an Actor that a resume crashed for a transient cause
+// (transientResumeCrash) and no request recovers: one whose request ended, or
+// one a release before the recovery left CRASHED. The Actor ends SUSPENDED or
+// PAUSED on the snapshot the resume was restoring, for its client to resume.
 //
 // TODO: Every ateapi replica lists every Actor, with only the actor lease
 // keeping them from driving the same one at once, as the other reconcilers do.
@@ -106,7 +112,8 @@ func (r *ActorTransitionReconciler) Start(ctx context.Context) {
 	}()
 }
 
-// resync lists every Actor and queues the orphaned transitions.
+// resync lists every Actor and queues the orphaned transitions and the
+// transient resume crashes.
 func (r *ActorTransitionReconciler) resync(ctx context.Context) {
 	pageToken := ""
 	for {
@@ -116,7 +123,7 @@ func (r *ActorTransitionReconciler) resync(ctx context.Context) {
 			return
 		}
 		for _, actor := range page.Items {
-			if r.orphaned(actor) {
+			if r.orphaned(actor) || transientResumeCrash(actor) {
 				r.queue.Add(resources.ActorRefFromActor(actor))
 			}
 		}
@@ -170,6 +177,17 @@ func (r *ActorTransitionReconciler) reconcileOne(ctx context.Context, ref resour
 			return nil
 		}
 		return err
+	}
+	if transientResumeCrash(actor) {
+		recovered, err := r.control.RecoverTransientResumeCrash(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("while recovering from a transient resume crash: %w", err)
+		}
+		if recovered {
+			slog.LogAttrs(ctx, slog.LevelWarn, "Returned an actor a resume crashed for a transient cause to rest",
+				append(ateattr.ActorRefLogAttrs(ref), slog.String("crash", actor.GetStatus().GetCrash().GetMessage()))...)
+		}
+		return nil
 	}
 	if !r.orphaned(actor) {
 		// Finished, or taken up by a request since the list.
