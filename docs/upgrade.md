@@ -686,6 +686,71 @@ layout a golden tag was written in; a golden recorded without it is taken
 again in the current layout, as that section says. No reset and no lost
 conversation.
 
+### The 1.8 to 1.9 step
+
+1.9.0 moves the line onto upstream v0.5.0-alpha2. Step to it from 1.8.4
+with the numbered steps above; the step migrates on its own, with no
+snapshot reset and no manual step, and conversations and durable volumes
+survive it.
+
+- **Persisted format:** the Postgres schema is unchanged (no file in
+  `migrations/` or `migrations_fork/` differs). In the protos,
+  `LocalSnapshot.content_scope` moves from field 3 to field 2, the field
+  1.8 used for `node_vms_with_local_snapshots`; `LocalSnapshot.node_name`
+  (5) and `ActorStatus.assigned_node` (10) are new;
+  `SnapshotConfig.on_pause` is removed
+  ([agent-substrate/substrate#2309](https://github.com/agent-substrate/substrate/pull/2309)),
+  so a pause captures the `on_commit` scope; Pause, Suspend and Resume take
+  an optional `FencingToken` (field 10001) and ate-api records the newest
+  one in `ActorStatus.fencing_token` (10001). The `SandboxConfig` CRD
+  requires `pauseImage` for `gvisor` only and refuses it for every other
+  sandbox class; the `WorkerPool` CRD gains an optional
+  `serviceAccountName` in its pod template. Apply the new CRDs in step 1 as
+  usual.
+- **Migration, automatic:** an Actor row a 1.8 release wrote is rewritten
+  when it is read (`migrateLegacyLocalSnapshot` and
+  `migrateLegacyAssignedNode` in `cmd/ateapi/internal/store/atepg`): a
+  local snapshot takes its node from the 1.8 node list into `node_name`
+  and its content scope from the 1.8 field 3, and `assigned_node` takes
+  the worker assignment's node, else the local snapshot's. The rewrite is
+  persisted by the actor's next update. A paused or suspended 1.8 actor
+  resumes on its node with its snapshot's scope as written.
+- **Fencing:** a request without a `FencingToken` is admitted as before,
+  so a client that sends none behaves as on 1.8.
+- **Before step 1:** a `SandboxConfig` of a sandbox class other than
+  `gvisor` that sets `pauseImage` is refused by the new CRD on its next
+  create or update; drop the field from such objects. The chart renders
+  only the `gvisor` one, which keeps it.
+- **Chart:** every component now has default requests and limits; the
+  memory limits are atelet, ate-api-server, atenet-router's agentgateway
+  and rustfs 1Gi, ate-controller 512Mi, the credential provider and the
+  rustfs bucket-init job 256Mi. An installation that sets its own
+  `resources` keeps them. The controller Role is created in the release
+  namespace, and rustfs runs under a ServiceAccount of its own.
+- **Reset:** none. **Conversations lost:** none.
+
+### Patch steps within 1.9
+
+Every released 1.9 patch has an entry here, newest first, in the shape of
+the 1.8 entries. A step from 1.8.4 straight to a 1.9 patch is the 1.8 to
+1.9 step above plus the entries up to that patch.
+
+#### 1.9.0 to 1.9.1
+
+- **Persisted format:** unchanged. No proto field, no CRD, no chart value
+  and no Postgres schema differs between the two tags.
+- **Object storage:** a process runs at most two large snapshot transfers
+  at once (an upload of more than one part, a ranged download); the others
+  wait for a slot. Objects of one part never wait. Suspends that a node's
+  actors start together no longer buffer one image each, which on 1.9.0
+  could outgrow atelet's 1Gi limit and restart it.
+- **Metrics:** the router records `ate.router.outcome=denied` on
+  `atenet.router.route.duration` for a 403 and a `PermissionDenied`, which
+  1.9.0 counted as `resume_error`. An alert on `resume_error` no longer
+  fires on policy refusals.
+- **Migration:** none to run.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
