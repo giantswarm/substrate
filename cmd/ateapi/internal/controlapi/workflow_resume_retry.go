@@ -62,12 +62,12 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 			return actor, resumed, nil
 		}
 		recoveredCrash, recovered, rerr := w.recoverTransientResumeCrash(ctx, actorRef)
-		if rerr != nil {
-			slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient resume crash",
-				append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
-			return nil, false, err
-		}
 		switch {
+		case rerr != nil:
+			// The worker going away is still being torn down; the next
+			// attempt recovers the actor once it is released.
+			slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient resume crash; retrying",
+				append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
 		case recovered:
 			crash = recoveredCrash
 		case crash != "" && status.Code(err) == codes.ResourceExhausted:
@@ -75,6 +75,9 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 			return nil, false, err
 		}
 		retryable := status.Errorf(codes.Unavailable, "resume of actor %s was interrupted by its worker (%s); the actor is back at its snapshot, retry the resume", actorRef, crash)
+		if rerr != nil {
+			retryable = err
+		}
 		if attempt >= transientResumeAttempts {
 			return nil, false, retryable
 		}

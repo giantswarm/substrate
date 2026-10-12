@@ -16,6 +16,7 @@ package controlapi
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -40,6 +41,14 @@ var ateomSocketGone = status.Error(codes.Unknown, `ateom.RunWorkload: rpc error:
 // call, and its wakeup probe with it, is cancelled while its pod goes away.
 const wakeupProbeCancelledCrash = `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Canceled desc = while waiting for container wakeup probe: wakeup probe cancelled for "kagent" after 1.2s (3 attempts, last error: connection refused): context canceled`
 
+// runscKilled is the error a restore returns when its sandbox is killed: by
+// the worker pod going away, or by the kernel for its memory.
+var runscKilled = status.Error(codes.Internal, "while calling ateom.RestoreWorkload: rpc error: code = Internal desc = while starting pause container: while running `runsc start`: signal: killed")
+
+// ateomGone is the error atelet returns for a call to an ateom whose pod went
+// away.
+var ateomGone = status.Error(codes.Internal, `failed calling ateom.TerminateWorkload: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial unix /run/ate/workers/w-1/ateom.sock: connect: connection refused"`)
+
 func TestTransientResumeCrash(t *testing.T) {
 	crashed := ateapipb.ActorState_ACTOR_STATE_CRASHED
 	tests := []struct {
@@ -57,6 +66,8 @@ func TestTransientResumeCrash(t *testing.T) {
 		{"atelet without an IP", crashed, `resume failed: atelet Restore: selected atelet "ate-system/atelet-x" has no assigned IPs`, true},
 		{"two atelet pods", crashed, `resume failed: atelet Restore: found 2 atelet pods on node "n-1", expected 1`, true},
 		{"wakeup probe cancelled under a rolling worker", crashed, wakeupProbeCancelledCrash, true},
+		{"worker unreachable after the failure", crashed, "resume failed: atelet Restore: " + runscKilled.Error() + " (" + crashMessageWorkerUnreachable + ")", true},
+		{"runsc killed on a live worker", crashed, "resume failed: " + ateletCrashMessage("Restore", runscKilled), false},
 		{"manifest unknown", crashed, "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", false},
 		{"no runnable process", crashed, "resume failed: atelet Run: no runnable process in container", false},
 		{"wakeup probe never answered", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "kagent" never returned 200 within 2m0s (40 attempts, last error: connection refused)`, false},
@@ -84,7 +95,9 @@ type flakyAtelet struct {
 
 	mu          sync.Mutex
 	restoreErrs []error
-	failAlways  error
+	// terminateErrs fail the Terminate calls, one per call.
+	terminateErrs []error
+	failAlways    error
 	// onRestore runs before each Restore is answered, with its number.
 	onRestore  func(n int)
 	restores   int
@@ -113,6 +126,11 @@ func (f *flakyAtelet) Terminate(context.Context, *ateletpb.TerminateRequest) (*a
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.terminates++
+	if len(f.terminateErrs) > 0 {
+		err := f.terminateErrs[0]
+		f.terminateErrs = f.terminateErrs[1:]
+		return nil, err
+	}
 	return &ateletpb.TerminateResponse{}, nil
 }
 
@@ -278,6 +296,50 @@ func TestResumeActor_TransientCrashUntilTheCallEnds(t *testing.T) {
 	}
 	if _, err := st.FindWorkerHostingActor(context.Background(), stored.GetMetadata().GetUid()); err == nil {
 		t.Error("a worker still hosts the actor, want it freed")
+	}
+}
+
+// TestResumeActor_WorkerGoneUnderRestore resumes an actor whose worker pod
+// goes away mid-restore: the sandbox is killed and the crash's teardown cannot
+// reach the worker. The crash records the unreachable worker, the actor is
+// recovered once the worker is torn down, and the retry resumes it.
+func TestResumeActor_WorkerGoneUnderRestore(t *testing.T) {
+	ctx := context.Background()
+	atelet := &flakyAtelet{restoreErrs: []error{runscKilled}, terminateErrs: []error{ateomGone}}
+	w, _, actorRef := newResumeRetryFixture(t, atelet)
+
+	actor, resumed, err := w.ResumeActor(ctx, actorRef, nil)
+	if err != nil {
+		t.Fatalf("ResumeActor: %v", err)
+	}
+	if !resumed || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING || actor.GetStatus().GetCrash() != nil {
+		t.Errorf("ResumeActor = (status %v, resumed %v), want RUNNING, resumed and no crash", actor.GetStatus(), resumed)
+	}
+	if restores, terminates := atelet.counts(); restores != 2 || terminates != 2 {
+		t.Errorf("atelet calls = %d Restore, %d Terminate, want 2 and 2: the crash's teardown failed, the recovery's tore it down", restores, terminates)
+	}
+}
+
+// TestResumeActor_SandboxKilledOnALiveWorkerStaysCrashed keeps the crash of a
+// sandbox killed on a worker that is still there, as the kernel kills one for
+// its memory: its teardown reaches the worker, so no retry outlives it.
+func TestResumeActor_SandboxKilledOnALiveWorkerStaysCrashed(t *testing.T) {
+	ctx := context.Background()
+	atelet := &flakyAtelet{restoreErrs: []error{runscKilled}}
+	w, st, actorRef := newResumeRetryFixture(t, atelet)
+
+	if _, _, err := w.ResumeActor(ctx, actorRef, nil); err == nil {
+		t.Fatal("ResumeActor returned no error, want the crash")
+	}
+	stored, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED {
+		t.Errorf("state = %v, want CRASHED", got)
+	}
+	if msg := stored.GetStatus().GetCrash().GetMessage(); strings.Contains(msg, crashMessageWorkerUnreachable) {
+		t.Errorf("crash = %q, want no unreachable worker named", msg)
 	}
 }
 

@@ -42,6 +42,9 @@ const (
 	crashMessageWorkerIneligible         = "assigned worker no longer satisfies the actor's placement constraints"
 	crashMessageWorkerPodGone            = "worker pod went away while hosting the actor"
 	crashMessageAteomRestarted           = "ateom restarted while hosting the actor"
+	// crashMessageWorkerUnreachable is appended to a crash whose teardown
+	// could not reach the worker: the worker went away under the failed call.
+	crashMessageWorkerUnreachable = "worker unreachable while tearing down the failed actor"
 )
 
 // maxCrashMessageBytes matches the maxLength on ActorCrash.message.
@@ -54,14 +57,16 @@ const maxCrashMessageBytes = 4096
 // beside the old one on the node; ateom on the worker was not listening yet
 // or restarted; the worker's call was cancelled under it, its wakeup probe
 // with it, while its pod went away (a cancellation of ate-api's own call
-// crashes nothing). The message is matched because atelet's failures reach
-// ate-api as text only.
+// crashes nothing); the crash's teardown could not reach the worker any more,
+// whatever the failed call reported. The message is matched because atelet's
+// failures reach ate-api as text only.
 var transientCrashCauses = []string{
 	crashMessageWorkerDraining,
 	crashMessageWorkerGone,
 	crashMessageWorkerReassigned,
 	crashMessageWorkerPodGone,
 	crashMessageAteomRestarted,
+	crashMessageWorkerUnreachable,
 	"has no assigned IPs",
 	"atelet pods on node",
 	"ateom.sock: connect:",
@@ -78,6 +83,14 @@ func transientCrashCause(msg string) bool {
 		}
 	}
 	return false
+}
+
+// workerUnreachable reports whether a failed teardown could not reach atelet
+// or ateom on the worker, as when the worker pod went away. A workload that
+// failed on a live worker, killed for its memory for one, is torn down.
+func workerUnreachable(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "code = Unavailable") || transientCrashCause(msg)
 }
 
 // resumeCrashPrefix starts the message of a crash recorded by a resume.
@@ -165,6 +178,9 @@ func (w *ActorWorkflow) crashActor(ctx context.Context, actorRef resources.Actor
 	if teardownErr != nil {
 		slog.LogAttrs(ctx, slog.LevelWarn, "Crashing actor without freeing its worker",
 			append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", teardownErr))...)
+		if workerUnreachable(teardownErr) {
+			message += " (" + crashMessageWorkerUnreachable + ")"
+		}
 	}
 
 	// Snapshot crash attributes before pod and pool pointers are cleared below;
