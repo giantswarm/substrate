@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+
 	"github.com/agent-substrate/substrate/cmd/benchmarking/isolate/internal/fakeworker"
 	"github.com/agent-substrate/substrate/internal/hardware"
 	"github.com/agent-substrate/substrate/internal/resources"
@@ -502,7 +504,7 @@ func (c *controller) syncStatus(ctx context.Context, wp *atev1alpha1.WorkerPool,
 		}
 	}
 	c.mu.Unlock()
-	if wp.Status == want {
+	if equality.Semantic.DeepEqual(wp.Status, want) {
 		return nil
 	}
 	updated := wp.DeepCopy()

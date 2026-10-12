@@ -157,7 +157,36 @@ type WorkerPoolStatus struct {
 	// Selector is the label selector for the worker pods.
 	// +optional
 	Selector string `json:"selector,omitempty"`
+
+	// WorkerImage is the ateom image the pool's worker pods run. It differs
+	// from spec.workerImage when the controller overrides it, which the
+	// WorkerImageOverridden condition records.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	WorkerImage *string `json:"workerImage,omitempty"`
+
+	// Conditions describe the current state of the WorkerPool.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MaxItems=8
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
+
+const (
+	// WorkerPoolConditionWorkerImageOverridden is True when the pool's worker
+	// pods run an image other than spec.workerImage because the controller's
+	// --gvisor-worker-image flag overrides it.
+	WorkerPoolConditionWorkerImageOverridden = "WorkerImageOverridden"
+
+	// WorkerPoolReasonGVisorWorkerImageFlag is the WorkerImageOverridden reason
+	// when the --gvisor-worker-image flag replaces spec.workerImage.
+	WorkerPoolReasonGVisorWorkerImageFlag = "GVisorWorkerImageFlag"
+
+	// WorkerPoolReasonSpecWorkerImage is the WorkerImageOverridden reason when
+	// the pool's worker pods run spec.workerImage.
+	WorkerPoolReasonSpecWorkerImage = "SpecWorkerImage"
+)
 
 // WorkerPool is the Schema for the workerpools API
 // +genclient
@@ -170,6 +199,7 @@ type WorkerPoolStatus struct {
 // +kubebuilder:printcolumn:name="Desired",type=integer,JSONPath=`.spec.replicas`
 // +kubebuilder:printcolumn:name="Replicas",type=integer,JSONPath=`.status.replicas`
 // +kubebuilder:printcolumn:name="Ready",type=integer,JSONPath=`.status.readyReplicas`
+// +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.status.workerImage`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 type WorkerPool struct {
 	metav1.TypeMeta `json:",inline"`

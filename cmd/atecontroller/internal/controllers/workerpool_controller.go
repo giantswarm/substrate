@@ -21,11 +21,15 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8errors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -67,6 +71,9 @@ type WorkerPoolReconciler struct {
 	// GVisorWorkerImage, when set, is the ateom image every gVisor pool runs
 	// in place of its spec.workerImage. Empty runs each pool's own image.
 	GVisorWorkerImage string
+	// Recorder emits the Warning event on a pool whose spec.workerImage
+	// GVisorWorkerImage overrides. Nil emits none.
+	Recorder events.EventRecorder
 
 	desiredWorkers metric.Int64ObservableUpDownCounter
 	readyWorkers   metric.Int64ObservableUpDownCounter
@@ -76,6 +83,7 @@ type WorkerPoolReconciler struct {
 //+kubebuilder:rbac:groups=ate.dev,resources=workerpools/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=ate.dev,resources=workerpools/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -109,7 +117,8 @@ func (r *WorkerPoolReconciler) reconcileWorkerPool(ctx context.Context, wp *atev
 	log := log.FromContext(ctx)
 	log.Info("Reconciling worker pool")
 
-	if err := r.applyDeployment(ctx, wp); err != nil {
+	image := workerImage(wp, r.GVisorWorkerImage)
+	if err := r.applyDeployment(ctx, wp, image); err != nil {
 		return err
 	}
 
@@ -121,11 +130,11 @@ func (r *WorkerPoolReconciler) reconcileWorkerPool(ctx context.Context, wp *atev
 		return fmt.Errorf("failed to get deployment: %w", err)
 	}
 
-	return r.syncStatus(ctx, wp, dep)
+	return r.syncStatus(ctx, wp, dep, image)
 }
 
-func (r *WorkerPoolReconciler) applyDeployment(ctx context.Context, wp *atev1alpha1.WorkerPool) error {
-	depAC := buildDeploymentApplyConfig(wp, workerImage(wp, r.GVisorWorkerImage), ateomOTelSettings{
+func (r *WorkerPoolReconciler) applyDeployment(ctx context.Context, wp *atev1alpha1.WorkerPool, image string) error {
+	depAC := buildDeploymentApplyConfig(wp, image, ateomOTelSettings{
 		Endpoint:             r.OTelEndpoint,
 		MetricExportInterval: r.OTelMetricExportInterval,
 		MetricExportTimeout:  r.OTelMetricExportTimeout,
@@ -139,7 +148,9 @@ func (r *WorkerPoolReconciler) applyDeployment(ctx context.Context, wp *atev1alp
 	return nil
 }
 
-func (r *WorkerPoolReconciler) syncStatus(ctx context.Context, wp *atev1alpha1.WorkerPool, dep *appsv1.Deployment) error {
+// syncStatus records the Deployment's replicas and the image the workers run,
+// image, on the pool, and whether image overrides spec.workerImage.
+func (r *WorkerPoolReconciler) syncStatus(ctx context.Context, wp *atev1alpha1.WorkerPool, dep *appsv1.Deployment, image string) error {
 	selector, err := metav1.LabelSelectorAsSelector(dep.Spec.Selector)
 	if err != nil {
 		return fmt.Errorf("failed to convert Deployment selector: %w", err)
@@ -149,7 +160,17 @@ func (r *WorkerPoolReconciler) syncStatus(ctx context.Context, wp *atev1alpha1.W
 		Replicas:      dep.Status.Replicas,
 		ReadyReplicas: dep.Status.ReadyReplicas,
 		Selector:      selector.String(),
+		WorkerImage:   ptr.To(image),
+		Conditions:    append([]metav1.Condition(nil), wp.Status.Conditions...),
 	}
+	overridden := workerImageOverriddenCondition(wp, image)
+	// The event marks a new override, not every reconcile of one.
+	prev := meta.FindStatusCondition(wp.Status.Conditions, overridden.Type)
+	if overridden.Status == metav1.ConditionTrue && r.Recorder != nil &&
+		(prev == nil || prev.Status != overridden.Status || prev.Message != overridden.Message) {
+		r.Recorder.Eventf(wp, nil, corev1.EventTypeWarning, overridden.Type, "Reconcile", "%s", overridden.Message)
+	}
+	meta.SetStatusCondition(&want.Conditions, overridden)
 	if equality.Semantic.DeepEqual(wp.Status, want) {
 		return nil
 	}
@@ -160,6 +181,24 @@ func (r *WorkerPoolReconciler) syncStatus(ctx context.Context, wp *atev1alpha1.W
 	}
 
 	return nil
+}
+
+// workerImageOverriddenCondition is the WorkerImageOverridden condition of a
+// pool whose workers run image.
+func workerImageOverriddenCondition(wp *atev1alpha1.WorkerPool, image string) metav1.Condition {
+	cond := metav1.Condition{
+		Type:               atev1alpha1.WorkerPoolConditionWorkerImageOverridden,
+		Status:             metav1.ConditionFalse,
+		Reason:             atev1alpha1.WorkerPoolReasonSpecWorkerImage,
+		Message:            fmt.Sprintf("workers run spec.workerImage %s", image),
+		ObservedGeneration: wp.Generation,
+	}
+	if image != wp.Spec.WorkerImage {
+		cond.Status = metav1.ConditionTrue
+		cond.Reason = atev1alpha1.WorkerPoolReasonGVisorWorkerImageFlag
+		cond.Message = fmt.Sprintf("workers run %s from --gvisor-worker-image in place of spec.workerImage %s", image, wp.Spec.WorkerImage)
+	}
+	return cond
 }
 
 // InitMetrics initializes the OpenTelemetry instruments for ate.workerpool.desired_workers

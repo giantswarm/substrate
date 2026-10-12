@@ -211,6 +211,7 @@ func main() {
 		AteletServiceAccount:     *ateletServiceAccount,
 		RouterServiceAccount:     *routerServiceAccount,
 		GVisorWorkerImage:        *gvisorWorkerImage,
+		Recorder:                 mgr.GetEventRecorder("workerpool-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkerPool")
 		os.Exit(1)

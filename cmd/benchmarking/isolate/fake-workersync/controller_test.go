@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
+
 	"github.com/agent-substrate/substrate/cmd/benchmarking/isolate/internal/fakeworker"
 	"github.com/agent-substrate/substrate/internal/hardware"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
@@ -411,7 +413,7 @@ func TestReconcileHonorsReplicasAndLimits(t *testing.T) {
 	if got, want := rel.hardware[ctl.uid(name)], hardware.ProbeHost(); !proto.Equal(got, want) {
 		t.Errorf("hardware %v, want %v, which ate-api-server requires", got, want)
 	}
-	if got, want := cl.statuses["bench"], (atev1alpha1.WorkerPoolStatus{Replicas: 3, ReadyReplicas: 3, Selector: "ate.dev/worker-pool=bench"}); got != want {
+	if got, want := cl.statuses["bench"], (atev1alpha1.WorkerPoolStatus{Replicas: 3, ReadyReplicas: 3, Selector: "ate.dev/worker-pool=bench"}); !equality.Semantic.DeepEqual(got, want) {
 		t.Errorf("status = %+v, want %+v", got, want)
 	}
 }

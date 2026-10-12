@@ -28,6 +28,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8errors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -751,5 +753,124 @@ func TestWorkerPoolMetrics(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("observed %v, want %v", got, want)
+	}
+}
+
+// TestWorkerImageStatusWithoutFlag verifies that a controller without
+// --gvisor-worker-image records spec.workerImage as the image the workers run
+// and a False WorkerImageOverridden condition.
+func TestWorkerImageStatusWithoutFlag(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	wp := makeWorkerPool("test-image-status", "default", 1, "ateom:v1")
+	if err := k8sClient.Create(ctx, wp); err != nil {
+		t.Fatalf("create WorkerPool: %v", err)
+	}
+	deleteOnCleanup(t, wp)
+	eventually(t, func(ctx context.Context) (bool, error) {
+		dep, err := getDeployment(ctx, wp)
+		if err != nil || dep.Spec.Template.Spec.Containers[0].Image != "ateom:v1" {
+			return false, nil
+		}
+		current := &atev1alpha1.WorkerPool{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: wp.Name, Namespace: wp.Namespace}, current); err != nil {
+			return false, nil
+		}
+		return ptr.Deref(current.Status.WorkerImage, "") == "ateom:v1" &&
+			meta.IsStatusConditionFalse(current.Status.Conditions, atev1alpha1.WorkerPoolConditionWorkerImageOverridden), nil
+	})
+}
+
+// TestWorkerImageOverriddenByFlag verifies the status, the condition and the
+// event of pools reconciled by a controller with --gvisor-worker-image. A fake
+// client keeps this off the envtest reconciler, which runs without the flag.
+func TestWorkerImageOverriddenByFlag(t *testing.T) {
+	t.Parallel()
+	const flagImage = "ateom-gvisor:release"
+	tests := []struct {
+		name          string
+		specImage     string
+		sandboxClass  atev1alpha1.SandboxClass
+		wantImage     string
+		wantCondition metav1.ConditionStatus
+		wantReason    string
+	}{
+		{
+			name:          "gVisor pool with its own workerImage",
+			specImage:     "ateom-gvisor:own",
+			wantImage:     flagImage,
+			wantCondition: metav1.ConditionTrue,
+			wantReason:    atev1alpha1.WorkerPoolReasonGVisorWorkerImageFlag,
+		},
+		{
+			name:          "gVisor pool whose workerImage is the flag's",
+			specImage:     flagImage,
+			wantImage:     flagImage,
+			wantCondition: metav1.ConditionFalse,
+			wantReason:    atev1alpha1.WorkerPoolReasonSpecWorkerImage,
+		},
+		{
+			name:          "micro-VM pool keeps its workerImage",
+			specImage:     "ateom-microvm:own",
+			sandboxClass:  atev1alpha1.SandboxClassMicroVM,
+			wantImage:     "ateom-microvm:own",
+			wantCondition: metav1.ConditionFalse,
+			wantReason:    atev1alpha1.WorkerPoolReasonSpecWorkerImage,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			scheme := runtime.NewScheme()
+			utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+			utilruntime.Must(atev1alpha1.AddToScheme(scheme))
+			wp := makeWorkerPool("test-image-override", "default", 1, tt.specImage)
+			wp.Spec.SandboxClass = tt.sandboxClass
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(wp).WithStatusSubresource(wp).Build()
+			recorder := events.NewFakeRecorder(10)
+			r := &WorkerPoolReconciler{Client: c, Scheme: scheme, GVisorWorkerImage: flagImage, Recorder: recorder}
+
+			// A second reconcile of the same override emits no second event.
+			for range 2 {
+				if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(wp)}); err != nil {
+					t.Fatalf("Reconcile: %v", err)
+				}
+			}
+
+			dep := &appsv1.Deployment{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(wp), dep); err != nil {
+				t.Fatalf("get Deployment: %v", err)
+			}
+			if got := dep.Spec.Template.Spec.Containers[0].Image; got != tt.wantImage {
+				t.Errorf("Deployment image = %q, want %q", got, tt.wantImage)
+			}
+			current := &atev1alpha1.WorkerPool{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(wp), current); err != nil {
+				t.Fatalf("get WorkerPool: %v", err)
+			}
+			if got := ptr.Deref(current.Status.WorkerImage, ""); got != tt.wantImage {
+				t.Errorf("status.workerImage = %q, want %q", got, tt.wantImage)
+			}
+			cond := meta.FindStatusCondition(current.Status.Conditions, atev1alpha1.WorkerPoolConditionWorkerImageOverridden)
+			if cond == nil || cond.Status != tt.wantCondition || cond.Reason != tt.wantReason {
+				t.Fatalf("WorkerImageOverridden = %+v, want %s/%s", cond, tt.wantCondition, tt.wantReason)
+			}
+
+			var got []string
+			for len(recorder.Events) > 0 {
+				got = append(got, <-recorder.Events)
+			}
+			if tt.wantCondition == metav1.ConditionFalse {
+				if len(got) != 0 {
+					t.Errorf("events = %q, want none", got)
+				}
+				return
+			}
+			want := fmt.Sprintf("Warning WorkerImageOverridden workers run %s from --gvisor-worker-image in place of spec.workerImage %s", flagImage, tt.specImage)
+			if !reflect.DeepEqual(got, []string{want}) {
+				t.Errorf("events = %q, want [%q]", got, want)
+			}
+		})
 	}
 }
