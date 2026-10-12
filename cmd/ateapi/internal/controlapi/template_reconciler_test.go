@@ -2141,3 +2141,161 @@ func TestReconcileOne_HealsRecordedUnexpectedState(t *testing.T) {
 		})
 	}
 }
+
+// trustBundleNamesCrash is the crash atelet's guard records on a golden actor
+// booted from a template whose trust-bundle projection names no bundle.
+const trustBundleNamesCrash = `resume failed: atelet Run: while populating system-info volume "egress-trust": while collecting volume contents: system-info projection "trust-bundle.pem": no trust bundle names given`
+
+// withTrustBundle gives the template a system-info volume projecting the trust
+// bundles names; with none, the projection names no bundle.
+func withTrustBundle(names ...string) func(*ateapipb.ActorTemplate) {
+	return func(tmpl *ateapipb.ActorTemplate) {
+		tmpl.Volumes = append(tmpl.Volumes, &ateapipb.Volume{
+			Name: "egress-trust",
+			SystemInfo: &ateapipb.SystemInfoVolumeSource{DataSources: []*ateapipb.SystemInfoDataSource{{
+				TrustBundle: &ateapipb.TrustBundleDataSource{Names: names, Path: "trust-bundle.pem"},
+			}}},
+		})
+	}
+}
+
+// recordedTrustBundleNamesFailure is the failure a release without the read of
+// a rewritten trust-bundle projection recorded for a golden actor the guard
+// crashed.
+func recordedTrustBundleNamesFailure() string {
+	return reasonGoldenActorCrashed + ": " + goldenActorCrashMessage(&ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID},
+		Status:   &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED, Crash: &ateapipb.ActorCrash{Message: trustBundleNamesCrash}},
+	})
+}
+
+func TestRetakeableTrustBundleNamesCrash(t *testing.T) {
+	crashed := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED, Crash: &ateapipb.ActorCrash{Message: trustBundleNamesCrash}}}
+	recorded := recordedTrustBundleNamesFailure()
+	tests := []struct {
+		name     string
+		template *ateapipb.ActorTemplate
+		want     bool
+	}{
+		{"the template names a bundle now", testTemplate(withTrustBundle("egress-mitm.ate.dev")), true},
+		{"a projection still names no bundle", testTemplate(withTrustBundle("egress-mitm.ate.dev"), withTrustBundle()), false},
+		{"the template projects no trust bundle", testTemplate(), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := retakeableGoldenCrash(tt.template, crashed); got != tt.want {
+				t.Errorf("retakeableGoldenCrash = %v, want %v", got, tt.want)
+			}
+			if got := retakeableGoldenFailure(tt.template, recorded); got != tt.want {
+				t.Errorf("retakeableGoldenFailure(%q) = %v, want %v", recorded, got, tt.want)
+			}
+			tt.template.Status.GoldenSnapshotStatus = &ateapipb.GoldenSnapshotStatus{ErrorMessage: recorded}
+			if got := goldenTemplateDone(tt.template); got == tt.want {
+				t.Errorf("goldenTemplateDone = %v, want %v", got, !tt.want)
+			}
+		})
+	}
+	// Only a golden actor crash is retried: another reason naming the same
+	// words stays terminal.
+	if retakeableGoldenFailure(testTemplate(withTrustBundle("egress-mitm.ate.dev")), reasonGoldenActorInvalid+": "+trustBundleNamesCrash) {
+		t.Errorf("retakeableGoldenFailure(%s with the guard's words) = true, want false", reasonGoldenActorInvalid)
+	}
+}
+
+// TestReconcileOne_HealsTrustBundleNamesCrash takes again a golden that a
+// release without the read of a rewritten trust-bundle projection failed: the
+// guard of atelet crashed its golden actor on the projection with no names,
+// and the store now reads the template with its one name. The resync queues
+// the template, the first pass clears the failure and releases the crashed
+// golden actor, and the next takes the golden, with no operator action; a
+// golden recorded beside the failure stays the template's until then. A
+// template that still names no bundle stays failed, and its boot is not
+// retried.
+func TestReconcileOne_HealsTrustBundleNamesCrash(t *testing.T) {
+	oldRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	newRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: retakenGoldenTagName(testTemplateUID)}
+	oldSnapshot := "s3://bucket/root/atespaces/ate-golden/tags/old-tag-uid"
+	newSnapshot := "s3://bucket/root/atespaces/ate-golden/actors/" + testTemplateUID + "/snapshots/snap-2"
+
+	for _, retake := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retake %v", retake), func(t *testing.T) {
+			opts := []func(*ateapipb.ActorTemplate){withTrustBundle("egress-mitm.ate.dev"), withFailedMessage(recordedTrustBundleNamesFailure())}
+			control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: trustBundleNamesCrash, snapshot: newSnapshot}
+			wantRef := oldRef
+			if retake {
+				opts = append(opts, withGoldenTagInLayout(snapshotlayout.SingleDurableTar))
+				control.tags = goldenTags(goldenTestTag(oldRef, oldSnapshot))
+				wantRef = newRef
+			}
+			st := newFakeTemplateStore(testTemplate(opts...))
+			r := newTestTemplateReconciler(st, control)
+			defer r.queue.ShutDown()
+
+			r.resync(t.Context())
+			if r.queue.Len() != 1 {
+				t.Fatal("resync did not queue the template failed on the trust-bundle guard")
+			}
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+				t.Fatal("first reconcileOne returned no error, want one for the backoff after releasing the crashed golden actor")
+			}
+			cleared := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if cleared.GetErrorMessage() != "" || goldenSnapshotDone(cleared) {
+				t.Errorf("status after the first pass = %v, want the failure cleared and the golden still to take", cleared)
+			}
+			if retake && !proto.Equal(cleared.GetGoldenTag(), oldRef) {
+				t.Errorf("golden tag after the first pass = %v, want the old golden %v kept", cleared.GetGoldenTag(), oldRef)
+			}
+			if control.exists {
+				t.Error("the crashed golden actor was not deleted")
+			}
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+				t.Fatalf("second reconcileOne: %v", err)
+			}
+			taken := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if !proto.Equal(taken.GetGoldenTag(), wantRef) || taken.GetSnapshotLayout() != snapshotlayout.Current || taken.GetErrorMessage() != "" {
+				t.Errorf("status after the take = %v, want %v in layout %d", taken, wantRef, snapshotlayout.Current)
+			}
+			if creates, _, _ := control.callCounts(); creates != 1 {
+				t.Errorf("CreateActor calls = %d, want 1 for the fresh golden actor", creates)
+			}
+		})
+	}
+
+	t.Run("a template that still names no bundle stays failed", func(t *testing.T) {
+		msg := recordedTrustBundleNamesFailure()
+		control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: trustBundleNamesCrash}
+		st := newFakeTemplateStore(testTemplate(withTrustBundle(), withFailedMessage(msg)))
+		r := newTestTemplateReconciler(st, control)
+		defer r.queue.ShutDown()
+
+		r.resync(t.Context())
+		if r.queue.Len() != 0 {
+			t.Error("resync queued a template whose trust-bundle projection still names no bundle")
+		}
+		if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+			t.Fatalf("reconcileOne: %v", err)
+		}
+		if got := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetErrorMessage(); got != msg {
+			t.Errorf("stored error message = %q, want %q kept", got, msg)
+		}
+		if !control.exists || len(control.deleteReqs) != 0 {
+			t.Error("the golden actor of a terminal failure was deleted")
+		}
+	})
+
+	t.Run("a boot the guard refuses fails the template", func(t *testing.T) {
+		control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED, resumeCrashes: true, goldenCrash: trustBundleNamesCrash}
+		st := newFakeTemplateStore(testTemplate(withTrustBundle()))
+		r := newTestTemplateReconciler(st, control)
+		if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+			t.Fatalf("reconcileOne: %v", err)
+		}
+		snapshotStatus := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+		if !strings.HasPrefix(snapshotStatus.GetErrorMessage(), reasonGoldenActorCrashed+": ") || !goldenSnapshotDone(snapshotStatus) {
+			t.Errorf("stored status = %v, want the terminal %s failure", snapshotStatus, reasonGoldenActorCrashed)
+		}
+		if !control.exists || len(control.deleteReqs) != 0 {
+			t.Error("the golden actor the guard crashed was deleted for a retry")
+		}
+	})
+}

@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/controlapi"
+	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/internal/snapshotlayout"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -260,6 +262,87 @@ func TestGoldenTagLifecycle(t *testing.T) {
 	_, err = tc.client.GetTag(ctx, &ateapipb.GetTagRequest{Tag: goldenRef})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("golden tag was not deleted: %v", err)
+	}
+}
+
+// TestGoldenTagHealsRewrittenTrustBundleRow takes again the golden of a
+// template whose row a release before the repeated trust-bundle names wrote and
+// a later release rewrote whole: its projection holds a path and no name, and
+// the golden's re-take is recorded failed on atelet's refusal of the empty
+// names. The reconciler clears the failure with no operator action, and the
+// golden actor boots with the one name such a projection can have held.
+func TestGoldenTagHealsRewrittenTrustBundleRow(t *testing.T) {
+	ns := namespaceForTest("golden-trust-bundle")
+	tc := setupTest(t, ns)
+	defer tc.cleanup()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	const bundleName = "egress-mitm.ate.dev"
+	tmpl := createTemplateWithContainersAndVolumes(t, tc, ns, []*ateapipb.Container{{
+		Name:         "main",
+		Image:        "main@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		Command:      []string{"/main"},
+		WakeupProbe:  &ateapipb.ContainerWakeupProbe{HttpGet: &ateapipb.HTTPGetAction{Path: "/", Port: 8080}, TimeoutSeconds: 10},
+		VolumeMounts: []*ateapipb.VolumeMount{{Name: "egress-trust", MountPath: "/etc/ate/egress-trust"}},
+	}}, []*ateapipb.Volume{{
+		Name: "egress-trust",
+		SystemInfo: &ateapipb.SystemInfoVolumeSource{DataSources: []*ateapipb.SystemInfoDataSource{{
+			TrustBundle: &ateapipb.TrustBundleDataSource{Names: []string{bundleName}, Path: "trust-bundle.pem"},
+		}}},
+	}})
+	createWorkerPod(t, tc, ns, "worker-1", "node1", "pool1")
+	templateRef := resources.ActorTemplateRefFromActorTemplate(tmpl)
+	replaced := tmpl.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
+
+	// The row as the rewrite left it, written whole by the store's own update:
+	// the projection without its name, and the golden, in a layout before the
+	// current one, failed on its re-take.
+	recorded := "GoldenActorCrashed: actor " + resources.GoldenActorAtespace + "/" + tmpl.GetMetadata().GetUid() +
+		` crashed: resume failed: atelet Run: while populating system-info volume "egress-trust": while collecting volume contents: system-info projection "trust-bundle.pem": no trust bundle names given`
+	if _, err := tc.persistence.UpdateActorTemplate(ctx, templateRef, store.PreconditionFrom(tmpl), func(dbTemplate *ateapipb.ActorTemplate) error {
+		dbTemplate.GetVolumes()[0].GetSystemInfo().GetDataSources()[0].GetTrustBundle().Names = nil
+		dbTemplate.Status.GoldenSnapshotStatus.SnapshotLayout = snapshotlayout.SingleDurableTar
+		dbTemplate.Status.GoldenSnapshotStatus.ErrorMessage = recorded
+		return nil
+	}); err != nil {
+		t.Fatalf("writing the rewritten row: %v", err)
+	}
+
+	controlapi.NewActorTemplateReconciler(tc.persistence, tc.service, 7*time.Second).Start(ctx)
+	var current *ateapipb.ActorTemplate
+	err := wait.PollUntilContextTimeout(ctx, 50*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		got, err := tc.client.GetActorTemplate(ctx, &ateapipb.GetActorTemplateRequest{ActorTemplate: templateRef.ToObjectRef()})
+		if err != nil {
+			return false, err
+		}
+		current = got
+		golden := current.GetStatus().GetGoldenSnapshotStatus()
+		return golden.GetSnapshotLayout() == snapshotlayout.Current && golden.GetErrorMessage() == "", nil
+	})
+	if err != nil {
+		t.Fatalf("waiting for the golden to be taken again: %v (status %v)", err, current.GetStatus())
+	}
+	if golden := current.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag(); golden.GetName() == replaced.GetName() {
+		t.Errorf("golden tag = %v, want the one taken again in place of %v", golden, replaced)
+	}
+
+	tc.fakeAtelet.Lock.Lock()
+	run := tc.fakeAtelet.RunRequest
+	tc.fakeAtelet.Lock.Unlock()
+	var booted [][]string
+	for _, vol := range run.GetSpec().GetVolumes() {
+		for _, dataSource := range vol.GetSystemInfo().GetDataSources() {
+			if tb := dataSource.GetTrustBundle(); tb != nil {
+				booted = append(booted, tb.GetNames())
+			}
+		}
+	}
+	if diff := cmp.Diff([][]string{{bundleName}}, booted); diff != "" {
+		t.Errorf("trust bundle names the golden actor booted with (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{bundleName}, current.GetVolumes()[0].GetSystemInfo().GetDataSources()[0].GetTrustBundle().GetNames()); diff != "" {
+		t.Errorf("trust bundle names GetActorTemplate answers (-want +got):\n%s", diff)
 	}
 }
 
