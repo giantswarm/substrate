@@ -64,18 +64,29 @@ func TestTransientCheckpointCrash(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: tt.state, Crash: &ateapipb.ActorCrash{Message: tt.crash}}}
-			if tt.snapshot {
-				actor.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/team-a/a/snap-1"}
-			}
+			actor := crashedWithSnapshot(t, tt.state, tt.crash, tt.snapshot)
 			if got := transientCheckpointCrash(actor); got != tt.want {
 				t.Errorf("transientCheckpointCrash(%v, %q, snapshot %v) = %v, want %v", tt.state, tt.crash, tt.snapshot, got, tt.want)
 			}
-			if got := transientCrash(actor); got != tt.want && !transientResumeCrash(actor) {
-				t.Errorf("transientCrash = %v, want %v", got, tt.want)
+			if got, want := transientCrash(actor), tt.want || transientResumeCrash(actor) || transientWorkerLossCrash(actor); got != want {
+				t.Errorf("transientCrash = %v, want %v", got, want)
 			}
 		})
 	}
+}
+
+// crashedWithSnapshot is an actor in state with crash, holding an external
+// snapshot of its own if snapshot is set.
+func crashedWithSnapshot(t *testing.T, state ateapipb.ActorState, crash string, snapshot bool) *ateapipb.Actor {
+	t.Helper()
+	actor := &ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "a", Uid: someActorUID},
+		Status:   &ateapipb.ActorStatus{State: state, Crash: &ateapipb.ActorCrash{Message: crash}},
+	}
+	if snapshot {
+		actor.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: someActorSnapshotURI(t, testStorageLocation, "team-a", "snap-1")}
+	}
+	return actor
 }
 
 // checkpointFixture is a RUNNING actor team-a/id1, resumed from its durable
