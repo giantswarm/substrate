@@ -147,7 +147,21 @@ atelet:
     # it reads at every pass, so a changed list restarts no atelet pod.
     pinnedImages: []
 
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
 ateController:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
   gvisorWorker:
     # Run every gVisor WorkerPool on this release's ateom-gvisor image
     # (image.registry, image.repository, image.tag or the chart's appVersion)
@@ -167,35 +181,6 @@ ateApi:
       cpu: "2"
       memory: 1Gi
 
-ateController:
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: "1"
-      memory: 512Mi
-
-atenetRouter:
-  agentgateway:
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: "2"
-        memory: 1Gi
-
-atenetEgress:
-  agentgateway:
-    resources:
-      requests:
-        cpu: 50m
-        memory: 128Mi
-      limits:
-        cpu: "2"
-        memory: 1Gi
-
 # Kubernetes Secret provider and AGW HTTP/HTTPS credential injection.
 # Includes get-only Secret RBAC. HTTPS requires egress-mitm-ca-pool and actor trust.
 # The provider also mints Google access tokens from service account key Secrets
@@ -205,6 +190,13 @@ credentialProvider:
   namespacePolicies: []
   # - atespace: team-a
   #   allowedNamespaces: [team-a-secrets]
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
   # Further providers the egress gateway resolves ate-secret:// URIs through,
   # by URI authority (a lowercase DNS name), beside the bundled k8s.io
   # one. host is <service>.<namespace>.svc:<port>: the gateway verifies the
@@ -219,6 +211,14 @@ credentialProvider:
   #   host: kagent-credentials.kagent.svc:50051
 
 atenetRouter:
+  agentgateway:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: "2"
+        memory: 1Gi
   # Request parking on the actor routes (agentgateway's substrateIngress
   # requestParking): a request to a suspended actor is held while the actor
   # resumes, for at most `budget`. The budget has to cover a cold restore --

@@ -78,12 +78,6 @@ Plaintext HTTP URL that clients use to reach atenet-router.
 {{- printf "http://%s.%s.svc:80" (include "substrate.fullname" (list "atenet-router" .)) .Release.Namespace -}}
 {{- end -}}
 
-{{- define "substrate.postgres.readWriteSecretName" -}}
-{{- .Values.postgres.readWriteConnectionStringSecretRef.name -}}
-{{- end -}}
-
-{{- define "substrate.postgres.ownerSecretName" -}}
-{{- .Values.postgres.ownerConnectionStringSecretRef.name -}}
 {{/* PostgreSQL connection Secret, when configured. */}}
 {{- define "substrate.postgres.connectionStringSecretEnabled" -}}
 {{- $ref := .Values.postgres.connectionStringSecretRef | default dict -}}
@@ -126,9 +120,6 @@ Usage:
 {{- end }}
 {{- range $signal := list "traces" "metrics" "logs" }}
 {{- $cfg := index $otel $signal }}
-{{- if not $cfg.enabled }}
-{{- /* Request no OTLP export with the SDK exporter name "none".
-       Actor events still go to stdout. */}}
 {{- if not (include "substrate.otel.signalEndpoint" (list $signal $)) }}
 {{- /* "none" is the SDK's own exporter name for "export nothing": a disabled
        signal, or one without an endpoint, would otherwise export to the SDK

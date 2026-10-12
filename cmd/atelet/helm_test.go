@@ -79,7 +79,8 @@ providers: []`
 				if err := yaml.Unmarshal([]byte(doc), &cm); err != nil {
 					t.Fatal(err)
 				}
-				if cm.Kind == "ConfigMap" {
+				// The line's chart also renders atelet's pinned-images ConfigMap.
+				if cm.Kind == "ConfigMap" && cm.Name != "atelet-pinned-images" {
 					configMap = &cm
 				}
 			}

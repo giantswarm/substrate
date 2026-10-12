@@ -21,6 +21,7 @@ limitations under the License.
 {{- if and (not .Values.postgres.enabled) (empty .Values.postgres.readWriteConnectionString) (not $secretEnabled) }}
 {{- fail "postgres.readWriteConnectionString is required when postgres.enabled=false, unless postgres.connectionStringSecretRef names a Secret" }}
 {{- end }}
+{{- $readWriteDSN := .Values.postgres.readWriteConnectionString | default (printf "postgresql://postgres@%s.%s.svc:5432/atepg?sslmode=verify-full&sslrootcert=/run/servicedns.podcert.ate.dev/trust-bundle.pem&sslcert=/run/podidentity.podcert.ate.dev/credential-bundle.pem&sslkey=/run/podidentity.podcert.ate.dev/credential-bundle.pem" (include "substrate.fullname" (list "postgres" .)) .Release.Namespace) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

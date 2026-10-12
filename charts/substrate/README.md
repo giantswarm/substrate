@@ -2,29 +2,17 @@
 
 Helm chart for installing Agent Substrate.
 
-The chart uses mTLS and requires a prepared PostgreSQL database. It requires the
+The chart uses mTLS and PostgreSQL by default. It requires the
 `ClusterTrustBundle`, `ClusterTrustBundleProjection`, and
 `PodCertificateRequest` feature gates plus the `certificates.k8s.io/v1beta1`
 API.
-
-Install the [certificate controller](../substrate-podcert/README.md) as a separate
-release before preparing PostgreSQL or installing this chart. One controller
-serves the cluster; the application chart does not deploy it.
 
 ```bash
 # CRDs
 helm upgrade --install substrate-crds ./charts/substrate-crds
 
-# Create CA pools, then install their certificate controller
-go run ./cmd/ate-setup create podcertificate-controller-cas
-helm upgrade --install substrate-podcert ./charts/substrate-podcert \
-  --namespace podcertificate-controller-system --create-namespace --wait
-
-# Install Substrate after creating the database identities and Secrets
-helm upgrade --install substrate ./charts/substrate \
-  --namespace ate-system --create-namespace \
-  --set postgres.readWriteConnectionStringSecretRef.name=substrate-postgres-readwrite \
-  --set postgres.ownerConnectionStringSecretRef.name=substrate-postgres-owner
+# Install Substrate
+helm upgrade --install substrate ./charts/substrate
 ```
 
 By default, component images are pulled from `ghcr.io/kagent-dev/substrate`
@@ -86,7 +74,7 @@ See `values.yaml` for the full set; the important keys:
 | `otel.traces.samplingRatio` | `0.01` | Fraction of parentless requests that start a trace, applied to the Go components and the router |
 | `otel.metrics.enabled` | `true` | Set to `false` to stop the Go components' OTLP metrics push (`OTEL_METRICS_EXPORTER=none`); their Prometheus endpoints stay |
 | `otel.metrics.endpoint` | `""` | OTLP endpoint for metrics, overriding `otel.endpoint` |
-| `otel.logs.enabled` | `true` | Enable OTLP actor events from ateapi and the ateoms, plus the router access log. Actor events go to stdout when OTLP logs are disabled |
+| `otel.logs.enabled` | `true` | Set to `false` to export no logs. Gates both OTLP log sources: ateapi's actor lifecycle events and the router access log |
 | `otel.logs.endpoint` | `""` | OTLP endpoint for logs, overriding `otel.endpoint` |
 | `atenetEgress.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `agentgateway` container, as the pod spec takes them; the default bounds the ephemeral storage only (the container writes nothing but its logs), CPU and memory are the operator's to size; `null` renders none |
 | `atenetEgress.extProc.resources` | ephemeral-storage requests `16Mi`, limits `256Mi` | Resources of the egress gateway's `ext-proc` container, the same way |

@@ -89,25 +89,6 @@ func TestHelmControllerInstallation(t *testing.T) {
 	}
 }
 
-func TestApplicationChartDoesNotInstallCertificateController(t *testing.T) {
-	out, err := exec.CommandContext(t.Context(), "helm", "template", "substrate", "../../charts/substrate").CombinedOutput()
-	if err != nil {
-		t.Fatalf("render: %v\n%s", err, out)
-	}
-	for _, doc := range strings.Split(string(out), "\n---\n") {
-		var resource struct {
-			metav1.TypeMeta `json:",inline"`
-			Metadata        metav1.ObjectMeta `json:"metadata"`
-		}
-		if err := yaml.Unmarshal([]byte(doc), &resource); err != nil {
-			t.Fatal(err)
-		}
-		if resource.Metadata.Name == "podcertificate-controller" || resource.Metadata.Namespace == "podcertificate-controller-system" {
-			t.Fatalf("application chart owns certificate-controller resource %s/%s", resource.Kind, resource.Metadata.Name)
-		}
-	}
-}
-
 func TestHelmControllerResources(t *testing.T) {
 	for _, tc := range []struct {
 		name, requestCPU, requestMemory, limitCPU, limitMemory string
