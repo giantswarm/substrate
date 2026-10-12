@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [agent-substrate/substrate#2527](https://github.com/agent-substrate/substrate/pull/2527), open, from the branch `upstream/egress-refusal-counter` on upstream `main` @ `9e7d01ef`
-- **Our commit:** the fork's cherry-pick of the upstream commit, resolved against the line's `validateActor` (RUNNING or RESUMING) and `handleRequest`, which has no WebSocket refusal
+- **Our commit:** [#351](https://github.com/giantswarm/substrate/pull/351): the fork's cherry-pick of the upstream commit, resolved against the line's `validateActor` (RUNNING or RESUMING) and `handleRequest`, which has no WebSocket refusal
 
 ## Change
 
