@@ -79,7 +79,7 @@ func (f *fakeTransitionControl) PauseActor(_ context.Context, req *ateapipb.Paus
 	return &ateapipb.PauseActorResponse{}, f.err
 }
 
-func (f *fakeTransitionControl) RecoverTransientResumeCrash(_ context.Context, ref resources.ActorRef) (bool, error) {
+func (f *fakeTransitionControl) RecoverTransientCrash(_ context.Context, ref resources.ActorRef) (bool, error) {
 	f.recovered = append(f.recovered, ref.Name)
 	return f.err == nil, f.err
 }
@@ -102,6 +102,12 @@ func crashedActor(name, message string, age time.Duration) *ateapipb.Actor {
 	return actor
 }
 
+// withSnapshot gives the actor an external snapshot to return to.
+func withSnapshot(actor *ateapipb.Actor) *ateapipb.Actor {
+	actor.Status.ExternalSnapshot = &ateapipb.ExternalSnapshot{SnapshotUri: "gs://bucket/team-a/" + actor.GetMetadata().GetName() + "/snap-1"}
+	return actor
+}
+
 func newTestTransitionReconciler(st actorTransitionStore, control actorTransitionControl) *ActorTransitionReconciler {
 	r := NewActorTransitionReconciler(st, control, time.Hour, transitionDeadline)
 	r.now = func() time.Time { return transitionNow }
@@ -120,11 +126,14 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		transitionActor("running", ateapipb.ActorState_ACTOR_STATE_RUNNING, time.Hour),
 		transitionActor("resuming", ateapipb.ActorState_ACTOR_STATE_RESUMING, time.Hour),
 		transitionActor("suspended", ateapipb.ActorState_ACTOR_STATE_SUSPENDED, time.Hour),
-		// A resume crash a rolling worker pool caused is queued at once, a
-		// crash for another cause or by another operation never.
+		// A resume or checkpoint crash a rolling worker pool caused is queued
+		// at once, a crash for another cause, or a checkpoint crash with no
+		// snapshot to return to, never.
 		crashedActor("resume-crashed-draining", "resume failed: "+crashMessageWorkerDraining, time.Second),
 		crashedActor("resume-crashed-manifest", "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", time.Hour),
 		crashedActor("suspend-crashed-pod-gone", "suspend failed: "+crashMessageWorkerPodGone, time.Hour),
+		withSnapshot(crashedActor("suspend-crashed-pod-gone-snapshot", "suspend failed: "+crashMessageWorkerPodGone, time.Second)),
+		withSnapshot(crashedActor("suspend-crashed-disk-full", "suspend failed: atelet Checkpoint: no space left on device", time.Hour)),
 	}}
 	r := newTestTransitionReconciler(st, &fakeTransitionControl{})
 	defer r.queue.ShutDown()
@@ -138,7 +147,7 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		r.queue.Done(ref)
 	}
 	slices.Sort(got)
-	want := []string{"pausing-orphaned", "resume-crashed-draining", "suspending-orphaned"}
+	want := []string{"pausing-orphaned", "resume-crashed-draining", "suspend-crashed-pod-gone-snapshot", "suspending-orphaned"}
 	if !slices.Equal(got, want) {
 		t.Errorf("queued %v, want %v", got, want)
 	}
@@ -179,6 +188,15 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 			wantRecovered: []string{"a"},
 		},
 		{
+			name:          "crashed by a checkpoint a rolling worker pool interrupted",
+			actor:         withSnapshot(crashedActor("a", checkpointCutCrash, time.Second)),
+			wantRecovered: []string{"a"},
+		},
+		{
+			name:  "crashed by a checkpoint with no snapshot to return to",
+			actor: crashedActor("a", checkpointCutCrash, time.Second),
+		},
+		{
 			name:  "crashed by a resume for another cause",
 			actor: crashedActor("a", "resume failed: atelet Run: no runnable process in container", time.Hour),
 		},
@@ -199,7 +217,7 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 				t.Errorf("PauseActor called for %v, want %v", control.paused, tt.wantPaused)
 			}
 			if !slices.Equal(control.recovered, tt.wantRecovered) {
-				t.Errorf("RecoverTransientResumeCrash called for %v, want %v", control.recovered, tt.wantRecovered)
+				t.Errorf("RecoverTransientCrash called for %v, want %v", control.recovered, tt.wantRecovered)
 			}
 		})
 	}

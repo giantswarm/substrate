@@ -46,7 +46,9 @@ const (
 // away, atelet or ateom on it not reachable yet) crashes the actor only for
 // the moment: the actor is returned to the snapshot it was resuming from, its
 // worker freed, and the resume tried again with backoff on another worker,
-// waiting for one while the rolling pool has none free. A
+// waiting for one while the rolling pool has none free. An actor a suspend
+// or a pause left crashed for such a cause (transientCheckpointCrash) is
+// returned to its external snapshot and resumed from it the same way. A
 // call whose attempts or context run out answers Unavailable naming the crash,
 // also while the actor's recovery is unfinished: the next attempt, or the
 // ActorTransitionReconciler, returns it to rest, so the caller's retry resumes
@@ -62,14 +64,14 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 		if err == nil {
 			return actor, resumed, nil
 		}
-		transientCrash, _, rerr := w.recoverTransientResumeCrash(ctx, actorRef)
+		metCrash, _, rerr := w.recoverTransientCrash(ctx, actorRef)
 		switch {
-		case transientCrash != "":
-			crash = transientCrash
+		case metCrash != "":
+			crash = metCrash
 			if rerr != nil {
 				// The worker going away is still being torn down; the next
 				// attempt recovers the actor once it is released.
-				slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient resume crash; retrying",
+				slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient crash; retrying",
 					append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
 			}
 		case crash != "" && status.Code(err) == codes.ResourceExhausted:
@@ -94,30 +96,41 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	}
 }
 
-// recoverTransientResumeCrash returns an actor that a resume crashed for a
-// transient cause (transientResumeCrash) to the state it was resumed from:
-// PAUSED while it holds its pause snapshot, SUSPENDED otherwise, with its
-// worker torn down and freed and its crash cleared. Unlike RevertActor it keeps
-// the pause snapshot, which the resume was restoring. It reports the crash
-// message whenever the actor was found crashed for a transient cause, even
-// when the recovery then fails or finds it recovered already, and whether this
-// call recovered it; an actor in any other state is left alone. Idempotent:
-// the teardown steps are, and the state change is one update under the actor
-// lease.
-func (w *ActorWorkflow) recoverTransientResumeCrash(ctx context.Context, actorRef resources.ActorRef) (crash string, recovered bool, err error) {
+// recoverTransientCrash returns an actor that a rolling worker pool crashed
+// (transientCrash) to a snapshot, with its worker torn down and freed and its
+// crash cleared:
+//
+//   - one a resume crashed (transientResumeCrash) to the state it was resumed
+//     from: PAUSED while it holds its pause snapshot, SUSPENDED otherwise.
+//     Unlike RevertActor it keeps the pause snapshot, which the resume was
+//     restoring;
+//   - one a suspend or a pause crashed (transientCheckpointCrash) to its
+//     external snapshot, SUSPENDED, as RevertActor does: the half-written
+//     snapshot is discarded and the pause snapshot dropped.
+//
+// It reports the crash message whenever the actor was found crashed for a
+// transient cause, even when the recovery then fails or finds it recovered
+// already, and whether this call recovered it; an actor in any other state is
+// left alone. Idempotent: the teardown steps are, and the state change is one
+// update under the actor lease.
+func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef resources.ActorRef) (crash string, recovered bool, err error) {
 	// Read beyond the caller's context, as the crash itself is recorded, so a
-	// resume whose call ends under its crash still answers for it.
+	// call that ends under its crash still answers for it.
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), crashRecordTimeout)
 	actor, err := w.store.GetActor(readCtx, actorRef)
 	cancel()
-	if err != nil || !transientResumeCrash(actor) {
-		// A missing actor or a failed read leaves the resume's own error to
+	if err != nil || !transientCrash(actor) {
+		// A missing actor or a failed read leaves the call's own error to
 		// the caller.
 		return "", false, nil
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
+	op := ateattr.OperationResume
+	if transientCheckpointCrash(actor) {
+		op = ateattr.OperationRevert
+	}
 
-	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, ateattr.OperationResume)
+	leaseCtx, lease, err := w.acquireActorLease(ctx, actorRef, op)
 	if err != nil {
 		return crash, false, err
 	}
@@ -127,10 +140,11 @@ func (w *ActorWorkflow) recoverTransientResumeCrash(ctx context.Context, actorRe
 	if err != nil {
 		return crash, false, fmt.Errorf("while loading actor to recover: %w", err)
 	}
-	if !transientResumeCrash(actor) {
+	if !transientCrash(actor) {
 		return crash, false, nil
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
+	fromCheckpoint := transientCheckpointCrash(actor)
 
 	actorTemplate, err := resolveActorTemplate(leaseCtx, w.store, actor)
 	if err != nil && !errors.Is(err, errActorTemplateNotFound) {
@@ -141,24 +155,57 @@ func (w *ActorWorkflow) recoverTransientResumeCrash(ctx context.Context, actorRe
 	if err := w.ensureWorkerDiscarded(leaseCtx, actorRef, actor, actorTemplate); err != nil {
 		return crash, false, fmt.Errorf("while freeing the worker of actor %s: %w", actorRef, err)
 	}
+	if fromCheckpoint {
+		if err := w.ensureInProgressSnapshotDiscarded(leaseCtx, actor); err != nil {
+			return crash, false, fmt.Errorf("while discarding the snapshot actor %s was taking: %w", actorRef, err)
+		}
+	}
 
 	rest := ateapipb.ActorState_ACTOR_STATE_SUSPENDED
-	if actor.GetStatus().GetLocalSnapshot() != nil {
+	if !fromCheckpoint && actor.GetStatus().GetLocalSnapshot() != nil {
 		rest = ateapipb.ActorState_ACTOR_STATE_PAUSED
 	}
 	stored, err := w.store.UpdateActor(leaseCtx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = rest
 		toUpdate.Status.WorkerAssignment = nil
 		toUpdate.Status.Crash = nil
+		if fromCheckpoint {
+			toUpdate.Status.InProgressSnapshotUri = ""
+			toUpdate.Status.InProgressLocalSnapshotName = ""
+			toUpdate.Status.LocalSnapshot = nil
+		}
 		return nil
 	})
 	if err != nil {
 		return crash, false, fmt.Errorf("while returning actor %s to %s: %w", actorRef, rest, err)
 	}
-	slog.LogAttrs(leaseCtx, slog.LevelInfo, "Recovered actor from a transient resume crash",
+	slog.LogAttrs(leaseCtx, slog.LevelInfo, "Recovered actor from a transient crash",
 		append(ateattr.ActorRefLogAttrs(actorRef),
 			slog.String(string(ateattr.ActorStateKey), ateattr.ActorStateValue(rest)),
+			slog.String("snapshot_uri", stored.GetStatus().GetExternalSnapshot().GetSnapshotUri()),
 			slog.String("crash", crash))...)
-	logActorStateChanged(leaseCtx, stored, ateattr.OperationResume)
+	logActorStateChanged(leaseCtx, stored, op)
+	if fromCheckpoint {
+		// The dropped pause takes its durable copy along, as a revert's does.
+		w.releaseDurablePauseCopy(leaseCtx, actor, stored)
+	}
 	return crash, true, nil
+}
+
+// checkpointInterrupted answers a suspend or a pause that failed with err: a
+// checkpoint a rolling worker pool interrupted (transientCheckpointCrash)
+// returns the actor to its external snapshot and answers Unavailable naming
+// the crash, also while the recovery is unfinished (the caller's retry or the
+// ActorTransitionReconciler finishes it), so the caller's retry finds the
+// actor at rest. Any other failure is returned as it is.
+func (w *ActorWorkflow) checkpointInterrupted(ctx context.Context, actorRef resources.ActorRef, op string, err error) error {
+	crash, _, rerr := w.recoverTransientCrash(ctx, actorRef)
+	if crash == "" {
+		return err
+	}
+	if rerr != nil {
+		slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient checkpoint crash; the next call or the reconciler recovers it",
+			append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
+	}
+	return status.Errorf(codes.Unavailable, "%s of actor %s was interrupted by its worker (%s); the actor returns to its last durable snapshot, suspended", op, actorRef, crash)
 }
