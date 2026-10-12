@@ -70,8 +70,8 @@ func TestTransientCheckpointCrash(t *testing.T) {
 			if got := transientCheckpointCrash(actor); got != tt.want {
 				t.Errorf("transientCheckpointCrash(%v, %q, snapshot %v) = %v, want %v", tt.state, tt.crash, tt.snapshot, got, tt.want)
 			}
-			if got := transientCrash(actor); got != tt.want && !transientResumeCrash(actor) {
-				t.Errorf("transientCrash = %v, want %v", got, tt.want)
+			if got, want := transientCrash(actor), tt.want || transientResumeCrash(actor) || transientWorkerLossCrash(actor); got != want {
+				t.Errorf("transientCrash = %v, want %v", got, want)
 			}
 		})
 	}

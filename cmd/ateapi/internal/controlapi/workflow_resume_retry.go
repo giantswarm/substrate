@@ -47,8 +47,9 @@ const (
 // the moment: the actor is returned to the snapshot it was resuming from, its
 // worker freed, and the resume tried again with backoff on another worker,
 // waiting for one while the rolling pool has none free. An actor a suspend
-// or a pause left crashed for such a cause (transientCheckpointCrash) is
-// returned to its external snapshot and resumed from it the same way, and one
+// or a pause left crashed for such a cause, or one whose worker went away
+// under it with no operation in flight (lostWorkloadCrash), is returned to its
+// external snapshot and resumed from it the same way, and one
 // a resume left crashed on a trust-bundle projection with no names
 // (outlivedResumeCrash) to the snapshot it was resuming from, once its
 // template names a bundle in every one. A call whose attempts or context run
@@ -107,9 +108,10 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 //     state it was resumed from: PAUSED while it holds its pause snapshot, SUSPENDED otherwise.
 //     Unlike RevertActor it keeps the pause snapshot, which the resume was
 //     restoring;
-//   - one a suspend or a pause crashed (transientCheckpointCrash) to its
-//     external snapshot, SUSPENDED, as RevertActor does: the half-written
-//     snapshot is discarded and the pause snapshot dropped.
+//   - one whose running workload the crash took (lostWorkloadCrash: a
+//     suspend or a pause interrupted, or a worker lost with no operation in
+//     flight) to its external snapshot, SUSPENDED, as RevertActor does: the
+//     half-written snapshot is discarded and the pause snapshot dropped.
 //
 // It reports the crash message whenever the actor was found crashed for a
 // transient cause, even when the recovery then fails or finds it recovered
@@ -133,7 +135,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
 	op := ateattr.OperationResume
-	if transientCheckpointCrash(actor) {
+	if lostWorkloadCrash(actor) {
 		op = ateattr.OperationRevert
 	}
 
@@ -151,7 +153,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 		return crash, false, err
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
-	fromCheckpoint := transientCheckpointCrash(actor)
+	lostWorkload := lostWorkloadCrash(actor)
 
 	actorTemplate, err := resolveActorTemplate(leaseCtx, w.store, actor)
 	if err != nil && !errors.Is(err, errActorTemplateNotFound) {
@@ -162,21 +164,21 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	if err := w.ensureWorkerDiscarded(leaseCtx, actorRef, actor, actorTemplate); err != nil {
 		return crash, false, fmt.Errorf("while freeing the worker of actor %s: %w", actorRef, err)
 	}
-	if fromCheckpoint {
+	if lostWorkload {
 		if err := w.ensureInProgressSnapshotDiscarded(leaseCtx, actor); err != nil {
 			return crash, false, fmt.Errorf("while discarding the snapshot actor %s was taking: %w", actorRef, err)
 		}
 	}
 
 	rest := ateapipb.ActorState_ACTOR_STATE_SUSPENDED
-	if !fromCheckpoint && actor.GetStatus().GetLocalSnapshot() != nil {
+	if !lostWorkload && actor.GetStatus().GetLocalSnapshot() != nil {
 		rest = ateapipb.ActorState_ACTOR_STATE_PAUSED
 	}
 	stored, err := w.store.UpdateActor(leaseCtx, actorRef, store.PreconditionFrom(actor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = rest
 		toUpdate.Status.WorkerAssignment = nil
 		toUpdate.Status.Crash = nil
-		if fromCheckpoint {
+		if lostWorkload {
 			toUpdate.Status.InProgressSnapshotUri = ""
 			toUpdate.Status.InProgressLocalSnapshotName = ""
 			toUpdate.Status.LocalSnapshot = nil
@@ -192,7 +194,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 			slog.String("snapshot_uri", stored.GetStatus().GetExternalSnapshot().GetSnapshotUri()),
 			slog.String("crash", crash))...)
 	logActorStateChanged(leaseCtx, stored, op)
-	if fromCheckpoint {
+	if lostWorkload {
 		// The dropped pause takes its durable copy along, as a revert's does.
 		w.releaseDurablePauseCopy(leaseCtx, actor, stored)
 	}

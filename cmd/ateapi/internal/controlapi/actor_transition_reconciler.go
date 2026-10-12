@@ -76,7 +76,8 @@ type actorTransitionControl interface {
 // trust-bundle projection with no names once its template, as the store reads
 // it now, names a bundle in every one (outlivedResumeCrash). An Actor a resume crashed ends
 // SUSPENDED or PAUSED on the snapshot the resume was restoring; one a suspend
-// or a pause crashed ends SUSPENDED on its external snapshot. Its client
+// or a pause crashed, or one whose worker went away under it with no
+// operation in flight, ends SUSPENDED on its external snapshot. Its client
 // resumes it from there.
 //
 // TODO: Every ateapi replica lists every Actor, with only the actor lease

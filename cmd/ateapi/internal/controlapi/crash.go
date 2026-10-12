@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
@@ -161,12 +162,39 @@ func transientCheckpointCrash(actor *ateapipb.Actor) bool {
 	return false
 }
 
+// workerLossCrashMessages are the crashes recorded with no operation in flight
+// for an actor whose workload went with its worker: the worker's pod went
+// away, or its ateom restarted, under the running workload.
+var workerLossCrashMessages = []string{
+	crashMessageWorkerPodGone,
+	crashMessageAteomRestarted,
+}
+
+// transientWorkerLossCrash reports whether the actor is CRASHED with no
+// operation in flight because its worker went away under the running
+// workload, and holds an external snapshot. As for transientCheckpointCrash,
+// the workload went with its worker, so that snapshot is the latest state of
+// the actor that survives.
+func transientWorkerLossCrash(actor *ateapipb.Actor) bool {
+	return actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED &&
+		actor.GetStatus().GetExternalSnapshot().GetSnapshotUri() != "" &&
+		slices.Contains(workerLossCrashMessages, actor.GetStatus().GetCrash().GetMessage())
+}
+
+// lostWorkloadCrash reports whether the actor is CRASHED for a transient cause
+// that took its running workload, and returns it to its external snapshot: a
+// checkpoint a rolling worker pool interrupted (transientCheckpointCrash) or a
+// worker lost with no operation in flight (transientWorkerLossCrash).
+func lostWorkloadCrash(actor *ateapipb.Actor) bool {
+	return transientCheckpointCrash(actor) || transientWorkerLossCrash(actor)
+}
+
 // transientCrash reports whether the actor is CRASHED for a transient cause
-// that returns it to a snapshot: a resume (transientResumeCrash) or a
-// checkpoint (transientCheckpointCrash) that a rolling worker pool
-// interrupted.
+// that returns it to a snapshot: a resume (transientResumeCrash) that a
+// rolling worker pool interrupted, or a running workload it took
+// (lostWorkloadCrash).
 func transientCrash(actor *ateapipb.Actor) bool {
-	return transientResumeCrash(actor) || transientCheckpointCrash(actor)
+	return transientResumeCrash(actor) || lostWorkloadCrash(actor)
 }
 
 // recoveryCandidate reports whether the actor is CRASHED for a cause that may
