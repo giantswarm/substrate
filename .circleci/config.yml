@@ -22,11 +22,11 @@
 # signed with the organisation's CircleCI identity, with provenance and an
 # SBOM, the index annotated with the upstream pin. The version is the orb's
 # (gitsemver, from the git tags) — nothing here computes one. Every own image
-# is scanned before the charts that reference it are pushed: substrate-crds
-# and substrate with their image defaults stamped to this registry, including
-# the agentgateway image atenet-router and atenet-egress run, which comes from
-# the Giant Swarm line of agentgateway (pinned below) instead of upstream's
-# build. Every pull request branch builds the six images without pushing,
+# is scanned before the charts that reference it are pushed: substrate-crds,
+# substrate and substrate-podcert with their image defaults stamped to this
+# registry, including the agentgateway image atenet-router and atenet-egress
+# run, which comes from the Giant Swarm line of agentgateway (pinned below)
+# instead of upstream's build. Every pull request branch builds the six images without pushing,
 # so a Dockerfile regression surfaces on the pull request; a maintenance
 # branch (release-X.Y) is built by its tag pipeline alone. Hand-written: the
 # repository carries upstream's workflows and its own, nothing
@@ -143,25 +143,29 @@ jobs:
               echo "ERROR: ${values} images.agentgateway differs from the agentgateway-image parameter (${AGENTGATEWAY_IMAGE}); move both together" >&2
               exit 1
             fi
-            # image.registry is the host and image.repository the path (the
-            # chart's registry/repository split); the component name follows.
-            sed -i \
-              -e "s|^  registry: ghcr.io$|  registry: ${REGISTRY%%/*}|" \
-              -e "s|^  repository: kagent-dev/substrate$|  repository: ${REGISTRY#*/}|" \
-              -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
-              -e "s|^  agentgateway: .*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" \
-              "${values}"
-            grep -q "^  registry: ${REGISTRY%%/*}$" "${values}"
-            grep -q "^  repository: ${REGISTRY#*/}$" "${values}"
-            grep -q "^  tag: \"${VERSION}\"$" "${values}"
+            sed -i -e "s|^  agentgateway: .*$|  agentgateway: ${AGENTGATEWAY_IMAGE}|" "${values}"
             grep -q "^  agentgateway: ${AGENTGATEWAY_IMAGE}$" "${values}"
-            if grep -n "kagent-dev/substrate" "${values}"; then
-              echo "ERROR: ${values} still references upstream's registry after stamping" >&2
-              exit 1
-            fi
+            # image.registry is the host and image.repository the path (the
+            # charts' registry/repository split); the component name follows.
+            # substrate-podcert, upstream's split of the certificate controller,
+            # carries the same image block.
+            for values in charts/substrate/values.yaml charts/substrate-podcert/values.yaml; do
+              sed -i \
+                -e "s|^  registry: ghcr.io$|  registry: ${REGISTRY%%/*}|" \
+                -e "s|^  repository: kagent-dev/substrate$|  repository: ${REGISTRY#*/}|" \
+                -e "s|^  tag: \"\"$|  tag: \"${VERSION}\"|" \
+                "${values}"
+              grep -q "^  registry: ${REGISTRY%%/*}$" "${values}"
+              grep -q "^  repository: ${REGISTRY#*/}$" "${values}"
+              grep -q "^  tag: \"${VERSION}\"$" "${values}"
+              if grep -n "kagent-dev/substrate" "${values}"; then
+                echo "ERROR: ${values} still references upstream's registry after stamping" >&2
+                exit 1
+              fi
+            done
 
             mkdir -p dist
-            for chart in substrate-crds substrate; do
+            for chart in substrate-crds substrate substrate-podcert; do
               helm package "charts/${chart}" --destination dist --version "${VERSION}" --app-version "${VERSION}"
             done
 
@@ -174,7 +178,7 @@ jobs:
 
             : > chart-refs.txt
             : > /tmp/.cosign_refs
-            for chart in substrate-crds substrate; do
+            for chart in substrate-crds substrate substrate-podcert; do
               out=$(helm push "dist/${chart}-${VERSION}.tgz" "oci://${REGISTRY}/helm" 2>&1)
               echo "${out}"
               digest=$(printf '%s\n' "${out}" | sed -n 's/^Digest: //p')
