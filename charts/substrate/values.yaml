@@ -89,6 +89,19 @@ atelet:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  # How a new release rolls over the nodes: the DaemonSet's update strategy,
+  # rendered verbatim. maxUnavailable is an absolute number or a percentage of
+  # the nodes, rounded up. A node's atelet is away for about 20 s while its
+  # actors keep running and ate-api retries what it had in flight there, so a
+  # wider roll is a shorter total, not a deeper outage per node: a quarter of
+  # the nodes at a time rolls 23 nodes in four rounds, where one at a time
+  # took seven minutes. maxSurge stays 0 and is refused otherwise: atelet
+  # binds host ports and owns the node's kubelet plugin sockets, so two
+  # cannot share a node.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
   # atelet's PriorityClass. PreemptLowerPriority (the default) lets an atelet
   # pod evict lower-priority pods from a node without room for it: on a fresh
   # install over full nodes, that is whatever the cluster already runs. Never

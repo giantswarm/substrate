@@ -62,6 +62,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added to the `ate.dev/sandboxClass` toleration the chart always sets |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |
+| `atelet.updateStrategy` | `RollingUpdate`, `maxUnavailable: 25%` | The DaemonSet's update strategy, rendered verbatim: how many nodes roll at once, an absolute number or a percentage of the nodes (rounded up). A node's atelet is away for about 20 s while its actors keep running and ate-api retries what it had in flight there, so a wider roll shortens the total without deepening any node's outage: a quarter at a time rolls 23 nodes in four rounds, where one at a time took seven minutes. `maxSurge` must stay 0 (refused otherwise): atelet binds host ports 8085 and 9090 and owns the node's kubelet plugin sockets, so two atelets cannot share a node |
 | `atelet.serviceAccount.annotations` | `{}` | Annotations on atelet's ServiceAccount: the pod identity an external snapshot store trusts (`eks.amazonaws.com/role-arn`, `iam.gke.io/gcp-service-account`) |
 | `ateApiServer.serviceAccount.annotations` | `{}` | Annotations on ate-api-server's ServiceAccount, the same use |
 | `ateApiServer.extraEnv` | `[]` | Environment appended verbatim to the ate-api-server container (an S3-compatible endpoint's `AWS_ENDPOINT_URL`, `AWS_REGION`, ...); the counterpart of `atelet.extraEnv` |
