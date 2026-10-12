@@ -132,6 +132,17 @@ metadata:
   labels:
     app: atelet
 spec:
+{{- with .Values.atelet.updateStrategy }}
+{{- /* A surge pod could never start: atelet binds host ports and owns the
+  node's kubelet plugin sockets, so the roll would stall on it for good. */}}
+{{- with .rollingUpdate }}
+{{- if not (has (toString (.maxSurge | default 0)) (list "0" "0%")) }}
+{{- fail "atelet.updateStrategy.rollingUpdate.maxSurge must stay 0: atelet binds host ports 8085 and 9090 and owns the node's kubelet plugin sockets, so two atelets cannot share a node" }}
+{{- end }}
+{{- end }}
+  updateStrategy:
+{{ toYaml . | indent 4 }}
+{{- end }}
   selector:
     matchLabels:
       app: atelet

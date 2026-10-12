@@ -1,0 +1,89 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: atelet rolling update
+templates:
+- atelet.yaml
+tests:
+- it: rolls a quarter of the nodes at a time by default
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - equal:
+      path: spec.updateStrategy
+      value:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 25%
+
+- it: renders the configured strategy verbatim
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet:
+      updateStrategy:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 3
+  asserts:
+  - equal:
+      path: spec.updateStrategy
+      value:
+        type: RollingUpdate
+        rollingUpdate:
+          maxUnavailable: 3
+
+- it: renders an OnDelete strategy
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet:
+      updateStrategy:
+        type: OnDelete
+        rollingUpdate: null
+  asserts:
+  - equal:
+      path: spec.updateStrategy
+      value:
+        type: OnDelete
+
+- it: keeps an explicit zero surge
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet:
+      updateStrategy:
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 50%
+  asserts:
+  - equal:
+      path: spec.updateStrategy.rollingUpdate
+      value:
+        maxSurge: 0
+        maxUnavailable: 50%
+
+- it: refuses a surge, which atelet's host ports cannot carry
+  set:
+    atelet:
+      updateStrategy:
+        rollingUpdate:
+          maxSurge: 1
+  asserts:
+  - failedTemplate:
+      errorPattern: "maxSurge must stay 0"
