@@ -15,8 +15,15 @@
 package e2e
 
 import (
+	"context"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/agent-substrate/substrate/internal/installdefaults"
 )
@@ -38,24 +45,42 @@ const (
 	CredentialInjectionToken = "e2e-cred-inject-token"
 )
 
-// The fixture manifest (Secret plus provider authorization policy) and the
-// policy the install ships, which the fixture replaces for the duration of
-// the test.
+// The fixture manifest (the Secret behind CredentialInjectionURI) and the
+// provider's authorization policy: the ConfigMap the k8s-credential-provider
+// Deployment mounts and the file in it.
 const (
 	credinjectFixtureManifest        = "internal/e2e/fixtures/credinject/credinject.yaml"
-	credentialProviderPolicyManifest = "manifests/egress-credential-injection/namespace-policy.yaml"
+	credentialProviderPolicyName     = "k8s-credential-provider-namespace-policy"
+	credentialProviderPolicyKey      = "namespace-policy.yaml"
+	credentialProviderRestoreTimeout = time.Minute
 )
 
+// credentialFixtureAtespaces are the probe atespaces the fixture lets resolve
+// CredentialSecretsNamespace. The suffixes are deterministic per sandbox class
+// (see DeployProbe and probe-template.yaml.tmpl), so one grant set serves the
+// gVisor and micro-VM variants.
+var credentialFixtureAtespaces = []string{
+	"ate-e2e-probe-egresscredinject",
+	"ate-e2e-probe-microvm-egresscredinject",
+}
+
 // ConfigureCredentialProvider points the install's k8s-credential-provider at
-// the credinject fixture: the Secret behind CredentialInjectionURI and the
-// authorization policy that lets the probe atespaces resolve it. The provider
-// Deployment is restarted after the policy ConfigMap is applied because it
-// reads the policy once at startup. When the test passes the fixture is
-// removed, the shipped policy put back, and the provider restarted again so
-// it drops the fixture's grants.
+// the credinject fixture: the Secret behind CredentialInjectionURI, and grants
+// that let the probe atespaces resolve it, added to the authorization policy
+// the install holds. The provider Deployment is restarted after the policy
+// ConfigMap is updated because it reads the policy once at startup. When the
+// test passes the fixture is removed, the policy put back exactly as it was
+// found, and the provider restarted again so it drops the fixture's grants.
+//
+// The policy is shared by every suite that runs against the install, in
+// parallel packages included: another suite may hold grants of its own in it
+// (the credentials suite's come from the Helm values the install was made
+// with). The fixture only adds, and its cleanup restores what it found rather
+// than the policy the install ships, so no grant another suite relies on is
+// revoked while it runs.
 //
 // A failed test keeps the fixture so the provider's logs can be read against
-// it; the next run re-applies it.
+// it; the next run finds its grants in place and adds none.
 //
 // The provider itself and the gateway's side of the connection — the
 // credential-provider configuration — are the install's
@@ -81,15 +106,46 @@ func ConfigureCredentialProvider(t *testing.T) {
 	restart := func() {
 		kubectl("-n", ns, "rollout", "restart", "deployment/k8s-credential-provider")
 	}
+	configMaps := GetClients().K8s.CoreV1().ConfigMaps(ns)
 
 	fixture := filepath.Join(root, credinjectFixtureManifest)
 	kubectl("apply", "-f", fixture)
+
+	policy, err := configMaps.Get(t.Context(), credentialProviderPolicyName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get the credential provider policy: %v", err)
+	}
+	installed := policy.Data[credentialProviderPolicyKey]
+	granted, err := addCredentialFixtureGrants(installed)
+	if err != nil {
+		t.Fatalf("add the fixture's grants to the credential provider policy: %v", err)
+	}
+	if policy.Data == nil {
+		policy.Data = map[string]string{}
+	}
+	policy.Data[credentialProviderPolicyKey] = granted
+	if _, err := configMaps.Update(t.Context(), policy, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("update the credential provider policy: %v", err)
+	}
+
 	t.Cleanup(func() {
 		if t.Failed() {
 			return
 		}
+		// t.Context() is already canceled when cleanups run.
+		ctx, cancel := context.WithTimeout(context.Background(), credentialProviderRestoreTimeout)
+		defer cancel()
+		policy, err := configMaps.Get(ctx, credentialProviderPolicyName, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("get the credential provider policy: %v", err)
+			return
+		}
+		policy.Data[credentialProviderPolicyKey] = installed
+		if _, err := configMaps.Update(ctx, policy, metav1.UpdateOptions{}); err != nil {
+			t.Errorf("restore the credential provider policy: %v", err)
+			return
+		}
 		kubectl("delete", "--ignore-not-found", "-f", fixture)
-		kubectl("apply", "-f", filepath.Join(root, credentialProviderPolicyManifest))
 		// Not waiting for this rollout keeps the new pod's startup out of the
 		// run. The old pod, still holding the fixture's grants, is replaced
 		// once the new one is ready.
@@ -98,4 +154,32 @@ func ConfigureCredentialProvider(t *testing.T) {
 
 	restart()
 	kubectl("-n", ns, "rollout", "status", "deployment/k8s-credential-provider", "--timeout=3m")
+}
+
+// addCredentialFixtureGrants returns the provider policy file with a grant of
+// CredentialSecretsNamespace for each of credentialFixtureAtespaces appended.
+// The grants already in the file are kept as they are, fields this package
+// does not know included; a fixture grant the file already holds is not added
+// twice.
+func addCredentialFixtureGrants(policy string) (string, error) {
+	var file struct {
+		Policies []map[string]any `json:"policies"`
+	}
+	if err := yaml.Unmarshal([]byte(policy), &file); err != nil {
+		return "", err
+	}
+	for _, atespace := range credentialFixtureAtespaces {
+		grant := map[string]any{
+			"atespace":          atespace,
+			"allowedNamespaces": []any{CredentialSecretsNamespace},
+		}
+		if !slices.ContainsFunc(file.Policies, func(p map[string]any) bool { return reflect.DeepEqual(p, grant) }) {
+			file.Policies = append(file.Policies, grant)
+		}
+	}
+	out, err := yaml.Marshal(file)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
