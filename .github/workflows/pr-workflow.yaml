@@ -141,8 +141,8 @@ jobs:
   # One kind cluster exercises BOTH runtimes. Free x86-64 ubuntu-latest runners
   # expose /dev/kvm (with a udev rule), so create-kind-cluster.sh mounts it and the
   # micro-VM (kata + cloud-hypervisor) sandbox class works alongside gVisor.
-  e2e-test:
-    name: e2e-test
+  e2e-test-matrix:
+    name: E2E (${{ matrix.dataplane }})
     runs-on: ubuntu-latest
     # Cluster bring-up, image builds and two sequential lanes; generous, but far
     # short of the six-hour platform default a hung lane would otherwise consume.
