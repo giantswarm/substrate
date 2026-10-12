@@ -48,11 +48,14 @@ const (
 // worker freed, and the resume tried again with backoff on another worker,
 // waiting for one while the rolling pool has none free. An actor a suspend
 // or a pause left crashed for such a cause (transientCheckpointCrash) is
-// returned to its external snapshot and resumed from it the same way. A
-// call whose attempts or context run out answers Unavailable naming the crash,
-// also while the actor's recovery is unfinished: the next attempt, or the
-// ActorTransitionReconciler, returns it to rest, so the caller's retry resumes
-// it. Any other failure is returned as it is.
+// returned to its external snapshot and resumed from it the same way, and one
+// a resume left crashed on a trust-bundle projection with no names
+// (outlivedResumeCrash) to the snapshot it was resuming from, once its
+// template names a bundle in every one. A call whose attempts or context run
+// out answers Unavailable naming the crash, also while the actor's recovery is
+// unfinished: the next attempt, or the ActorTransitionReconciler, returns it
+// to rest, so the caller's retry resumes it. Any other failure is returned as
+// it is.
 func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (*ateapipb.Actor, bool, error) {
 	delay := transientResumeRetryDelay
 	// crash is the last transient crash this call met: once one is known,
@@ -96,12 +99,12 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	}
 }
 
-// recoverTransientCrash returns an actor that a rolling worker pool crashed
-// (transientCrash) to a snapshot, with its worker torn down and freed and its
-// crash cleared:
+// recoverTransientCrash returns an actor crashed for a cause that returns it
+// to a snapshot (recoverableCrash) to one, with its worker torn down and freed
+// and its crash cleared:
 //
-//   - one a resume crashed (transientResumeCrash) to the state it was resumed
-//     from: PAUSED while it holds its pause snapshot, SUSPENDED otherwise.
+//   - one a resume crashed (transientResumeCrash, outlivedResumeCrash) to the
+//     state it was resumed from: PAUSED while it holds its pause snapshot, SUSPENDED otherwise.
 //     Unlike RevertActor it keeps the pause snapshot, which the resume was
 //     restoring;
 //   - one a suspend or a pause crashed (transientCheckpointCrash) to its
@@ -118,8 +121,12 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	// call that ends under its crash still answers for it.
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), crashRecordTimeout)
 	actor, err := w.store.GetActor(readCtx, actorRef)
+	recoverable := false
+	if err == nil {
+		recoverable, err = w.recoverableCrash(readCtx, actor)
+	}
 	cancel()
-	if err != nil || !transientCrash(actor) {
+	if err != nil || !recoverable {
 		// A missing actor or a failed read leaves the call's own error to
 		// the caller.
 		return "", false, nil
@@ -140,8 +147,8 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	if err != nil {
 		return crash, false, fmt.Errorf("while loading actor to recover: %w", err)
 	}
-	if !transientCrash(actor) {
-		return crash, false, nil
+	if recoverable, err := w.recoverableCrash(leaseCtx, actor); err != nil || !recoverable {
+		return crash, false, err
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
 	fromCheckpoint := transientCheckpointCrash(actor)
@@ -190,6 +197,27 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 		w.releaseDurablePauseCopy(leaseCtx, actor, stored)
 	}
 	return crash, true, nil
+}
+
+// recoverableCrash reports whether the actor is CRASHED for a cause that
+// returns it to a snapshot: one a rolling worker pool produced
+// (transientCrash), or a resume the trust-bundle guard refused that its
+// template, as the store reads it now, outlives (outlivedResumeCrash).
+func (w *ActorWorkflow) recoverableCrash(ctx context.Context, actor *ateapipb.Actor) (bool, error) {
+	if transientCrash(actor) {
+		return true, nil
+	}
+	if !trustBundleResumeCrash(actor) {
+		return false, nil
+	}
+	actorTemplate, err := resolveActorTemplate(ctx, w.store, actor)
+	if errors.Is(err, errActorTemplateNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return outlivedResumeCrash(actor, actorTemplate), nil
 }
 
 // checkpointInterrupted answers a suspend or a pause that failed with err: a
