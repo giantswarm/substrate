@@ -85,14 +85,19 @@ type flakyAtelet struct {
 	mu          sync.Mutex
 	restoreErrs []error
 	failAlways  error
-	restores    int
-	terminates  int
+	// onRestore runs before each Restore is answered, with its number.
+	onRestore  func(n int)
+	restores   int
+	terminates int
 }
 
 func (f *flakyAtelet) Restore(context.Context, *ateletpb.RestoreRequest) (*ateletpb.RestoreResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restores++
+	if f.onRestore != nil {
+		f.onRestore(f.restores)
+	}
 	if f.failAlways != nil {
 		return nil, f.failAlways
 	}
@@ -117,20 +122,26 @@ func (f *flakyAtelet) counts() (restores, terminates int) {
 	return f.restores, f.terminates
 }
 
-// newResumeRetryFixture builds a whole Resume workflow over two workers on
-// node-1, whose atelet is atelet, and a SUSPENDED actor team-a/id1 with a
-// durable snapshot; opts mutate the stored actor's status.
+// newResumeRetryFixture builds a whole Resume workflow over workers on
+// node-1 (pod-1 and pod-2 unless pods names others), whose atelet is atelet,
+// and a SUSPENDED actor team-a/id1 with a durable snapshot; opts mutate the
+// stored actor's status.
 func newResumeRetryFixture(t *testing.T, atelet *flakyAtelet, opts ...func(*ateapipb.ActorStatus)) (*ActorWorkflow, store.Interface, resources.ActorRef) {
+	return newResumeRetryFixtureOn(t, []string{"pod-1", "pod-2"}, atelet, opts...)
+}
+
+func newResumeRetryFixtureOn(t *testing.T, pods []string, atelet *flakyAtelet, opts ...func(*ateapipb.ActorStatus)) (*ActorWorkflow, store.Interface, resources.ActorRef) {
 	t.Helper()
 	ctx := context.Background()
 	st, cleanup := storetest.SetupTestStore(t)
 	t.Cleanup(cleanup)
 	w := newTestActorWorkflow(t, st, "ns", "tmpl1")
 	storetest.MustCreateAtespace(t, ctx, st, "team-a")
-	wc := startedWorkerCache(t, ctx, st, []*ateapipb.Worker{
-		activeWorker("pod-1", "gvisor", "node-1"),
-		activeWorker("pod-2", "gvisor", "node-1"),
-	})
+	var fleet []*ateapipb.Worker
+	for _, pod := range pods {
+		fleet = append(fleet, activeWorker(pod, "gvisor", "node-1"))
+	}
+	wc := startedWorkerCache(t, ctx, st, fleet)
 	w.workerCache, w.scheduler, w.nodeLister = wc, scheduling.New(wc), nodeListerOf(t, "node-1")
 	w.dialer = newFakeAteletDialer(t, atelet)
 	w.sandboxConfigLister = sandboxConfigListerFor(t, []*atev1alpha1.SandboxConfig{{
@@ -192,6 +203,50 @@ func TestResumeActor_TransientCrashRetries(t *testing.T) {
 		t.Errorf("atelet calls = %d Restore, %d Terminate, want 2 and 1: one crashed restore torn down, then the resume", restores, terminates)
 	}
 	assertOneWorkerHosts(t, ctx, st, actor)
+}
+
+// TestResumeActor_TransientCrashWaitsForAFreeWorker resumes an actor whose
+// only worker drains under its first restore: the actor goes back to its
+// snapshot, the next resume finds no free worker and is retried rather than
+// refused, and the resume succeeds once the worker is ready again.
+func TestResumeActor_TransientCrashWaitsForAFreeWorker(t *testing.T) {
+	ctx := context.Background()
+	var st store.Interface
+	setWorkerState := func(state ateapipb.WorkerState) {
+		worker, err := st.GetWorker(ctx, testWorkerUID("pod-1"))
+		if err != nil {
+			t.Errorf("GetWorker: %v", err)
+			return
+		}
+		if _, err := st.UpdateWorker(ctx, worker.GetMetadata().GetName(), store.PreconditionFrom(worker), func(toUpdate *ateapipb.Worker) error {
+			toUpdate.Status.State = state
+			return nil
+		}); err != nil {
+			t.Errorf("UpdateWorker(%v): %v", state, err)
+		}
+	}
+	atelet := &flakyAtelet{restoreErrs: []error{ateomSocketGone}}
+	atelet.onRestore = func(n int) {
+		if n == 1 {
+			// The worker drains under the first restore and is ready again
+			// after the next resume found it busy.
+			setWorkerState(ateapipb.WorkerState_WORKER_STATE_DRAINING)
+			time.AfterFunc(1500*time.Millisecond, func() { setWorkerState(ateapipb.WorkerState_WORKER_STATE_ACTIVE) })
+		}
+	}
+	w, fixtureStore, actorRef := newResumeRetryFixtureOn(t, []string{"pod-1"}, atelet)
+	st = fixtureStore
+
+	actor, resumed, err := w.ResumeActor(ctx, actorRef, nil)
+	if err != nil {
+		t.Fatalf("ResumeActor: %v", err)
+	}
+	if !resumed || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+		t.Errorf("ResumeActor = (state %v, resumed %v), want RUNNING and resumed", actor.GetStatus().GetState(), resumed)
+	}
+	if restores, _ := atelet.counts(); restores != 2 {
+		t.Errorf("Restore calls = %d, want 2: the crashed one and the resume once the worker was back", restores)
+	}
 }
 
 // TestResumeActor_TransientCrashUntilTheCallEnds keeps the ateom of every

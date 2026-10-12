@@ -45,24 +45,33 @@ const (
 // resume that a rolling worker pool interrupts (the worker drained or went
 // away, atelet or ateom on it not reachable yet) crashes the actor only for
 // the moment: the actor is returned to the snapshot it was resuming from, its
-// worker freed, and the resume tried again with backoff on another worker. A
+// worker freed, and the resume tried again with backoff on another worker,
+// waiting for one while the rolling pool has none free. A
 // call whose attempts or context run out answers Unavailable with the actor
 // at rest, so the caller's retry resumes it. Any other failure is returned as
 // it is.
 func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (*ateapipb.Actor, bool, error) {
 	delay := transientResumeRetryDelay
+	// crash is the last transient crash this call recovered from: once one
+	// is known, the pool is rolling and a resume that finds no free worker
+	// waits for one with the same backoff.
+	var crash string
 	for attempt := 1; ; attempt++ {
 		actor, resumed, err := w.resumeActorOnce(ctx, actorRef, token)
 		if err == nil {
 			return actor, resumed, nil
 		}
-		crash, recovered, rerr := w.recoverTransientResumeCrash(ctx, actorRef)
+		recoveredCrash, recovered, rerr := w.recoverTransientResumeCrash(ctx, actorRef)
 		if rerr != nil {
 			slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient resume crash",
 				append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
 			return nil, false, err
 		}
-		if !recovered {
+		switch {
+		case recovered:
+			crash = recoveredCrash
+		case crash != "" && status.Code(err) == codes.ResourceExhausted:
+		default:
 			return nil, false, err
 		}
 		retryable := status.Errorf(codes.Unavailable, "resume of actor %s was interrupted by its worker (%s); the actor is back at its snapshot, retry the resume", actorRef, crash)
