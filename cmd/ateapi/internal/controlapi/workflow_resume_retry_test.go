@@ -90,7 +90,8 @@ func TestTransientResumeCrash(t *testing.T) {
 
 // flakyAtelet fails the Restore calls with the errors queued in restoreErrs,
 // one per call, or every one with failAlways, and answers the others and every
-// Terminate with success.
+// Terminate and Checkpoint with success, unless terminateErrs or
+// checkpointErrs queue errors for them.
 type flakyAtelet struct {
 	ateletpb.UnimplementedAteomHerderServer
 
@@ -99,10 +100,30 @@ type flakyAtelet struct {
 	// terminateErrs fail the Terminate calls, one per call.
 	terminateErrs []error
 	failAlways    error
+	// checkpointErrs fail the Checkpoint calls, one per call.
+	checkpointErrs []error
+	// onCheckpoint runs before each Checkpoint is answered, with its request.
+	onCheckpoint func(*ateletpb.CheckpointRequest)
 	// onRestore runs before each Restore is answered, with its number.
-	onRestore  func(n int)
-	restores   int
-	terminates int
+	onRestore   func(n int)
+	restores    int
+	terminates  int
+	checkpoints int
+}
+
+func (f *flakyAtelet) Checkpoint(_ context.Context, req *ateletpb.CheckpointRequest) (*ateletpb.CheckpointResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checkpoints++
+	if f.onCheckpoint != nil {
+		f.onCheckpoint(req)
+	}
+	if len(f.checkpointErrs) > 0 {
+		err := f.checkpointErrs[0]
+		f.checkpointErrs = f.checkpointErrs[1:]
+		return nil, err
+	}
+	return &ateletpb.CheckpointResponse{}, nil
 }
 
 func (f *flakyAtelet) Restore(context.Context, *ateletpb.RestoreRequest) (*ateletpb.RestoreResponse, error) {
@@ -423,8 +444,8 @@ func TestResumeActor_RecoveryCutUntilTheCallEnds(t *testing.T) {
 	atelet.mu.Lock()
 	atelet.terminateErrs = nil
 	atelet.mu.Unlock()
-	if _, recovered, err := w.recoverTransientResumeCrash(context.Background(), actorRef); err != nil || !recovered {
-		t.Fatalf("recoverTransientResumeCrash = (%v, %v), want the actor recovered", recovered, err)
+	if _, recovered, err := w.recoverTransientCrash(context.Background(), actorRef); err != nil || !recovered {
+		t.Fatalf("recoverTransientCrash = (%v, %v), want the actor recovered", recovered, err)
 	}
 	stored, err := st.GetActor(context.Background(), actorRef)
 	if err != nil {
@@ -510,15 +531,17 @@ func TestResumeActor_NonTransientCrashStaysCrashed(t *testing.T) {
 	}
 }
 
-// TestRecoverTransientResumeCrash returns a transiently crashed actor to the
+// TestRecoverTransientCrash returns a transiently crashed actor to the
 // state its resume started from, keeping a pause snapshot the resume was
-// restoring, and leaves any other actor alone.
-func TestRecoverTransientResumeCrash(t *testing.T) {
+// restoring, returns one a checkpoint crashed to its external snapshot,
+// dropping its pause snapshot, and leaves any other actor alone.
+func TestRecoverTransientCrash(t *testing.T) {
 	const keptURI = "gs://snapshots/team-a/actors/keep/snapshot"
 	tests := []struct {
 		name          string
 		crash         string
 		local         *ateapipb.LocalSnapshot
+		dropsLocal    bool
 		wantRecovered bool
 		wantState     ateapipb.ActorState
 	}{
@@ -526,7 +549,9 @@ func TestRecoverTransientResumeCrash(t *testing.T) {
 		{name: "paused actor keeps its pause", crash: "resume failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
 			wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_PAUSED},
 		{name: "another cause stays crashed", crash: "resume failed: atelet Run: no runnable process in container", wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
-		{name: "another operation stays crashed", crash: "suspend failed: " + crashMessageWorkerPodGone, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+		{name: "checkpoint returns to the external snapshot", crash: "suspend failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
+			dropsLocal: true, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		{name: "a crash without an operation stays crashed", crash: crashMessageWorkerPodGone, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -542,12 +567,12 @@ func TestRecoverTransientResumeCrash(t *testing.T) {
 				a.Status.LocalSnapshot = tt.local
 			})
 
-			crash, recovered, err := w.recoverTransientResumeCrash(ctx, actorRef)
+			crash, recovered, err := w.recoverTransientCrash(ctx, actorRef)
 			if err != nil {
-				t.Fatalf("recoverTransientResumeCrash: %v", err)
+				t.Fatalf("recoverTransientCrash: %v", err)
 			}
 			if recovered != tt.wantRecovered || (recovered && crash != tt.crash) {
-				t.Errorf("recoverTransientResumeCrash = (%q, %v), want (%q, %v)", crash, recovered, tt.crash, tt.wantRecovered)
+				t.Errorf("recoverTransientCrash = (%q, %v), want (%q, %v)", crash, recovered, tt.crash, tt.wantRecovered)
 			}
 			stored, err := st.GetActor(ctx, actorRef)
 			if err != nil {
@@ -559,8 +584,12 @@ func TestRecoverTransientResumeCrash(t *testing.T) {
 			if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != keptURI {
 				t.Errorf("external snapshot = %q, want it intact at %q", got, keptURI)
 			}
-			if got := stored.GetStatus().GetLocalSnapshot().GetSnapshotName(); got != tt.local.GetSnapshotName() {
-				t.Errorf("local snapshot = %q, want %q kept", got, tt.local.GetSnapshotName())
+			wantLocal := tt.local.GetSnapshotName()
+			if tt.dropsLocal {
+				wantLocal = ""
+			}
+			if got := stored.GetStatus().GetLocalSnapshot().GetSnapshotName(); got != wantLocal {
+				t.Errorf("local snapshot = %q, want %q", got, wantLocal)
 			}
 			if tt.wantRecovered && stored.GetStatus().GetCrash() != nil {
 				t.Errorf("crash = %v, want it cleared", stored.GetStatus().GetCrash())

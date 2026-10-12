@@ -591,11 +591,11 @@ func (s *RPCService) SuspendActor(ctx context.Context, req *ateapipb.SuspendActo
 	return &ateapipb.SuspendActorResponse{Actor: actor}, nil
 }
 
-// RecoverTransientResumeCrash returns an actor that a resume crashed for a
-// transient cause to rest, for the ActorTransitionReconciler; it is not part
-// of the Control API.
-func (s *RPCService) RecoverTransientResumeCrash(ctx context.Context, actorRef resources.ActorRef) (bool, error) {
-	_, recovered, err := s.actorWorkflow.recoverTransientResumeCrash(ctx, actorRef)
+// RecoverTransientCrash returns an actor that a rolling worker pool crashed
+// (transientCrash) to a snapshot, for the ActorTransitionReconciler; it is not
+// part of the Control API.
+func (s *RPCService) RecoverTransientCrash(ctx context.Context, actorRef resources.ActorRef) (bool, error) {
+	_, recovered, err := s.actorWorkflow.recoverTransientCrash(ctx, actorRef)
 	return recovered, err
 }
 

@@ -33,13 +33,24 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// SuspendActor executes the workflow to suspend a running or paused actor:
+// SuspendActor runs suspendActorOnce; a checkpoint a rolling worker pool interrupts
+// returns the actor to its last durable snapshot and answers Unavailable
+// (checkpointInterrupted).
+func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (*ateapipb.Actor, error) {
+	actor, err := w.suspendActorOnce(ctx, actorRef, token)
+	if err != nil {
+		return nil, w.checkpointInterrupted(ctx, actorRef, ateattr.OperationSuspend, err)
+	}
+	return actor, nil
+}
+
+// suspendActorOnce executes the workflow to suspend a running or paused actor:
 // a running actor is checkpointed on its worker, a paused actor's node-local
 // snapshot is uploaded. Idempotent: a re-entered workflow fast-forwards past
 // the steps a previous attempt completed, deriving progress from the
 // persisted actor alone. A non-nil token fences the request (see
 // ensureFencingTokenAdmitted).
-func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
+func (w *ActorWorkflow) suspendActorOnce(ctx context.Context, actorRef resources.ActorRef, token *ateapipb.FencingToken) (_ *ateapipb.Actor, err error) {
 	start := time.Now()
 	var actor *ateapipb.Actor
 	var actorTemplate *ateapipb.ActorTemplate
