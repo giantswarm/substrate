@@ -52,7 +52,9 @@ const maxCrashMessageBytes = 4096
 // outlives: the worker assigned to the actor drained, went away or no longer
 // hosts it; atelet could not be dialed yet, its new pod without an IP or
 // beside the old one on the node; ateom on the worker was not listening yet
-// or restarted. The message is matched because atelet's dial failures reach
+// or restarted; the worker's call was cancelled under it, its wakeup probe
+// with it, while its pod went away (a cancellation of ate-api's own call
+// crashes nothing). The message is matched because atelet's failures reach
 // ate-api as text only.
 var transientCrashCauses = []string{
 	crashMessageWorkerDraining,
@@ -64,6 +66,8 @@ var transientCrashCauses = []string{
 	"atelet pods on node",
 	"ateom.sock: connect:",
 	"transport: Error while dialing",
+	"rpc error: code = Canceled",
+	"wakeup probe cancelled",
 }
 
 // transientCrashCause reports whether msg names one of transientCrashCauses.

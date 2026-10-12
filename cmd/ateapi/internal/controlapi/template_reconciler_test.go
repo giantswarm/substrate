@@ -1830,6 +1830,7 @@ func TestTransientGoldenCrash(t *testing.T) {
 		{"resume failed: atelet Restore: selected atelet \"ate-system/atelet-x\" has no assigned IPs", true},
 		{"resume failed: atelet Restore: found 2 atelet pods on node \"n-1\", expected 1", true},
 		{"resume failed: atelet Run: connection error: desc = \"transport: Error while dialing: dial tcp 10.0.0.1:8080: connect: connection refused\"", true},
+		{wakeupProbeCancelledCrash, true},
 		{manifestUnknownMsg, false},
 		{"resume failed: atelet Run: no runnable process in container", false},
 		{"", false},
@@ -1952,8 +1953,8 @@ func TestReconcileOne_HealsRecordedTransientFailure(t *testing.T) {
 		return reasonGoldenActorCrashed + ": actor " + resources.GoldenActorAtespace + "/" + testTemplateUID + " crashed: " + crash
 	}
 
-	for _, crash := range []string{drainingCrash, ateomSocketCrash} {
-		t.Run(crash[:24], func(t *testing.T) {
+	for _, crash := range []string{drainingCrash, ateomSocketCrash, wakeupProbeCancelledCrash} {
+		t.Run(crash[:36], func(t *testing.T) {
 			control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: crash,
 				snapshot: newSnapshot, tags: goldenTags(goldenTestTag(oldRef, oldSnapshot))}
 			st := newFakeTemplateStore(testTemplate(withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(recorded(crash))))

@@ -36,6 +36,10 @@ import (
 // listening yet, as a rolling worker pool produces it.
 var ateomSocketGone = status.Error(codes.Unknown, `ateom.RunWorkload: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing: dial unix /run/ate/workers/w-1/ateom.sock: connect: no such file or directory"`)
 
+// wakeupProbeCancelledCrash is the crash a resume records when the worker's
+// call, and its wakeup probe with it, is cancelled while its pod goes away.
+const wakeupProbeCancelledCrash = `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Canceled desc = while waiting for container wakeup probe: wakeup probe cancelled for "kagent" after 1.2s (3 attempts, last error: connection refused): context canceled`
+
 func TestTransientResumeCrash(t *testing.T) {
 	crashed := ateapipb.ActorState_ACTOR_STATE_CRASHED
 	tests := []struct {
@@ -52,8 +56,10 @@ func TestTransientResumeCrash(t *testing.T) {
 		{"ateom socket missing", crashed, "resume failed: " + ateletCrashMessage("Restore", ateomSocketGone), true},
 		{"atelet without an IP", crashed, `resume failed: atelet Restore: selected atelet "ate-system/atelet-x" has no assigned IPs`, true},
 		{"two atelet pods", crashed, `resume failed: atelet Restore: found 2 atelet pods on node "n-1", expected 1`, true},
+		{"wakeup probe cancelled under a rolling worker", crashed, wakeupProbeCancelledCrash, true},
 		{"manifest unknown", crashed, "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", false},
 		{"no runnable process", crashed, "resume failed: atelet Run: no runnable process in container", false},
+		{"wakeup probe never answered", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "kagent" never returned 200 within 2m0s (40 attempts, last error: connection refused)`, false},
 		{"budget exceeded", crashed, "resume failed: restore of actor team-a/a did not finish within its budget of 5m0s in 3 attempt(s)", false},
 		// The actor ran after its snapshot: going back to it would lose work.
 		{"running actor's pod gone", crashed, "suspend failed: " + crashMessageWorkerPodGone, false},
