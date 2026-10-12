@@ -345,18 +345,34 @@ type querier interface {
 // unmarshalStored decodes a stored proto, dropping fields this binary has no
 // descriptor for. This means a newer replica can have written such a field.
 // It also backfills defaults to make all resources are properly defaulted, even
-// the ones stored before a field with defaults was introduced. An Actor an
-// older release wrote is migrated first, from the fields it dropped.
+// the ones stored before a field with defaults was introduced. A row an older
+// release wrote in another shape is migrated first, from the fields it
+// dropped.
 func unmarshalStored(b []byte, m proto.Message) error {
-	actor, isActor := m.(*ateapipb.Actor)
-	if err := (proto.UnmarshalOptions{DiscardUnknown: !isActor}).Unmarshal(b, m); err != nil {
+	migrate := legacyMigration(m)
+	if err := (proto.UnmarshalOptions{DiscardUnknown: migrate == nil}).Unmarshal(b, m); err != nil {
 		return err
 	}
-	if isActor {
-		migrateLegacyActor(actor)
-		discardUnknown(actor.ProtoReflect())
+	if migrate != nil {
+		migrate()
+		discardUnknown(m.ProtoReflect())
 	}
 	defaults.Apply(m)
+	return nil
+}
+
+// legacyMigration returns the rewrite of the fields an older release wrote
+// into m's row into the shape this release reads, or nil for a message no
+// release wrote differently. A rewrite reads the fields m's descriptor no
+// longer declares, so m is decoded with its unknown fields kept and they are
+// dropped once the rewrite has run.
+func legacyMigration(m proto.Message) func() {
+	switch m := m.(type) {
+	case *ateapipb.Actor:
+		return func() { migrateLegacyActor(m) }
+	case *ateapipb.ActorTemplate:
+		return func() { migrateLegacyActorTemplate(m) }
+	}
 	return nil
 }
 

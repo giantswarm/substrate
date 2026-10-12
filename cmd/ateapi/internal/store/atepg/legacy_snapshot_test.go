@@ -193,7 +193,7 @@ func TestUnmarshalStoredMigratesLegacySnapshots(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Marshal: %v", err)
 			}
-			if !unknownFieldsFree(t, reencoded) {
+			if !unknownFieldsFree(t, reencoded, &ateapipb.Actor{}) {
 				t.Errorf("the decoded actor still holds unknown fields")
 			}
 		})
@@ -201,14 +201,14 @@ func TestUnmarshalStoredMigratesLegacySnapshots(t *testing.T) {
 }
 
 // unknownFieldsFree reports whether b decodes without a field the current
-// descriptors leave unknown, anywhere in the actor.
-func unknownFieldsFree(t *testing.T, b []byte) bool {
+// descriptors leave unknown, anywhere in a message of kind's type.
+func unknownFieldsFree(t *testing.T, b []byte, kind proto.Message) bool {
 	t.Helper()
-	strict := &ateapipb.Actor{}
+	strict := kind.ProtoReflect().New().Interface()
 	if err := proto.Unmarshal(b, strict); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	discarded := &ateapipb.Actor{}
+	discarded := kind.ProtoReflect().New().Interface()
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(b, discarded); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestLegacyPauseCopyMigrationIsPersisted(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT proto FROM actors WHERE atespace = $1 AND name = $2`, actorRef.Atespace, actorRef.Name).Scan(&stored); err != nil {
 		t.Fatalf("reading the row: %v", err)
 	}
-	if !unknownFieldsFree(t, stored) {
+	if !unknownFieldsFree(t, stored, &ateapipb.Actor{}) {
 		t.Errorf("the updated row still holds the 1.3 fields")
 	}
 	persisted := &ateapipb.Actor{}
