@@ -105,6 +105,30 @@ func transientResumeCrash(actor *ateapipb.Actor) bool {
 		strings.HasPrefix(msg, resumeCrashPrefix) && transientCrashCause(msg)
 }
 
+// trustBundleNamesMissing is atelet's answer to a boot whose system-info
+// projection names no trust bundle.
+const trustBundleNamesMissing = "no trust bundle names given"
+
+// trustBundleResumeCrash reports whether the actor is CRASHED by a resume
+// atelet refused for a trust-bundle projection with no names. The actor never
+// ran since the snapshot it was resuming from, so returning it to that
+// snapshot loses nothing; whether a later resume outlives the refusal is the
+// template's to say (outlivedResumeCrash).
+func trustBundleResumeCrash(actor *ateapipb.Actor) bool {
+	msg := actor.GetStatus().GetCrash().GetMessage()
+	return actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED &&
+		strings.HasPrefix(msg, resumeCrashPrefix) && strings.Contains(msg, trustBundleNamesMissing)
+}
+
+// outlivedResumeCrash reports whether the actor is CRASHED by a resume the
+// trust-bundle guard refused (trustBundleResumeCrash) and every trust-bundle
+// projection of tmpl, as the store reads it now, names a bundle, so the next
+// resume boots with the names. An actor whose template still names none stays
+// CRASHED, so nothing resumes it into the same refusal again.
+func outlivedResumeCrash(actor *ateapipb.Actor, tmpl *ateapipb.ActorTemplate) bool {
+	return tmpl != nil && trustBundleResumeCrash(actor) && namesEveryTrustBundle(tmpl)
+}
+
 // checkpointCrashPrefixes start the messages of crashes recorded by the
 // operations that checkpoint a running workload.
 var checkpointCrashPrefixes = []string{
@@ -143,6 +167,14 @@ func transientCheckpointCrash(actor *ateapipb.Actor) bool {
 // interrupted.
 func transientCrash(actor *ateapipb.Actor) bool {
 	return transientResumeCrash(actor) || transientCheckpointCrash(actor)
+}
+
+// recoveryCandidate reports whether the actor is CRASHED for a cause that may
+// return it to a snapshot, by its crash alone: a transient one
+// (transientCrash), or a resume the trust-bundle guard refused, which its
+// template may outlive (outlivedResumeCrash).
+func recoveryCandidate(actor *ateapipb.Actor) bool {
+	return transientCrash(actor) || trustBundleResumeCrash(actor)
 }
 
 // ateletCrashMessage describes a failed atelet call with the error text atelet

@@ -72,6 +72,9 @@ func TestTransientResumeCrash(t *testing.T) {
 		{"manifest unknown", crashed, "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", false},
 		{"no runnable process", crashed, "resume failed: atelet Run: no runnable process in container", false},
 		{"wakeup probe never answered", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "kagent" never returned 200 within 2m0s (40 attempts, last error: connection refused)`, false},
+		// The template decides whether a resume outlives the trust-bundle
+		// guard (outlivedResumeCrash), not the crash alone.
+		{"trust-bundle guard", crashed, trustBundleNamesCrash, false},
 		{"budget exceeded", crashed, "resume failed: restore of actor team-a/a did not finish within its budget of 5m0s in 3 attempt(s)", false},
 		// The actor ran after its snapshot: going back to it would lose work.
 		{"running actor's pod gone", crashed, "suspend failed: " + crashMessageWorkerPodGone, false},
@@ -531,6 +534,133 @@ func TestResumeActor_NonTransientCrashStaysCrashed(t *testing.T) {
 	}
 }
 
+func TestOutlivedResumeCrash(t *testing.T) {
+	crashed := ateapipb.ActorState_ACTOR_STATE_CRASHED
+	named := &ateapipb.ActorTemplate{}
+	withTrustBundle("egress-mitm.ate.dev")(named)
+	nameless := &ateapipb.ActorTemplate{}
+	withTrustBundle()(nameless)
+	tests := []struct {
+		name  string
+		state ateapipb.ActorState
+		crash string
+		tmpl  *ateapipb.ActorTemplate
+		want  bool
+	}{
+		{"template names its bundle now", crashed, trustBundleNamesCrash, named, true},
+		{"template without trust bundles", crashed, trustBundleNamesCrash, &ateapipb.ActorTemplate{}, true},
+		{"template still names none", crashed, trustBundleNamesCrash, nameless, false},
+		{"template gone", crashed, trustBundleNamesCrash, nil, false},
+		// The actor ran after its snapshot: going back to it would lose work.
+		{"suspend refused", crashed, strings.Replace(trustBundleNamesCrash, "resume failed: ", "suspend failed: ", 1), named, false},
+		{"another resume crash", crashed, "resume failed: atelet Run: no runnable process in container", named, false},
+		{"recovered since", ateapipb.ActorState_ACTOR_STATE_SUSPENDED, trustBundleNamesCrash, named, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: tt.state, Crash: &ateapipb.ActorCrash{Message: tt.crash}}}
+			if got := outlivedResumeCrash(actor, tt.tmpl); got != tt.want {
+				t.Errorf("outlivedResumeCrash(%v, %q) = %v, want %v", tt.state, tt.crash, got, tt.want)
+			}
+		})
+	}
+}
+
+// trustBundleGuardCrashed records the crash a resume met on atelet's
+// trust-bundle guard, under a release that read the actor's template with no
+// names, on the actor resting at its snapshot.
+func trustBundleGuardCrashed(s *ateapipb.ActorStatus) {
+	s.State = ateapipb.ActorState_ACTOR_STATE_CRASHED
+	s.Crash = &ateapipb.ActorCrash{Message: trustBundleNamesCrash}
+}
+
+// TestResumeActor_TrustBundleGuardCrashResumes resumes a conversation actor a
+// resume left CRASHED on atelet's trust-bundle guard, its template row
+// rewritten without the trust-bundle name: the store reads the projection with
+// its one name, so the actor returns to the snapshot it was resuming from and
+// the resume places it on a worker, with no operator action.
+func TestResumeActor_TrustBundleGuardCrashResumes(t *testing.T) {
+	ctx := context.Background()
+	atelet := &flakyAtelet{}
+	w, st, actorRef := newResumeRetryFixture(t, atelet, trustBundleGuardCrashed)
+	templateRef := resources.ActorTemplateRef{Atespace: "ns", Name: "tmpl1"}
+	tmpl, err := st.GetActorTemplate(ctx, templateRef)
+	if err != nil {
+		t.Fatalf("GetActorTemplate: %v", err)
+	}
+	if _, err := st.UpdateActorTemplate(ctx, templateRef, store.PreconditionFrom(tmpl), func(db *ateapipb.ActorTemplate) error {
+		withTrustBundle()(db)
+		return nil
+	}); err != nil {
+		t.Fatalf("writing the rewritten template row: %v", err)
+	}
+	before, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+
+	actor, resumed, err := w.ResumeActor(ctx, actorRef, nil)
+	if err != nil {
+		t.Fatalf("ResumeActor: %v", err)
+	}
+	if !resumed || actor.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+		t.Errorf("ResumeActor = (state %v, resumed %v), want RUNNING and resumed", actor.GetStatus().GetState(), resumed)
+	}
+	if actor.GetStatus().GetCrash() != nil {
+		t.Errorf("crash = %v, want it cleared", actor.GetStatus().GetCrash())
+	}
+	if got, want := actor.GetStatus().GetExternalSnapshot().GetSnapshotUri(), before.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got == "" || got != want {
+		t.Errorf("external snapshot = %q, want it intact at %q", got, want)
+	}
+	if restores, _ := atelet.counts(); restores != 1 {
+		t.Errorf("Restore calls = %d, want 1: the resume from the snapshot", restores)
+	}
+	assertOneWorkerHosts(t, ctx, st, actor)
+}
+
+// namelessTemplateStore reads every ActorTemplate with a trust-bundle
+// projection that names no bundle, as a store without the read of a rewritten
+// row does.
+type namelessTemplateStore struct {
+	store.Interface
+}
+
+func (s namelessTemplateStore) GetActorTemplate(ctx context.Context, ref resources.ActorTemplateRef) (*ateapipb.ActorTemplate, error) {
+	tmpl, err := s.Interface.GetActorTemplate(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	withTrustBundle()(tmpl)
+	return tmpl, nil
+}
+
+// TestResumeActor_TrustBundleGuardCrashStaysWhileTemplateNamesNone keeps an
+// actor the trust-bundle guard crashed CRASHED while its template still names
+// no bundle: nothing resumes it into the same refusal.
+func TestResumeActor_TrustBundleGuardCrashStaysWhileTemplateNamesNone(t *testing.T) {
+	ctx := context.Background()
+	atelet := &flakyAtelet{}
+	w, st, actorRef := newResumeRetryFixture(t, atelet, trustBundleGuardCrashed)
+	w.store = namelessTemplateStore{st}
+
+	if _, _, err := w.ResumeActor(ctx, actorRef, nil); err == nil {
+		t.Fatal("ResumeActor returned no error, want the actor's crash refused")
+	}
+	stored, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED {
+		t.Errorf("state = %v, want CRASHED", got)
+	}
+	if got := stored.GetStatus().GetCrash().GetMessage(); got != trustBundleNamesCrash {
+		t.Errorf("crash = %q, want %q kept", got, trustBundleNamesCrash)
+	}
+	if restores, _ := atelet.counts(); restores != 0 {
+		t.Errorf("Restore calls = %d, want none", restores)
+	}
+}
+
 // TestRecoverTransientCrash returns a transiently crashed actor to the
 // state its resume started from, keeping a pause snapshot the resume was
 // restoring, returns one a checkpoint crashed to its external snapshot,
@@ -552,6 +682,9 @@ func TestRecoverTransientCrash(t *testing.T) {
 		{name: "checkpoint returns to the external snapshot", crash: "suspend failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
 			dropsLocal: true, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
 		{name: "a crash without an operation stays crashed", crash: crashMessageWorkerPodGone, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+		{name: "trust-bundle guard returns to the snapshot", crash: trustBundleNamesCrash, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		{name: "trust-bundle guard keeps the pause", crash: trustBundleNamesCrash, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
+			wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_PAUSED},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -72,7 +72,9 @@ type actorTransitionControl interface {
 //
 // It also returns to rest an Actor that a rolling worker pool crashed
 // (transientCrash) and no request recovers: one whose request ended, or one a
-// release before the recovery left CRASHED. An Actor a resume crashed ends
+// release before the recovery left CRASHED, and one a resume crashed on a
+// trust-bundle projection with no names once its template, as the store reads
+// it now, names a bundle in every one (outlivedResumeCrash). An Actor a resume crashed ends
 // SUSPENDED or PAUSED on the snapshot the resume was restoring; one a suspend
 // or a pause crashed ends SUSPENDED on its external snapshot. Its client
 // resumes it from there.
@@ -125,7 +127,7 @@ func (r *ActorTransitionReconciler) resync(ctx context.Context) {
 			return
 		}
 		for _, actor := range page.Items {
-			if r.orphaned(actor) || transientCrash(actor) {
+			if r.orphaned(actor) || recoveryCandidate(actor) {
 				r.queue.Add(resources.ActorRefFromActor(actor))
 			}
 		}
@@ -180,7 +182,7 @@ func (r *ActorTransitionReconciler) reconcileOne(ctx context.Context, ref resour
 		}
 		return err
 	}
-	if transientCrash(actor) {
+	if recoveryCandidate(actor) {
 		recovered, err := r.control.RecoverTransientCrash(ctx, ref)
 		if err != nil {
 			return fmt.Errorf("while recovering from a transient crash: %w", err)
