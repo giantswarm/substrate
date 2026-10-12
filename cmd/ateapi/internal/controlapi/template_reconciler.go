@@ -58,7 +58,9 @@ const (
 	reasonGoldenTagConflict  = "GoldenTagConflict"
 	reasonGoldenActorInvalid = "GoldenActorInvalid"
 	reasonGoldenActorCrashed = "GoldenActorCrashed"
-	reasonUnexpectedState    = "GoldenActorUnexpectedState"
+	// reasonUnexpectedState is the failure a release before the retry of a
+	// golden actor in an unexpected state recorded; it is read, never written.
+	reasonUnexpectedState = "GoldenActorUnexpectedState"
 	// reasonGoldenSnapshotLost fails a template whose golden snapshot, recorded
 	// by a release before golden tags, cannot be made into a golden tag: the
 	// golden actor that held it is gone, holds no snapshot, or refuses the copy.
@@ -220,10 +222,11 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, nil
 			}
 			// A release that failed the golden on a crash a rolling worker
-			// pool causes recorded it as terminal. Clear it and take the
-			// golden again; a golden recorded beside the failure stays the
-			// template's golden until the new one is complete.
-			slog.InfoContext(ctx, "Taking again a golden snapshot failed by a transient golden actor crash",
+			// pool causes, or on a golden actor whose release was cut,
+			// recorded it as terminal. Clear it and take the golden again; a
+			// golden recorded beside the failure stays the template's golden
+			// until the new one is complete.
+			slog.InfoContext(ctx, "Taking again a golden snapshot failed for a transient cause",
 				slog.String("ActorTemplate", ref.String()), slog.String("recordedError", msg))
 			if tmpl, err = r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
 				snapshotStatus.ErrorMessage = ""
@@ -359,9 +362,12 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, err
 			}
 		case ateapipb.ActorState_ACTOR_STATE_DELETING, ateapipb.ActorState_ACTOR_STATE_PAUSED, ateapipb.ActorState_ACTOR_STATE_PAUSING, ateapipb.ActorState_ACTOR_STATE_REVERTING:
-			// Nothing in the golden flow deletes, pauses, or reverts the actor before
-			// the snapshot is taken; someone else interfered.
-			return 0, r.fail(ctx, tmpl, reasonUnexpectedState, fmt.Sprintf("golden actor in unexpected state %v", state))
+			// Nothing in the golden flow pauses or reverts the actor before the
+			// snapshot is taken, and a DELETING one is a release of the golden
+			// actor that was cut, by a rollback of ate-api for one. None of them
+			// says anything about the template: release the actor and take the
+			// golden again.
+			return 0, r.releaseStrayGoldenActor(ctx, goldenActorRef, state)
 
 		default:
 			return r.resyncInterval, nil
@@ -401,10 +407,15 @@ func transientGoldenCrash(actor *ateapipb.Actor) bool {
 	return transientCrashCause(actor.GetStatus().GetCrash().GetMessage())
 }
 
-// transientGoldenFailure reports whether a recorded golden error is the
-// failure of a golden actor that crashed for a transient cause: one a release
-// before the retry recorded as terminal, which is cleared and taken again.
+// transientGoldenFailure reports whether a recorded golden error is one a
+// release before the retries recorded as terminal for a transient cause, which
+// is cleared and taken again: the failure of a golden actor that crashed for a
+// transient cause, or of one found in a state the golden flow does not put it
+// in.
 func transientGoldenFailure(errorMessage string) bool {
+	if strings.HasPrefix(errorMessage, reasonUnexpectedState+": ") {
+		return true
+	}
 	return strings.HasPrefix(errorMessage, reasonGoldenActorCrashed+": ") && transientCrashCause(errorMessage)
 }
 
@@ -421,6 +432,20 @@ func (r *ActorTemplateReconciler) releaseTransientlyCrashedGoldenActor(ctx conte
 		return fmt.Errorf("while deleting golden actor crashed for a transient cause: %w", err)
 	}
 	return fmt.Errorf("golden actor crashed for a transient cause, retrying: %s", crash)
+}
+
+// releaseStrayGoldenActor deletes a golden actor found in a state the golden
+// flow never puts it in before its snapshot, finishing a delete that was cut,
+// so the next pass boots a fresh one; the error it returns requeues the
+// template with the work queue's backoff. Nothing is recorded on the
+// template: a golden recorded beside the take stays its golden.
+func (r *ActorTemplateReconciler) releaseStrayGoldenActor(ctx context.Context, goldenActorRef *ateapipb.ObjectRef, state ateapipb.ActorState) error {
+	slog.WarnContext(ctx, "Golden actor in a state the golden flow does not put it in; releasing it and retrying the golden snapshot",
+		slog.String("goldenActor", resources.ActorRefFromObjectRef(goldenActorRef).String()), slog.String("state", state.String()))
+	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+		return fmt.Errorf("while deleting golden actor in state %v: %w", state, err)
+	}
+	return fmt.Errorf("golden actor was in state %v, retrying", state)
 }
 
 // tagGoldenActor copies the snapshot into the tag before releasing the actor's
@@ -513,8 +538,8 @@ func truncateUTF8(s string, n int) string {
 // goldenSnapshotDone reports whether the golden snapshot build reached a
 // terminal state: the golden tag was recorded, in the layout the workers
 // write, or the build failed for a cause no retry outlives. A failure recorded
-// for a transient golden actor crash is not terminal: it is cleared and the
-// golden taken again. A golden snapshot recorded before golden tags
+// for a transient cause (transientGoldenFailure) is not terminal: it is
+// cleared and the golden taken again. A golden snapshot recorded before golden tags
 // is not done: its migration into a tag is still owed. Nor is one in an older
 // layout, or recorded without its layout: it is still to be taken again in
 // the current one.
