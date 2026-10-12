@@ -351,7 +351,12 @@ CircleCI's `architect` context only, and the signing identity is the pipeline's 
 | agentgateway | not built or mirrored here: `images.agentgateway` is stamped to a **release of the Giant Swarm line of agentgateway**, published by that line from CircleCI under its own gsoci path — `gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:<X.Y.Z>` (how it gets there is that line's `FORK.md`), the `agentgateway-image` parameter of `.circleci/config.yml` — which atenet-router and atenet-egress run ([giantswarm/agentgateway-upstream `FORK.md`](https://github.com/giantswarm/agentgateway-upstream/blob/giantswarm/FORK.md), tracking [giantswarm/giantswarm#37758](https://github.com/giantswarm/giantswarm/issues/37758)) |
 | Charts | `oci://gsoci.azurecr.io/giantswarm/substrate/helm/substrate-crds:<version>`, `oci://gsoci.azurecr.io/giantswarm/substrate/helm/substrate:<version>` — `image.registry`, `image.repository` and `image.tag` stamped to this registry, `images.agentgateway` to the agentgateway line's release; `version` = `appVersion` = the image tag; each chart signed |
 
-Not published from here: `ateom-microvm` and the demo images (the platform runs gVisor workers only),
+Not published from here: the `substrate-podcert` chart, which the tree carries from upstream and no consumer of the line
+installs: the line's `substrate` chart installs the pod certificate controller itself, so the two charts render the same
+controller (its Deployment, Role and RoleBinding in `podcertificate-controller-system` and the `podcert-ate-dev-signer`
+ClusterRole and ClusterRoleBinding), and whichever release installs second fails on Helm's ownership check. A consumer
+of upstream kagent's `kagent install` skips its `substrate-podcert` step on this line. `ateom-microvm` and the demo images
+(the platform runs gVisor workers only),
 `kubectl-ate` binaries (use upstream's release), PyPI packages. Third-party images are upstream's pins — the same
 tags and digests — under their `gsoci.azurecr.io/giantswarm/…` copies (`postgres`, `rustfs`, `busybox`, the
 agentgateway line's release, `aws-cli`; the carried patches above).
@@ -432,7 +437,7 @@ meta chart's ranges (giantswarm/agent-platform#580), the kagent line's `SUBSTRAT
 |---|---|---|
 | [agentlab](https://github.com/giantswarm/agentlab) | `internal/lab/substrate.go` (`substrateChartsRepo`, `substrateImageRegistry`, `substrateVersion`) | an exact dev version or release; installs `substrate-crds` + `substrate` and preloads the worker image |
 | agent-platform meta chart 4.0 (`components.substrate` / `components.substrate-crds`, the `substrate:` values block; [giantswarm/agent-platform#342](https://github.com/giantswarm/agent-platform/issues/342)) | `helm/agent-platform/values.yaml`: the two components' version ranges and `kagent.substrateWorkerPool.workerImage` | the `substrate-crds` + `substrate` charts by release range (`>=1.0.0 <2.0.0`) or at an exact dev version, and the `ateom-gvisor` image at the same version (the `WorkerPool` the kagent chart renders) |
-| [giantswarm/kagent-upstream](https://github.com/giantswarm/kagent-upstream) | `Makefile` `SUBSTRATE_REPO ?= oci://gsoci.azurecr.io/giantswarm/substrate/helm` (the kagent line follows the path with its own move to gsoci, giantswarm/giantswarm#37872), `SUBSTRATE_VERSION` | the `substrate`/`substrate-crds` chart dependencies of the kagent charts (off in the platform, which installs Substrate as cluster infrastructure) |
+| [giantswarm/kagent-upstream](https://github.com/giantswarm/kagent-upstream) | `Makefile` `SUBSTRATE_REPO ?= oci://gsoci.azurecr.io/giantswarm/substrate/helm` (the kagent line follows the path with its own move to gsoci, giantswarm/giantswarm#37872), `SUBSTRATE_VERSION` | the `substrate`/`substrate-crds` chart dependencies of the kagent charts (off in the platform, which installs Substrate as cluster infrastructure); its `kagent install` skips upstream's `substrate-podcert` step, since the line's `substrate` chart installs the certificate controller |
 
 ## Assets that are not images
 
