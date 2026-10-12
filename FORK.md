@@ -355,7 +355,10 @@ Not published from here: the `substrate-podcert` chart, which the tree carries f
 installs: the line's `substrate` chart installs the pod certificate controller itself, so the two charts render the same
 controller (its Deployment, Role and RoleBinding in `podcertificate-controller-system` and the `podcert-ate-dev-signer`
 ClusterRole and ClusterRoleBinding), and whichever release installs second fails on Helm's ownership check. A consumer
-of upstream kagent's `kagent install` skips its `substrate-podcert` step on this line. `ateom-microvm` and the demo images
+of upstream kagent's `kagent install` skips its `substrate-podcert` step on this line. The known gap: the line's chart
+runs the `servicedns` and `podidentity` signers only, and `postgres.podcert.ate.dev`, the signer upstream kagent's
+bundled PostgreSQL authenticates its clients with, exists only in `substrate-podcert`; a feature that relies on
+podcert-authenticated PostgreSQL needs that signer in the line's `substrate` chart first. `ateom-microvm` and the demo images
 (the platform runs gVisor workers only),
 `kubectl-ate` binaries (use upstream's release), PyPI packages. Third-party images are upstream's pins — the same
 tags and digests — under their `gsoci.azurecr.io/giantswarm/…` copies (`postgres`, `rustfs`, `busybox`, the
