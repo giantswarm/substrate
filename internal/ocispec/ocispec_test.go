@@ -304,3 +304,13 @@ func TestBuild_ResourcesApplied(t *testing.T) {
 		t.Errorf("Memory.Limit = %d, want 67108864", *spec.Linux.Resources.Memory.Limit)
 	}
 }
+
+// A checkpoint restores only under the Rlimits it was taken with, so the
+// limit stays what every existing golden and paused actor carries.
+func TestBuild_NoFileLimitMatchesExistingCheckpoints(t *testing.T) {
+	spec := Build(Options{BundlePath: t.TempDir()})
+	want := []specs.POSIXRlimit{{Type: "RLIMIT_NOFILE", Hard: 1024, Soft: 1024}}
+	if !reflect.DeepEqual(spec.Process.Rlimits, want) {
+		t.Errorf("Rlimits = %+v, want %+v", spec.Process.Rlimits, want)
+	}
+}
