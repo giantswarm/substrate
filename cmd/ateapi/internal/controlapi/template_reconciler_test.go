@@ -660,13 +660,6 @@ func TestReconcileOne(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:             "deleting golden actor fails the template",
-			template:         testTemplate(),
-			control:          &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_DELETING},
-			wantFailedReason: reasonUnexpectedState,
-			wantMessage:      "unexpected state",
-		},
-		{
 			name:           "unspecified actor state checks back later",
 			template:       testTemplate(),
 			control:        &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_UNSPECIFIED},
@@ -960,6 +953,7 @@ func TestResync_QueuesOnlyActionableTemplates(t *testing.T) {
 		{"failed re-take", []func(*ateapipb.ActorTemplate){withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailed(reasonGoldenActorCrashed)}, false},
 		{"failed for a transient golden actor crash", []func(*ateapipb.ActorTemplate){withFailedMessage(reasonGoldenActorCrashed + ": actor ate-golden/x crashed: " + drainingCrash)}, true},
 		{"failed re-take for a transient golden actor crash", []func(*ateapipb.ActorTemplate){withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(reasonGoldenActorCrashed + ": actor ate-golden/x crashed: " + ateomSocketCrash)}, true},
+		{"failed re-take on a golden actor in an unexpected state", []func(*ateapipb.ActorTemplate){withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(unexpectedDeletingMsg)}, true},
 	}
 
 	// Seed one template per row, resync once, and check membership per row.
@@ -1848,6 +1842,9 @@ func TestTransientGoldenCrash(t *testing.T) {
 			t.Errorf("transientGoldenFailure(%q) = %v, want %v", recorded, got, tt.want)
 		}
 	}
+	if !transientGoldenFailure(unexpectedDeletingMsg) {
+		t.Errorf("transientGoldenFailure(%q) = false, want true", unexpectedDeletingMsg)
+	}
 	// Only a golden actor crash is retried: another reason naming the same
 	// words stays terminal.
 	if transientGoldenFailure(reasonGoldenActorInvalid + ": " + drainingCrash) {
@@ -2006,4 +2003,141 @@ func TestReconcileOne_HealsRecordedTransientFailure(t *testing.T) {
 			t.Error("the golden actor of a terminal failure was deleted")
 		}
 	})
+}
+
+// unexpectedDeletingMsg is the failure a release before the retry of a golden
+// actor in an unexpected state recorded for a golden actor whose delete was cut.
+const unexpectedDeletingMsg = reasonUnexpectedState + ": golden actor in unexpected state ACTOR_STATE_DELETING"
+
+// TestReconcileOne_StrayGoldenActorStateRetries drives a first golden and a
+// golden taken again through a golden actor found in a state the golden flow
+// never puts it in, DELETING foremost: the delete of a crashed golden actor
+// that a rollback of ate-api cut. The actor is deleted with any_state, which
+// finishes the cut delete, the pass errors for the work queue's backoff with
+// nothing recorded, and the retry takes the golden.
+func TestReconcileOne_StrayGoldenActorStateRetries(t *testing.T) {
+	oldRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	newRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: retakenGoldenTagName(testTemplateUID)}
+	oldSnapshot := "s3://bucket/root/atespaces/ate-golden/tags/old-tag-uid"
+	newSnapshot := "s3://bucket/root/atespaces/ate-golden/actors/" + testTemplateUID + "/snapshots/snap-2"
+	for _, state := range []ateapipb.ActorState{
+		ateapipb.ActorState_ACTOR_STATE_DELETING,
+		ateapipb.ActorState_ACTOR_STATE_PAUSED,
+		ateapipb.ActorState_ACTOR_STATE_PAUSING,
+		ateapipb.ActorState_ACTOR_STATE_REVERTING,
+	} {
+		for _, retake := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%v/retake %v", state, retake), func(t *testing.T) {
+				var opts []func(*ateapipb.ActorTemplate)
+				control := &fakeGoldenControl{exists: true, goldenState: state, snapshot: newSnapshot}
+				if retake {
+					opts = append(opts, withGoldenTagInLayout(snapshotlayout.SingleDurableTar))
+					control.tags = goldenTags(goldenTestTag(oldRef, oldSnapshot))
+				}
+				st := newFakeTemplateStore(testTemplate(opts...))
+				r := newTestTemplateReconciler(st, control)
+				defer r.queue.ShutDown()
+
+				if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+					t.Fatalf("reconcileOne on a %v golden actor returned no error, want one for the backoff", state)
+				}
+				snapshotStatus := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+				if snapshotStatus.GetErrorMessage() != "" || goldenSnapshotDone(snapshotStatus) {
+					t.Errorf("stored status = %v, want no error and the golden still to take", snapshotStatus)
+				}
+				if control.exists || len(control.deleteReqs) != 1 || !control.deleteReqs[0].GetAnyState() {
+					t.Errorf("golden actor exists = %v after delete requests %v, want it deleted once with any_state", control.exists, control.deleteReqs)
+				}
+				if retake {
+					if _, kept := control.tags[oldRef.GetName()]; !kept || !proto.Equal(snapshotStatus.GetGoldenTag(), oldRef) {
+						t.Errorf("stored status = %v, want the old golden kept", snapshotStatus)
+					}
+				}
+				r.resync(t.Context())
+				if r.queue.Len() != 1 {
+					t.Error("resync did not queue the template for the retry")
+				}
+
+				if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+					t.Fatalf("retry reconcileOne: %v", err)
+				}
+				retried := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+				wantRef := oldRef
+				if retake {
+					wantRef = newRef
+				}
+				if !proto.Equal(retried.GetGoldenTag(), wantRef) || retried.GetSnapshotLayout() != snapshotlayout.Current || retried.GetErrorMessage() != "" {
+					t.Errorf("status after the retry = %v, want %v in layout %d", retried, wantRef, snapshotlayout.Current)
+				}
+			})
+		}
+	}
+
+	t.Run("a delete that fails leaves the template untouched", func(t *testing.T) {
+		control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_DELETING,
+			deleteErr: status.Error(codes.FailedPrecondition, "actor still has its workload placed")}
+		st := newFakeTemplateStore(testTemplate())
+		r := newTestTemplateReconciler(st, control)
+		if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+			t.Fatal("reconcileOne returned no error, want the delete's")
+		}
+		if msg := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus().GetErrorMessage(); msg != "" {
+			t.Errorf("stored error message = %q, want none", msg)
+		}
+	})
+}
+
+// TestReconcileOne_HealsRecordedUnexpectedState takes again a golden a release
+// before the retry failed terminally on a golden actor in an unexpected state,
+// with no operator action: the resync queues the template, the first pass
+// clears the failure and releases the golden actor the old release left
+// behind, CRASHED by the rollback or still DELETING, and the next takes the
+// golden in the current layout, the old golden staying recorded until then.
+func TestReconcileOne_HealsRecordedUnexpectedState(t *testing.T) {
+	oldRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: testTemplateUID}
+	newRef := &ateapipb.ObjectRef{Atespace: resources.GoldenActorAtespace, Name: retakenGoldenTagName(testTemplateUID)}
+	oldSnapshot := "s3://bucket/root/atespaces/ate-golden/tags/old-tag-uid"
+	newSnapshot := "s3://bucket/root/atespaces/ate-golden/actors/" + testTemplateUID + "/snapshots/snap-2"
+
+	for _, left := range []struct {
+		name  string
+		state ateapipb.ActorState
+		crash string
+	}{
+		{"crashed", ateapipb.ActorState_ACTOR_STATE_CRASHED, crashMessageWorkerPodGone},
+		{"deleting", ateapipb.ActorState_ACTOR_STATE_DELETING, ""},
+	} {
+		t.Run(left.name, func(t *testing.T) {
+			control := &fakeGoldenControl{exists: true, goldenState: left.state, goldenCrash: left.crash,
+				snapshot: newSnapshot, tags: goldenTags(goldenTestTag(oldRef, oldSnapshot))}
+			st := newFakeTemplateStore(testTemplate(withGoldenTagInLayout(snapshotlayout.SingleDurableTar), withFailedMessage(unexpectedDeletingMsg)))
+			r := newTestTemplateReconciler(st, control)
+			defer r.queue.ShutDown()
+
+			r.resync(t.Context())
+			if r.queue.Len() != 1 {
+				t.Fatal("resync did not queue the template failed on a golden actor in an unexpected state")
+			}
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
+				t.Fatal("first reconcileOne returned no error, want one for the backoff after releasing the golden actor")
+			}
+			cleared := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if cleared.GetErrorMessage() != "" || !proto.Equal(cleared.GetGoldenTag(), oldRef) {
+				t.Errorf("status after the first pass = %v, want the failure cleared and the old golden kept", cleared)
+			}
+			if control.exists {
+				t.Error("the golden actor the old release left behind was not deleted")
+			}
+			if _, err := r.reconcileOne(t.Context(), testTemplateRef); err != nil {
+				t.Fatalf("second reconcileOne: %v", err)
+			}
+			retaken := st.storedStatus(t, testTemplateRef).GetGoldenSnapshotStatus()
+			if !proto.Equal(retaken.GetGoldenTag(), newRef) || retaken.GetSnapshotLayout() != snapshotlayout.Current || retaken.GetErrorMessage() != "" {
+				t.Errorf("status after the re-take = %v, want %v in layout %d", retaken, newRef, snapshotlayout.Current)
+			}
+			if _, kept := control.tags[oldRef.GetName()]; kept {
+				t.Error("the replaced golden tag was not deleted")
+			}
+		})
+	}
 }
