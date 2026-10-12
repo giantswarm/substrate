@@ -130,6 +130,9 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		// at once, a crash for another cause, or a checkpoint crash with no
 		// snapshot to return to, never.
 		crashedActor("resume-crashed-draining", "resume failed: "+crashMessageWorkerDraining, time.Second),
+		// A resume the trust-bundle guard refused is queued for the
+		// recovery, which reads its template.
+		crashedActor("resume-crashed-trust-bundle", trustBundleNamesCrash, time.Hour),
 		crashedActor("resume-crashed-manifest", "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", time.Hour),
 		crashedActor("suspend-crashed-pod-gone", "suspend failed: "+crashMessageWorkerPodGone, time.Hour),
 		withSnapshot(crashedActor("suspend-crashed-pod-gone-snapshot", "suspend failed: "+crashMessageWorkerPodGone, time.Second)),
@@ -147,7 +150,7 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		r.queue.Done(ref)
 	}
 	slices.Sort(got)
-	want := []string{"pausing-orphaned", "resume-crashed-draining", "suspend-crashed-pod-gone-snapshot", "suspending-orphaned"}
+	want := []string{"pausing-orphaned", "resume-crashed-draining", "resume-crashed-trust-bundle", "suspend-crashed-pod-gone-snapshot", "suspending-orphaned"}
 	if !slices.Equal(got, want) {
 		t.Errorf("queued %v, want %v", got, want)
 	}
@@ -195,6 +198,11 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 		{
 			name:  "crashed by a checkpoint with no snapshot to return to",
 			actor: crashedActor("a", checkpointCutCrash, time.Second),
+		},
+		{
+			name:          "crashed by a resume the trust-bundle guard refused",
+			actor:         crashedActor("a", trustBundleNamesCrash, time.Hour),
+			wantRecovered: []string{"a"},
 		},
 		{
 			name:  "crashed by a resume for another cause",

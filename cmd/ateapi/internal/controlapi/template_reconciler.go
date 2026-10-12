@@ -420,10 +420,6 @@ func transientGoldenFailure(errorMessage string) bool {
 	return strings.HasPrefix(errorMessage, reasonGoldenActorCrashed+": ") && transientCrashCause(errorMessage)
 }
 
-// trustBundleNamesMissing is atelet's answer to a boot whose system-info
-// projection names no trust bundle.
-const trustBundleNamesMissing = "no trust bundle names given"
-
 // outlivedGoldenCrash reports whether a golden actor crash, by its message, is
 // one tmpl outlives as read now: atelet refused the boot for a trust-bundle
 // projection with no names, and every trust-bundle projection of tmpl names a
