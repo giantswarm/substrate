@@ -690,6 +690,23 @@ func TestSystemInfoVolumeRegister_TrustBundle(t *testing.T) {
 	})
 }
 
+func TestSystemInfoVolumeRegister_TrustBundleWithoutNames(t *testing.T) {
+	store := newCTBStore(t)
+	store.set(t, string(testCertPEM(t)))
+	r := newSystemInfoVolumeRefresher(store.lister.Get, nil)
+	spec := trustVolumeSpec("ca.pem")
+	spec.GetDataSources()[0].GetTrustBundle().Names = nil
+	vol := &systemInfoVolume{Name: "trust", Root: filepath.Join(t.TempDir(), "trust"), Spec: spec}
+
+	err := r.Register("uid-1", resources.ActorRef{Atespace: "team-a", Name: "actor-1"}, []*systemInfoVolume{vol})
+	if err == nil || !strings.Contains(err.Error(), "no trust bundle names given") || !strings.Contains(err.Error(), `"trust"`) {
+		t.Errorf("Register = %v, want an error naming the volume and the missing names", err)
+	}
+	if projectsBundle(spec, EgressTrustBundleName) {
+		t.Errorf("projectsBundle(no names, %q) = true, want false", EgressTrustBundleName)
+	}
+}
+
 func TestSystemInfoVolumeRefresher_APIVersionEvents(t *testing.T) {
 	for _, tc := range []struct {
 		version string
