@@ -131,7 +131,7 @@ func TestActorEgressMITMTrust(t *testing.T) {
 		{origin: "https://" + egressOriginHost + ":1/", dial: egressOriginHost + ":443"},
 		{origin: "http://" + egressOriginHost + ":1/", dial: egressOriginHost + ":80"},
 	} {
-		res := probeFetch(t, ctx, rc, id, tc.origin, "bundle", "dial="+url.QueryEscape(tc.dial))
+		res := probeFetch(t, ctx, rc, atespace, id, tc.origin, "bundle", "dial="+url.QueryEscape(tc.dial))
 		switch {
 		case res.Error != "":
 			t.Errorf("fetch of %s dialed at %s failed: %s", tc.origin, tc.dial, res.Error)
