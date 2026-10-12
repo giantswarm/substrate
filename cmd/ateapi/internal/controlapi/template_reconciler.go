@@ -141,7 +141,7 @@ func (r *ActorTemplateReconciler) resync(ctx context.Context) {
 		}
 		for _, tmpl := range page.Items {
 			ref := resources.ActorTemplateRefFromActorTemplate(tmpl)
-			if goldenSnapshotDone(tmpl.GetStatus().GetGoldenSnapshotStatus()) {
+			if goldenTemplateDone(tmpl) {
 				slog.DebugContext(ctx, "Skipping actor template with terminal golden snapshot status", slog.String("ActorTemplate", ref.String()))
 			} else {
 				r.queue.Add(ref)
@@ -217,16 +217,17 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 	for {
 		goldenSnapshotStatus := tmpl.GetStatus().GetGoldenSnapshotStatus()
 		if msg := goldenSnapshotStatus.GetErrorMessage(); msg != "" {
-			if !transientGoldenFailure(msg) {
+			if !retakeableGoldenFailure(tmpl, msg) {
 				// The snapshot has already failed.
 				return 0, nil
 			}
 			// A release that failed the golden on a crash a rolling worker
-			// pool causes, or on a golden actor whose release was cut,
+			// pool causes, on a golden actor whose release was cut, or on a
+			// trust-bundle projection the template names a bundle in now,
 			// recorded it as terminal. Clear it and take the golden again; a
 			// golden recorded beside the failure stays the template's golden
 			// until the new one is complete.
-			slog.InfoContext(ctx, "Taking again a golden snapshot failed for a transient cause",
+			slog.InfoContext(ctx, "Taking again a golden snapshot failed for a cause a retry outlives",
 				slog.String("ActorTemplate", ref.String()), slog.String("recordedError", msg))
 			if tmpl, err = r.checkpoint(ctx, tmpl, func(snapshotStatus *ateapipb.GoldenSnapshotStatus) {
 				snapshotStatus.ErrorMessage = ""
@@ -276,8 +277,8 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 
 		switch state := actor.GetStatus().GetState(); state {
 		case ateapipb.ActorState_ACTOR_STATE_CRASHED:
-			if transientGoldenCrash(actor) {
-				return 0, r.releaseTransientlyCrashedGoldenActor(ctx, goldenActorRef, actor)
+			if retakeableGoldenCrash(tmpl, actor) {
+				return 0, r.releaseCrashedGoldenActor(ctx, goldenActorRef, actor)
 			}
 			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, goldenActorCrashMessage(actor))
 
@@ -342,12 +343,12 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				// refuses, a container with no runnable process) has recorded
 				// the cause on the actor: fail the template with it now rather
 				// than on a later pass, which would find CRASHED and its cause
-				// only after the requeue backoff. A crash a rolling worker pool
-				// caused is retried instead.
+				// only after the requeue backoff. A crash a retry outlives is
+				// retried instead.
 				if crashed, gerr := r.control.GetActor(ctx, &ateapipb.GetActorRequest{Actor: goldenActorRef}); gerr == nil &&
 					crashed.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED {
-					if transientGoldenCrash(crashed) {
-						return 0, r.releaseTransientlyCrashedGoldenActor(ctx, goldenActorRef, crashed)
+					if retakeableGoldenCrash(tmpl, crashed) {
+						return 0, r.releaseCrashedGoldenActor(ctx, goldenActorRef, crashed)
 					}
 					return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, goldenActorCrashMessage(crashed))
 				}
@@ -419,19 +420,62 @@ func transientGoldenFailure(errorMessage string) bool {
 	return strings.HasPrefix(errorMessage, reasonGoldenActorCrashed+": ") && transientCrashCause(errorMessage)
 }
 
-// releaseTransientlyCrashedGoldenActor deletes a golden actor that crashed for
-// a transient cause, which tears down and frees whatever worker it still
-// holds, so the next pass boots a fresh one; the error it returns requeues the
+// trustBundleNamesMissing is atelet's answer to a boot whose system-info
+// projection names no trust bundle.
+const trustBundleNamesMissing = "no trust bundle names given"
+
+// outlivedGoldenCrash reports whether a golden actor crash, by its message, is
+// one tmpl outlives as read now: atelet refused the boot for a trust-bundle
+// projection with no names, and every trust-bundle projection of tmpl names a
+// bundle, as the store reads a template stored before the repeated names. A
+// template that still names none fails as before.
+func outlivedGoldenCrash(tmpl *ateapipb.ActorTemplate, crash string) bool {
+	return strings.Contains(crash, trustBundleNamesMissing) && namesEveryTrustBundle(tmpl)
+}
+
+// namesEveryTrustBundle reports whether every trust-bundle projection of tmpl
+// names a bundle.
+func namesEveryTrustBundle(tmpl *ateapipb.ActorTemplate) bool {
+	for _, vol := range tmpl.GetVolumes() {
+		for _, dataSource := range vol.GetSystemInfo().GetDataSources() {
+			if tb := dataSource.GetTrustBundle(); tb != nil && len(tb.GetNames()) == 0 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// retakeableGoldenCrash reports whether the golden actor of tmpl crashed for a
+// cause the next boot outlives, so the take is retried, never failed: one a
+// rolling worker pool produces, or one tmpl outlives as read now.
+func retakeableGoldenCrash(tmpl *ateapipb.ActorTemplate, actor *ateapipb.Actor) bool {
+	return transientGoldenCrash(actor) || outlivedGoldenCrash(tmpl, actor.GetStatus().GetCrash().GetMessage())
+}
+
+// retakeableGoldenFailure reports whether the golden failure recorded on tmpl
+// is cleared and the golden taken again: one recorded for a transient cause
+// (transientGoldenFailure), or a golden actor crash tmpl outlives as read now.
+func retakeableGoldenFailure(tmpl *ateapipb.ActorTemplate, errorMessage string) bool {
+	if transientGoldenFailure(errorMessage) {
+		return true
+	}
+	return strings.HasPrefix(errorMessage, reasonGoldenActorCrashed+": ") && outlivedGoldenCrash(tmpl, errorMessage)
+}
+
+// releaseCrashedGoldenActor deletes a golden actor that crashed for a cause a
+// retry outlives, which tears down and frees whatever worker it still holds,
+// so the next pass boots a fresh one; the error it returns requeues the
 // template with the work queue's backoff. Nothing is recorded on the
 // template: a golden recorded beside the take stays its golden.
-func (r *ActorTemplateReconciler) releaseTransientlyCrashedGoldenActor(ctx context.Context, goldenActorRef *ateapipb.ObjectRef, actor *ateapipb.Actor) error {
+func (r *ActorTemplateReconciler) releaseCrashedGoldenActor(ctx context.Context, goldenActorRef *ateapipb.ObjectRef, actor *ateapipb.Actor) error {
 	crash := actor.GetStatus().GetCrash().GetMessage()
-	slog.WarnContext(ctx, "Golden actor crashed for a transient cause; retrying the golden snapshot",
+	slog.WarnContext(ctx, "Golden actor crashed for a cause a retry outlives; retrying the golden snapshot",
 		slog.String("goldenActor", resources.ActorRefFromObjectRef(goldenActorRef).String()), slog.String("crash", crash))
 	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef}); err != nil && status.Code(err) != codes.NotFound {
-		return fmt.Errorf("while deleting golden actor crashed for a transient cause: %w", err)
+		return fmt.Errorf("while deleting golden actor crashed for a cause a retry outlives: %w", err)
 	}
-	return fmt.Errorf("golden actor crashed for a transient cause, retrying: %s", crash)
+	return fmt.Errorf("golden actor crashed for a cause a retry outlives, retrying: %s", crash)
 }
 
 // releaseStrayGoldenActor deletes a golden actor found in a state the golden
@@ -498,7 +542,7 @@ func (r *ActorTemplateReconciler) saveGoldenTag(ctx context.Context, tmpl *ateap
 func (r *ActorTemplateReconciler) checkpoint(ctx context.Context, observed *ateapipb.ActorTemplate, mutate func(*ateapipb.GoldenSnapshotStatus)) (*ateapipb.ActorTemplate, error) {
 	ref := resources.ActorTemplateRefFromActorTemplate(observed)
 	updated, err := r.persistence.UpdateActorTemplate(ctx, ref, store.PreconditionFrom(observed), func(dbTemplate *ateapipb.ActorTemplate) error {
-		if goldenSnapshotDone(dbTemplate.GetStatus().GetGoldenSnapshotStatus()) {
+		if goldenTemplateDone(dbTemplate) {
 			return fmt.Errorf("actor template reached a terminal golden snapshot state concurrently")
 		}
 		if dbTemplate.Status == nil {
@@ -548,6 +592,16 @@ func goldenSnapshotDone(snapshotStatus *ateapipb.GoldenSnapshotStatus) bool {
 		return !transientGoldenFailure(msg)
 	}
 	return snapshotStatus.GetGoldenTag() != nil && !legacyGoldenSnapshot(snapshotStatus) && !staleGoldenSnapshotLayout(snapshotStatus)
+}
+
+// goldenTemplateDone is goldenSnapshotDone for tmpl: a golden failed on a
+// golden actor crash tmpl outlives as read now is not terminal either.
+func goldenTemplateDone(tmpl *ateapipb.ActorTemplate) bool {
+	snapshotStatus := tmpl.GetStatus().GetGoldenSnapshotStatus()
+	if msg := snapshotStatus.GetErrorMessage(); msg != "" && retakeableGoldenFailure(tmpl, msg) {
+		return false
+	}
+	return goldenSnapshotDone(snapshotStatus)
 }
 
 // migrateLegacyGolden rewrites a golden snapshot status a release before golden
