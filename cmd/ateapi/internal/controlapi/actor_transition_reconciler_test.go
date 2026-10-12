@@ -65,6 +65,7 @@ func (f *fakeTransitionStore) ListActors(_ context.Context, atespace string, opt
 type fakeTransitionControl struct {
 	suspended []string
 	paused    []string
+	recovered []string
 	err       error
 }
 
@@ -78,6 +79,11 @@ func (f *fakeTransitionControl) PauseActor(_ context.Context, req *ateapipb.Paus
 	return &ateapipb.PauseActorResponse{}, f.err
 }
 
+func (f *fakeTransitionControl) RecoverTransientResumeCrash(_ context.Context, ref resources.ActorRef) (bool, error) {
+	f.recovered = append(f.recovered, ref.Name)
+	return f.err == nil, f.err
+}
+
 const transitionDeadline = 5 * time.Minute
 
 var transitionNow = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
@@ -87,6 +93,13 @@ func transitionActor(name string, state ateapipb.ActorState, age time.Duration) 
 		Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: name, UpdateTime: timestamppb.New(transitionNow.Add(-age))},
 		Status:   &ateapipb.ActorStatus{State: state},
 	}
+}
+
+// crashedActor is an Actor CRASHED with message, as long ago as age.
+func crashedActor(name, message string, age time.Duration) *ateapipb.Actor {
+	actor := transitionActor(name, ateapipb.ActorState_ACTOR_STATE_CRASHED, age)
+	actor.Status.Crash = &ateapipb.ActorCrash{Message: message}
+	return actor
 }
 
 func newTestTransitionReconciler(st actorTransitionStore, control actorTransitionControl) *ActorTransitionReconciler {
@@ -107,6 +120,11 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		transitionActor("running", ateapipb.ActorState_ACTOR_STATE_RUNNING, time.Hour),
 		transitionActor("resuming", ateapipb.ActorState_ACTOR_STATE_RESUMING, time.Hour),
 		transitionActor("suspended", ateapipb.ActorState_ACTOR_STATE_SUSPENDED, time.Hour),
+		// A resume crash a rolling worker pool caused is queued at once, a
+		// crash for another cause or by another operation never.
+		crashedActor("resume-crashed-draining", "resume failed: "+crashMessageWorkerDraining, time.Second),
+		crashedActor("resume-crashed-manifest", "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", time.Hour),
+		crashedActor("suspend-crashed-pod-gone", "suspend failed: "+crashMessageWorkerPodGone, time.Hour),
 	}}
 	r := newTestTransitionReconciler(st, &fakeTransitionControl{})
 	defer r.queue.ShutDown()
@@ -120,7 +138,7 @@ func TestActorTransitionReconciler_QueuesOrphanedTransitions(t *testing.T) {
 		r.queue.Done(ref)
 	}
 	slices.Sort(got)
-	want := []string{"pausing-orphaned", "suspending-orphaned"}
+	want := []string{"pausing-orphaned", "resume-crashed-draining", "suspending-orphaned"}
 	if !slices.Equal(got, want) {
 		t.Errorf("queued %v, want %v", got, want)
 	}
@@ -135,6 +153,7 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 		actor         *ateapipb.Actor
 		wantSuspended []string
 		wantPaused    []string
+		wantRecovered []string
 	}{
 		{
 			name:          "suspending",
@@ -154,6 +173,15 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 			name:  "finished since the list",
 			actor: transitionActor("a", ateapipb.ActorState_ACTOR_STATE_SUSPENDED, time.Hour),
 		},
+		{
+			name:          "crashed by a resume a rolling worker pool interrupted",
+			actor:         crashedActor("a", "resume failed: atelet Restore: transport: Error while dialing: dial unix /run/ate/workers/w-1/ateom.sock: connect: no such file or directory", time.Second),
+			wantRecovered: []string{"a"},
+		},
+		{
+			name:  "crashed by a resume for another cause",
+			actor: crashedActor("a", "resume failed: atelet Run: no runnable process in container", time.Hour),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -169,6 +197,9 @@ func TestActorTransitionReconciler_ReentersTheStatesWorkflow(t *testing.T) {
 			}
 			if !slices.Equal(control.paused, tt.wantPaused) {
 				t.Errorf("PauseActor called for %v, want %v", control.paused, tt.wantPaused)
+			}
+			if !slices.Equal(control.recovered, tt.wantRecovered) {
+				t.Errorf("RecoverTransientResumeCrash called for %v, want %v", control.recovered, tt.wantRecovered)
 			}
 		})
 	}
