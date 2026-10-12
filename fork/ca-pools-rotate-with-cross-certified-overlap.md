@@ -1,0 +1,13 @@
+# CA pools rotate with a cross-certified overlap
+
+- **Status:** carried
+- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/egress-ca-rotation`](https://github.com/giantswarm/substrate/tree/upstream/egress-ca-rotation) here (six commits from `431564c6` to `fa028bf6`, on kagent-dev/substrate `main` @ `08c930d6`, the commands in upstream's consolidated `admin.go`; DCO-signed; to be squashed into one whose message is the first commit's plus the dating and helm-e2e paragraphs). It depends on agentgateway reading both files as one pair. A team member opens the kagent-dev/substrate pull request once the team has reviewed it. No upstream item adds rotation tooling (kagent-dev/substrate and agent-substrate/substrate searched 2026-09-24; agent-substrate#932 says "rotate with overlap", #971 added `ActiveForSigning`); agent-substrate#1931/#1932 (open) report the components that load their CA pool once at startup
+- **Our commit:** `c8584af3` ([#68](https://github.com/giantswarm/substrate/pull/68), squash)
+
+## Change
+
+CA pools rotate with a cross-certified overlap (`kubectl-ate admin add-ca`: a new CA, not signing, whose key the signing CA also certifies — `localca.CA.CrossCertificate`, dated from the signing CA's start; `activate-ca`: signs from then on, refused for a CA the signer did not cross-certify, `ActivatedAt` recorded, every leaf and `tls.crt` carry the cross-certificate; `retire-ca`: refused for the signer and until it has signed for `--min-signing-age`, 20m; `get-ca-pool`; `internal/localca/poolsecret` keeps `tls.crt`/`tls.key` on the signer under optimistic concurrency; `make-ca-pool` records the activation time; the procedure in `docs/egress-trust-bundle.md`; the e2e `TestEgressMITMCARotation` in helm-e2e per sandbox class, with the probe's `roots=pinned`)
+
+## Reason
+
+the egress MITM CA could only be created, so a rotation replaced `egress-mitm-ca-pool`: actors got the new bundle within seconds, the gateway its CA a minute later, and every handshake in between failed with `unknown authority`. An overlap that waits for actors to reload fails every process that pinned its roots, including every actor restored from a golden snapshot taken before the rotation. Proven by helm-e2e on the line at `c8584af3` (run 35979096003, the agentgateway line's 2.1.2 data plane), on gVisor and micro-VM: a long-running actor with anchors pinned before the rotation fetched throughout, a suspended one resumed after the switch, new actors started in every phase (the last trusting only the new root), no fetch failed. The gateway must reload `tls.crt`/`tls.key` as one pair, which the agentgateway line does from 2.1.1 (the pin row above)

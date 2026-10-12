@@ -1,0 +1,13 @@
+# The durable pause's background commit holds no lease on the actor
+
+- **Status:** carried
+- **Upstream:** to file with the durable-pause patch; the lease holder and the fenced update are upstream-shaped (no fork references). Its migration, released in 1.5.0 as `migrations/000003_lease_holder.sql`, is `migrations_fork/000001_lease_holder.sql` in the fork migration ledger since the 2026-10-08 re-pin (next row). Upstream's worker-assignment reconciler takes its leases as `worker-assignment-reconcile` (the worker's) and `worker-assignment-release` (an actor's)
+- **Our commit:** `giantswarm`: [#193](https://github.com/giantswarm/substrate/pull/193)
+
+## Change
+
+The durable pause's background commit holds no lease on the actor: it writes the uploaded copy under a version precondition with the actor's lease as the write's fence (`store.Precondition.Unleased`: the write takes the lease for its own transaction, so a lifecycle operation arriving meanwhile waits for that transaction and reads the copy, and a write arriving while an operation holds the lease is refused with `ErrLeaseConflict`, which the commit waits out and reads again). `acquireActorLease` no longer retries a held lease: two lifecycle operations on one actor are `Aborted` at once, as upstream answers. A lease records its holder and when it was taken (`leases.holder`, `leases.acquired_at`, migration `migrations_fork/000001_lease_holder.sql`; `AcquireLease(ctx, key, holder)`), the store answers a conflict as `store.LeaseConflictError` naming them, and the acquire and release logs carry the holder, the hold's duration and, on a conflict, who held it for how long. The lifecycle e2e runner pauses and suspends directly again. Tests: the store contract (a fenced write refused while held, landed while free, waited for by an acquire that arrives during it), the lease row's holder, the commit waiting for a lifecycle holder, and the actor's next operation taking the lease at once while a commit with slow store round trips is in flight
+
+## Reason
+
+the commit held the lease for its store round trips; on the loaded `E2E (agentgateway)` job those outlasted the six retries, about 0.7 s, of `acquireActorLease`, and a pause or suspend right after a resume from `PAUSED` failed with `Aborted` ([giantswarm/substrate#187](https://github.com/giantswarm/substrate/issues/187)): the only background holder of an actor's lease was that commit, and no wait a client can afford bounds a database under load. Now nothing but a lifecycle operation holds the lease, and the one write the commit makes is ordered against them by the store

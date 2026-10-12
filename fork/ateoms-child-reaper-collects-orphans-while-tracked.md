@@ -1,0 +1,13 @@
+# ateom's child reaper collects orphans while tracked runsc subcommands run
+
+- **Status:** carried
+- **Upstream:** the root-container shape of agent-substrate/substrate#2180 (open); upstream-shaped branch `upstream/childreap-tracked-subprocesses` on the mirror `main`, queued for review before it goes upstream
+- **Our commit:** `release-1.3`: [#133](https://github.com/giantswarm/substrate/pull/133) (first release 1.3.1); `giantswarm`: [#135](https://github.com/giantswarm/substrate/pull/135)
+
+## Change
+
+ateom's child reaper collects orphans while tracked runsc subcommands run (`internal/childreap`: `RunCommand` and `CombinedOutput` start their subprocess under a process-wide lock and record its PID in a set every `Reaper` of the process skips, so a second reaper or one finishing its last round never takes a caller's exit status; a reap collects every other child, listed from the tasks' `children` files or a `/proc` scan, also while tracked subprocesses run; `Enter` keeps its exclusion for subprocesses the reaper cannot see)
+
+## Reason
+
+the reaper held off all reaping while any runsc subcommand ran, and `runsc delete` of the root container polls `kill(pid, 0)` until the SIGKILLed sandbox is gone; its zombie answers signal 0, so the delete waited until ateom's 30 s cleanup deadline killed it, and every checkpoint of an actor restored from a 1.0.x golden took over 30 s, past kagent's quiesce deadline ([giantswarm/substrate#124](https://github.com/giantswarm/substrate/issues/124))
