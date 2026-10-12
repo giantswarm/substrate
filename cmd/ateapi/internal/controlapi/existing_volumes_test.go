@@ -251,6 +251,42 @@ func TestFillExistingVolumeContext(t *testing.T) {
 		}
 	}
 
+	// Each volume is published with its PersistentVolume's own access mode
+	// that permits it, and a read-only-many volume read-only: a read-only
+	// mount of a read-write-many PersistentVolume asks the driver for
+	// read-write-many, as the kubelet does.
+	type published struct {
+		Mode     ateletpb.VolumeAccessMode
+		ReadOnly bool
+	}
+	rwx := ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY
+	rox := ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY
+	for _, tc := range []struct {
+		name  string
+		modes []corev1.PersistentVolumeAccessMode
+		want  map[string]published
+	}{
+		{"ReadWriteMany", []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}, map[string]published{"workspace": {rwx, false}, "mirrors": {rwx, true}}},
+		{"ReadOnlyMany first", []corev1.PersistentVolumeAccessMode{corev1.ReadOnlyMany, corev1.ReadWriteMany}, map[string]published{"workspace": {rwx, false}, "mirrors": {rox, true}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, err := workloadSpecFromActorTemplate(workspaceTemplate(), actor)
+			if err != nil {
+				t.Fatalf("workloadSpecFromActorTemplate: %v", err)
+			}
+			if err := fillExistingVolumeContext(spec, pvLister(t, workspacePV(tc.modes...)), actor); err != nil {
+				t.Fatalf("fillExistingVolumeContext: %v", err)
+			}
+			got := map[string]published{}
+			for _, vol := range spec.GetVolumes()[1:] {
+				got[vol.GetName()] = published{vol.GetExternal().GetAccessMode(), vol.GetExternal().GetReadOnly()}
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("published mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
 	// A PersistentVolume gone since the create fails the resume with the reason.
 	err = fillExistingVolumeContext(spec, pvLister(t), actor)
 	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "no PersistentVolume") {
@@ -275,13 +311,14 @@ func TestAttachExistingVolumes(t *testing.T) {
 	plugin := &attachRecorder{}
 	registry := &mockPluginRegistry{plugins: map[string]volume.VolumePluginControlPlane{nfsDriver: plugin}}
 	actor := &ateapipb.Actor{ExistingVolumes: sessionVolumes("a")}
-	if err := attachExistingVolumes(context.Background(), registry, actor, workspaceTemplate(), "node-1"); err != nil {
+	if err := attachExistingVolumes(context.Background(), registry, pvLister(t, workspacePV(corev1.ReadWriteMany)), actor, workspaceTemplate(), "node-1"); err != nil {
 		t.Fatalf("attachExistingVolumes: %v", err)
 	}
 	if diff := cmp.Diff([]string{nfsHandle + "@node-1", nfsHandle + "@node-1"}, plugin.attached); diff != "" {
 		t.Errorf("attached mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]volume.AccessMode{volume.ReadWriteMany, volume.ReadOnlyMany}, plugin.modes); diff != "" {
+	// The read-only mirrors attach with their PersistentVolume's own mode.
+	if diff := cmp.Diff([]volume.AccessMode{volume.ReadWriteMany, volume.ReadWriteMany}, plugin.modes); diff != "" {
 		t.Errorf("modes mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -1317,7 +1317,11 @@ type ExternalVolumeSource struct {
 	VolumeType      string                 `protobuf:"bytes,2,opt,name=volume_type,json=volumeType,proto3" json:"volume_type,omitempty"`
 	VolumeContext   map[string]string      `protobuf:"bytes,3,rep,name=volume_context,json=volumeContext,proto3" json:"volume_context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// access_mode is how the volume is published; unset is READ_WRITE_ONCE.
-	AccessMode    VolumeAccessMode `protobuf:"varint,4,opt,name=access_mode,json=accessMode,proto3,enum=atelet.VolumeAccessMode" json:"access_mode,omitempty"`
+	// For a volume of a PersistentVolume it is the PersistentVolume's own
+	// access mode, as the kubelet requests it.
+	AccessMode VolumeAccessMode `protobuf:"varint,4,opt,name=access_mode,json=accessMode,proto3,enum=atelet.VolumeAccessMode" json:"access_mode,omitempty"`
+	// read_only publishes the volume read-only, whatever its access mode.
+	ReadOnly      bool `protobuf:"varint,5,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1378,6 +1382,13 @@ func (x *ExternalVolumeSource) GetAccessMode() VolumeAccessMode {
 		return x.AccessMode
 	}
 	return VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED
+}
+
+func (x *ExternalVolumeSource) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 type ImageVolumeSource struct {
@@ -3269,14 +3280,15 @@ const file_atelet_proto_rawDesc = "" +
 	"containers\x18\x01 \x03(\v2\x11.atelet.ContainerR\n" +
 	"containers\x12(\n" +
 	"\avolumes\x18\x02 \x03(\v2\x0e.atelet.VolumeR\avolumes\"\x12\n" +
-	"\x10DurableDirVolume\"\xb8\x02\n" +
+	"\x10DurableDirVolume\"\xd5\x02\n" +
 	"\x14ExternalVolumeSource\x12*\n" +
 	"\x11storage_volume_id\x18\x01 \x01(\tR\x0fstorageVolumeId\x12\x1f\n" +
 	"\vvolume_type\x18\x02 \x01(\tR\n" +
 	"volumeType\x12V\n" +
 	"\x0evolume_context\x18\x03 \x03(\v2/.atelet.ExternalVolumeSource.VolumeContextEntryR\rvolumeContext\x129\n" +
 	"\vaccess_mode\x18\x04 \x01(\x0e2\x18.atelet.VolumeAccessModeR\n" +
-	"accessMode\x1a@\n" +
+	"accessMode\x12\x1b\n" +
+	"\tread_only\x18\x05 \x01(\bR\breadOnly\x1a@\n" +
 	"\x12VolumeContextEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"1\n" +

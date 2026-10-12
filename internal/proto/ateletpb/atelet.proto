@@ -283,7 +283,11 @@ message ExternalVolumeSource {
   string volume_type = 2;
   map<string, string> volume_context = 3;
   // access_mode is how the volume is published; unset is READ_WRITE_ONCE.
+  // For a volume of a PersistentVolume it is the PersistentVolume's own
+  // access mode, as the kubelet requests it.
   VolumeAccessMode access_mode = 4;
+  // read_only publishes the volume read-only, whatever its access mode.
+  bool read_only = 5;
 }
 
 // VolumeAccessMode mirrors ateapi.VolumeAccessMode.

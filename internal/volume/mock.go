@@ -87,7 +87,7 @@ func (p *MockVolumePlugin) DetachVolume(ctx context.Context, volumeID string, no
 }
 
 // MountVolume simulates mounting volume on the host.
-func (p *MockVolumePlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string, _ AccessMode) error {
+func (p *MockVolumePlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string, _ AccessMode, _ bool) error {
 	slog.InfoContext(ctx, "MockVolumePlugin.MountVolume", slog.String("volumeID", volumeID), slog.String("targetPath", targetPath))
 
 	volumeDir := filepath.Join(mockVolumeDirectories, volumeID)

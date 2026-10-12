@@ -629,7 +629,7 @@ func (w *ActorWorkflow) ensureVolumesAttached(ctx context.Context, actor *ateapi
 			return fmt.Errorf("failed to attach volume %q to node %q: %w", vol.GetStorageVolumeId(), node, err)
 		}
 	}
-	return attachExistingVolumes(ctx, w.pluginRegistry, actor, actorTemplate, node)
+	return attachExistingVolumes(ctx, w.pluginRegistry, w.persistentVolumeLister, actor, actorTemplate, node)
 }
 
 // ensureAteletRestored brings the workload up on the assigned worker:
