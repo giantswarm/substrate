@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [agent-substrate/substrate#2462](https://github.com/agent-substrate/substrate/pull/2462) (ours, open; both ateoms). Falls away at the re-pin onto the first release that carries it
-- **Our commit:** [#265](https://github.com/giantswarm/substrate/pull/265): `git cherry-pick -x` of `11a6bc4f`, adapted to the line: the micro-VM hunks are left out, its ateom still writes and reads the single `durable-dir.tar` (agent-substrate/substrate#2283 is after the pin)
+- **Our commit:** [#265](https://github.com/giantswarm/substrate/pull/265): `git cherry-pick -x` of `11a6bc4f`, adapted to the line: the micro-VM hunks are left out, its ateom wrote and read the single `durable-dir.tar` before the pin; v0.5.0-alpha2 carries agent-substrate/substrate#2283, the micro-VM ateom's one tar per volume, and the line still carries only the gVisor half
 
 ## Change
 
