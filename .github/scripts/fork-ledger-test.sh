@@ -36,7 +36,7 @@ failures=0
 pr() {
   local name="$1" want="$2" json="$3" names="${4:-}" got=0 out
   printf '%s\n' "${json}" >"${DIR}/pr.json"
-  out="$("${LINT}" "${MODE:-pr}" "${DIR}/pr.json" "${DIR}/FORK.md" 2>&1)" || got=$?
+  out="$("${LINT}" "${MODE:-pr}" "${DIR}/pr.json" "${DIR}/FORK.md" ${LEDGER_DIR:+"${LEDGER_DIR}"} 2>&1)" || got=$?
   if [[ "${got}" != "${want}" ]] || [[ -n "${names}" && "${out}" != *"${names}"* ]]; then
     echo "FAIL ${name}: exit ${got}, want ${want}${names:+ naming ${names}}"
     printf '%s\n' "${out}" | sed 's/^/    /'
@@ -61,6 +61,16 @@ pr "bot" 0 '{"number":43,"title":"chore: align files","body":"","labels":[],"fil
 pr "no-ledger with a reason" 0 '{"number":44,"title":"ci: x","body":"Problem\n\nno-ledger: a CI timeout, no patch\n","labels":[{"name":"no-ledger"}],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}'
 pr "no-ledger without a reason" 1 '{"number":45,"title":"ci: x","body":"no-ledger:\n","labels":[{"name":"no-ledger"}],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#45 is missing from the ledger (labelled no-ledger"
 pr "a reason without the label" 1 '{"number":46,"title":"ci: x","body":"no-ledger: a reason","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#46 is missing"
+
+mkdir "${DIR}/fork"
+cat >"${DIR}/fork/a-change.md" <<'EOF'
+- **Our commit:** `89abcdef`, [#50](https://github.com/giantswarm/substrate/pull/50)
+EOF
+files='[{"path":"cmd/x.go"},{"path":"fork/a-change.md"}]'
+LEDGER_DIR="${DIR}/fork" pr "row in a ledger file" 0 '{"number":50,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}'
+LEDGER_DIR="${DIR}/fork" pr "no row in FORK.md or a ledger file" 1 '{"number":51,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#51 is missing"
+LEDGER_DIR="${DIR}/fork" pr "ledger files alone" 0 '{"number":52,"title":"fix: x","body":"","labels":[],"files":[{"path":"fork/a-change.md"}],"headRefName":"fork/x","author":{"is_bot":false}}'
+LEDGER_DIR="${DIR}/no-such-dir" pr "a missing ledger directory is skipped" 0 '{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}'
 
 MODE=line pr "line: all merged have rows" 0 '[{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}},{"number":40,"title":"docs(fork): x","body":"","labels":[],"files":[{"path":"FORK.md"}],"headRefName":"fork/y","author":{"is_bot":false}}]'
 MODE=line pr "line: names every missing number" 1 '[{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}},{"number":8,"title":"fix: y","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/y","author":{"is_bot":false}},{"number":11,"title":"fix: z","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/z","author":{"is_bot":false}}]' "missing #8 #11"

@@ -14,18 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Fork (giantswarm/substrate): lints the ledger in FORK.md (the workflow
-# fork-ledger runs it on every pull request against a line).
+# Fork (giantswarm/substrate): lints the ledger (FORK.md and the ledger files
+# of fork/; the workflow fork-ledger runs it on every pull request against a
+# line).
 #
-#   fork-ledger.sh pr   <pull-request.json> <FORK.md>
+#   fork-ledger.sh pr   <pull-request.json> <FORK.md> [<fork/>]
 #       the pull request names its own number in the ledger as #<n>;
-#   fork-ledger.sh line <merged-pull-requests.json> <FORK.md>
+#   fork-ledger.sh line <merged-pull-requests.json> <FORK.md> [<fork/>]
 #       every pull request merged into the line does (a maintenance branch:
-#       its own copy of FORK.md is its ledger).
+#       its own copy of FORK.md is its ledger; a path that does not exist,
+#       such as fork/ there, is skipped).
 #
 # The JSON is what `gh pr view --json` / `gh pr list --json` print with the
 # fields number, title, body, labels, files, headRefName and author. A pull
-# request needs no row when it changes FORK.md alone, its title is
+# request needs no row when it changes the ledger alone (FORK.md, fork/), its title is
 # `docs(fork)…`, it comes from a re-pin candidate (`sync/…`, closed by the
 # landing, never merged), a bot opened it, or it carries the label
 # `no-ledger` with a line `no-ledger: <reason>` in its description.
@@ -34,17 +36,19 @@
 set -o errexit -o nounset -o pipefail
 
 usage() {
-  echo "usage: $0 pr|line <json> <FORK.md>" >&2
+  echo "usage: $0 pr|line <json> <FORK.md> [<fork/>]" >&2
   exit 2
 }
 
 # The pull requests of the JSON (one object or an array) that need a row and
 # have none, one per line as "<number>\t<reason the exemption failed>".
 missing() {
-  local json="$1" ledger="$2"
+  local json="$1"
+  shift
+  local -a ledger=("$@")
   local n why
   while IFS=$'\t' read -r n why; do
-    if ! grep -qE "(^|[^[:alnum:]/_.-])#${n}([^0-9]|$)|/pull/${n}([^0-9]|$)" "${ledger}"; then
+    if ! grep -rqE "(^|[^[:alnum:]/_.-])#${n}([^0-9]|$)|/pull/${n}([^0-9]|$)" "${ledger[@]}"; then
       printf '%s\t%s\n' "${n}" "${why}"
     fi
   done < <(jq -r '
@@ -52,7 +56,7 @@ missing() {
     | select((.headRefName // "") | startswith("sync/") | not)
     | select(.author.is_bot // false | not)
     | select((.title // "") | test("^docs\\(fork\\)") | not)
-    | select([.files[]?.path] | any(. != "FORK.md"))
+    | select([.files[]?.path] | any(. != "FORK.md" and (startswith("fork/") | not)))
     | (([.labels[]?.name] | index("no-ledger")) != null) as $labelled
     | ((.body // "") | test("(?m)^\\s*no-ledger:\\s*\\S")) as $reason
     | select(($labelled and $reason) | not)
@@ -62,18 +66,23 @@ missing() {
     | @tsv' "${json}")
 }
 
-[[ $# -eq 3 ]] || usage
-mode="$1" json="$2" ledger="$3"
-[[ -f "${json}" && -f "${ledger}" ]] || usage
+[[ $# -ge 3 ]] || usage
+mode="$1" json="$2"
+shift 2
+[[ -f "${json}" && -f "$1" ]] || usage
+ledger=()
+for path in "$@"; do
+  [[ -e "${path}" ]] && ledger+=("${path}")
+done
 
 case "${mode}" in
 pr | line) ;;
 *) usage ;;
 esac
 
-result="$(missing "${json}" "${ledger}")"
+result="$(missing "${json}" "${ledger[@]}")"
 if [[ -z "${result}" ]]; then
-  echo "fork-ledger: every pull request checked has its row in ${ledger}"
+  echo "fork-ledger: every pull request checked has its row in ${ledger[*]}"
   exit 0
 fi
 
