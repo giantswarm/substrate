@@ -160,6 +160,9 @@ func (r *systemInfoVolumeRefresher) collectData(ref resources.ActorRef, actorUID
 		switch dataSource := dataSourceAny.GetDataSource().(type) {
 		case *ateletpb.SystemInfoDataSource_TrustBundle:
 			tb := dataSource.TrustBundle
+			if len(tb.GetNames()) == 0 {
+				return nil, nil, fmt.Errorf("system-info projection %q: no trust bundle names given", tb.GetPath())
+			}
 			objectName, raw, err := rawTrustBundle(r.getBundle, tb.GetNames()[0])
 			if err != nil {
 				return nil, nil, fmt.Errorf("system-info projection %q: %w", tb.GetPath(), err)
@@ -355,7 +358,7 @@ func (r *systemInfoVolumeRefresher) refreshBundle(ctx context.Context, bundleNam
 // projectsBundle reports whether the volume spec projects the named bundle.
 func projectsBundle(si *ateletpb.SystemInfoVolume, bundleName string) bool {
 	for _, ds := range si.GetDataSources() {
-		if tb := ds.GetTrustBundle(); tb != nil && tb.GetNames()[0] == bundleName {
+		if tb := ds.GetTrustBundle(); tb != nil && slices.Contains(tb.GetNames(), bundleName) {
 			return true
 		}
 	}
