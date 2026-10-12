@@ -13,10 +13,9 @@
 # limitations under the License.
 
 # The egress credential-injection fixture: the Secret the suite's policy
-# injects, and the k8s-credential-provider authorization policy that lets the
-# probe fixture's atespaces resolve it. Applied by e2e.ConfigureCredentialProvider
-# before the provider Deployment itself, which reads the ConfigMap once at
-# startup.
+# injects. e2e.ConfigureCredentialProvider applies it and adds the grants that
+# let the probe fixture's atespaces resolve it to the provider's installed
+# authorization policy.
 
 apiVersion: v1
 kind: Namespace
@@ -40,26 +39,3 @@ metadata:
 type: Opaque
 stringData:
   token: "e2e-cred-inject-token"
-
----
-
-# The atespace→namespace authorization policy the provider enforces
-# (default-deny). The name and namespace are dictated by the configMap volume
-# in manifests/egress-credential-injection/k8s-credential-provider.yaml. Both
-# probe-fixture atespaces are listed — the suffixes are deterministic per
-# sandbox class (see e2e.DeployProbe and probe-template.yaml.tmpl) — so one
-# policy serves the gVisor and micro-VM variants.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: k8s-credential-provider-namespace-policy
-  namespace: ate-system
-data:
-  namespace-policy.yaml: |
-    policies:
-    - atespace: ate-e2e-probe-egresscredinject
-      allowedNamespaces:
-      - ate-e2e-credinject-secrets
-    - atespace: ate-e2e-probe-microvm-egresscredinject
-      allowedNamespaces:
-      - ate-e2e-credinject-secrets
