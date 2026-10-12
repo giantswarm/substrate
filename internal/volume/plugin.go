@@ -69,6 +69,8 @@ type MountVolumeRequest struct {
 	PublishContext map[string]string
 	// Mode is how the volume is mounted across nodes.
 	Mode AccessMode
+	// ReadOnly publishes the volume read-only, whatever its Mode.
+	ReadOnly bool
 }
 
 // AccessMode is how a volume is attached and mounted across nodes.

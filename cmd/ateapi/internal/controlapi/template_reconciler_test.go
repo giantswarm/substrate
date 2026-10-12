@@ -1925,7 +1925,7 @@ func TestReconcileOne_TransientGoldenCrashRetries(t *testing.T) {
 // untouched when the crashed golden actor cannot be deleted yet.
 func TestReconcileOne_TransientGoldenCrashDeleteFails(t *testing.T) {
 	control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_CRASHED, goldenCrash: drainingCrash,
-		deleteErr: status.Error(codes.Unavailable, "atelet unreachable")}
+		deleteErr: apierror.Unavailable("atelet unreachable")}
 	st := newFakeTemplateStore(testTemplate())
 	r := newTestTemplateReconciler(st, control)
 	if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {
@@ -2075,7 +2075,7 @@ func TestReconcileOne_StrayGoldenActorStateRetries(t *testing.T) {
 
 	t.Run("a delete that fails leaves the template untouched", func(t *testing.T) {
 		control := &fakeGoldenControl{exists: true, goldenState: ateapipb.ActorState_ACTOR_STATE_DELETING,
-			deleteErr: status.Error(codes.FailedPrecondition, "actor still has its workload placed")}
+			deleteErr: apierror.FailedPrecondition("actor still has its workload placed")}
 		st := newFakeTemplateStore(testTemplate())
 		r := newTestTemplateReconciler(st, control)
 		if _, err := r.reconcileOne(t.Context(), testTemplateRef); err == nil {

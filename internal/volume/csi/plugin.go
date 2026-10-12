@@ -266,6 +266,10 @@ func (p *Plugin) DetachVolume(ctx context.Context, volumeID string, node string)
 
 // MountVolume maps to CSI Node NodePublishVolume.
 // It also handles NodeStageVolume staging if required by the driver.
+// Like the kubelet, it requests the volume's own access mode and expresses a
+// read-only mount as the publish's readonly flag: a driver may support only
+// the volume's mode (the AWS EFS driver refuses MULTI_NODE_READER_ONLY for a
+// read-write-many volume).
 func (p *Plugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest) error {
 	stagingPath, err := p.stageVolume(ctx, req)
 	if err != nil {
@@ -277,7 +281,7 @@ func (p *Plugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest)
 		StagingTargetPath: stagingPath,
 		TargetPath:        req.TargetPath,
 		VolumeCapability:  mountCapability(req.Mode),
-		Readonly:          req.Mode == volume.ReadOnlyMany,
+		Readonly:          req.ReadOnly || req.Mode == volume.ReadOnlyMany,
 		VolumeContext:     req.VolumeContext,
 		PublishContext:    req.PublishContext,
 	}

@@ -861,4 +861,23 @@ func TestPlugin_MountVolumeMultiNode(t *testing.T) {
 	if req := published[0]; !req.GetReadonly() || req.GetVolumeCapability().GetAccessMode().GetMode() != csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY {
 		t.Errorf("read-only-many publish = %v, want read-only MULTI_NODE_READER_ONLY", req)
 	}
+
+	// A read-write-many volume mounted read-only is staged and published with
+	// its own mode and the readonly flag, as the kubelet does: a driver may
+	// refuse MULTI_NODE_READER_ONLY for it.
+	published, staged = nil, nil
+	var stageModes []csi.VolumeCapability_AccessMode_Mode
+	driver.nodeStageVolumeFunc = func(_ context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+		stageModes = append(stageModes, req.GetVolumeCapability().GetAccessMode().GetMode())
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+	if err := plugin.MountVolume(ctx, volume.MountVolumeRequest{VolumeID: "efs", TargetPath: targetB, Mode: volume.ReadWriteMany, ReadOnly: true}); err != nil {
+		t.Fatalf("MountVolume: %v", err)
+	}
+	if len(stageModes) != 1 || stageModes[0] != csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+		t.Errorf("stage access modes = %v, want MULTI_NODE_MULTI_WRITER", stageModes)
+	}
+	if req := published[0]; !req.GetReadonly() || req.GetVolumeCapability().GetAccessMode().GetMode() != csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+		t.Errorf("read-only publish of a read-write-many volume = %v, want read-only MULTI_NODE_MULTI_WRITER", req)
+	}
 }

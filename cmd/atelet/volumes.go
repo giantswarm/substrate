@@ -50,6 +50,7 @@ func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string,
 			VolumeContext:  ext.GetVolumeContext(),
 			PublishContext: ext.GetPublishContext(),
 			Mode:           accessMode(ext),
+			ReadOnly:       ext.GetReadOnly(),
 		}); err != nil {
 			return fmt.Errorf("failed to mount volume %q to %q: %w", ext.GetStorageVolumeId(), hostPath, err)
 		}

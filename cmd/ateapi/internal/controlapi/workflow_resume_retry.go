@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Retry policy of a resume that a rolling worker pool interrupts, within one
@@ -77,11 +77,11 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 				slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient crash; retrying",
 					append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
 			}
-		case crash != "" && status.Code(err) == codes.ResourceExhausted:
+		case crash != "" && apierror.Code(err) == codes.ResourceExhausted:
 		default:
 			return nil, false, err
 		}
-		retryable := status.Errorf(codes.Unavailable, "resume of actor %s was interrupted by its worker (%s); the actor returns to its snapshot, retry the resume", actorRef, crash)
+		retryable := apierror.Unavailable("resume of actor %s was interrupted by its worker (%s); the actor returns to its snapshot, retry the resume", actorRef, crash)
 		if attempt >= transientResumeAttempts {
 			return nil, false, retryable
 		}
@@ -159,8 +159,10 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	}
 	// A crash whose teardown failed kept the worker assignment; finish the
 	// teardown so the worker is free for another actor.
-	if err := w.ensureWorkerDiscarded(leaseCtx, actorRef, actor, actorTemplate); err != nil {
-		return crash, false, fmt.Errorf("while freeing the worker of actor %s: %w", actorRef, err)
+	if actor.GetStatus().GetWorkerAssignment() != nil {
+		if err := w.ensureWorkerDiscarded(leaseCtx, actorRef, actor, actorTemplate); err != nil {
+			return crash, false, fmt.Errorf("while freeing the worker of actor %s: %w", actorRef, err)
+		}
 	}
 	if fromCheckpoint {
 		if err := w.ensureInProgressSnapshotDiscarded(leaseCtx, actor); err != nil {
@@ -180,6 +182,14 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 			toUpdate.Status.InProgressSnapshotUri = ""
 			toUpdate.Status.InProgressLocalSnapshotName = ""
 			toUpdate.Status.LocalSnapshot = nil
+		}
+		// A SUSPENDED actor is attached to no node; a PAUSED one to the node
+		// holding its local snapshot, which a resume elsewhere moved away.
+		toUpdate.Status.AssignedNode = ""
+		if rest == ateapipb.ActorState_ACTOR_STATE_PAUSED {
+			if nodes := localSnapshotNodes(actor); len(nodes) > 0 {
+				toUpdate.Status.AssignedNode = nodes[0]
+			}
 		}
 		return nil
 	})
@@ -235,5 +245,5 @@ func (w *ActorWorkflow) checkpointInterrupted(ctx context.Context, actorRef reso
 		slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient checkpoint crash; the next call or the reconciler recovers it",
 			append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
 	}
-	return status.Errorf(codes.Unavailable, "%s of actor %s was interrupted by its worker (%s); the actor returns to its last durable snapshot, suspended", op, actorRef, crash)
+	return apierror.Unavailable("%s of actor %s was interrupted by its worker (%s); the actor returns to its last durable snapshot, suspended", op, actorRef, crash)
 }

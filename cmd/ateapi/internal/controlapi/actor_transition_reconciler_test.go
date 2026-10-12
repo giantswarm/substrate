@@ -22,10 +22,9 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -240,8 +239,8 @@ func TestActorTransitionReconciler_WorkflowErrors(t *testing.T) {
 		err     error
 		wantErr bool
 	}{
-		{name: "lease held elsewhere", err: status.Error(codes.Aborted, "another operation is in progress for this actor")},
-		{name: "atelet unreachable", err: status.Error(codes.Unavailable, "connection refused"), wantErr: true},
+		{name: "lease held elsewhere", err: apierror.Aborted("another operation is in progress for this actor")},
+		{name: "atelet unreachable", err: apierror.Unavailable("connection refused"), wantErr: true},
 		{name: "missing actor", wantErr: false},
 	}
 	for _, tt := range tests {

@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -211,7 +211,7 @@ func (r *ActorTransitionReconciler) reconcileOne(ctx context.Context, ref resour
 	case ateapipb.ActorState_ACTOR_STATE_PAUSING:
 		_, err = r.control.PauseActor(ctx, &ateapipb.PauseActorRequest{Actor: objRef})
 	}
-	if status.Code(err) == codes.Aborted {
+	if apierror.Code(err) == codes.Aborted {
 		// A client's retry holds the actor lease and finishes it; a later
 		// resync finds whatever it leaves.
 		return nil

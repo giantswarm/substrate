@@ -468,7 +468,7 @@ func (r *ActorTemplateReconciler) releaseCrashedGoldenActor(ctx context.Context,
 	crash := actor.GetStatus().GetCrash().GetMessage()
 	slog.WarnContext(ctx, "Golden actor crashed for a cause a retry outlives; retrying the golden snapshot",
 		slog.String("goldenActor", resources.ActorRefFromObjectRef(goldenActorRef).String()), slog.String("crash", crash))
-	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef}); err != nil && status.Code(err) != codes.NotFound {
+	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef}); err != nil && apierror.Code(err) != codes.NotFound {
 		return fmt.Errorf("while deleting golden actor crashed for a cause a retry outlives: %w", err)
 	}
 	return fmt.Errorf("golden actor crashed for a cause a retry outlives, retrying: %s", crash)
@@ -482,7 +482,7 @@ func (r *ActorTemplateReconciler) releaseCrashedGoldenActor(ctx context.Context,
 func (r *ActorTemplateReconciler) releaseStrayGoldenActor(ctx context.Context, goldenActorRef *ateapipb.ObjectRef, state ateapipb.ActorState) error {
 	slog.WarnContext(ctx, "Golden actor in a state the golden flow does not put it in; releasing it and retrying the golden snapshot",
 		slog.String("goldenActor", resources.ActorRefFromObjectRef(goldenActorRef).String()), slog.String("state", state.String()))
-	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && status.Code(err) != codes.NotFound {
+	if _, err := r.control.DeleteActor(ctx, &ateapipb.DeleteActorRequest{Actor: goldenActorRef, AnyState: true}); err != nil && apierror.Code(err) != codes.NotFound {
 		return fmt.Errorf("while deleting golden actor in state %v: %w", state, err)
 	}
 	return fmt.Errorf("golden actor was in state %v, retrying", state)

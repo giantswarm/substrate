@@ -686,7 +686,7 @@ func (w *ActorWorkflow) ensureVolumesAttached(ctx context.Context, actor *ateapi
 			volumePublishContexts[vol.GetVolumeName()] = resp.PublishContext
 		}
 	}
-	if err := attachExistingVolumes(ctx, w.pluginRegistry, actor, actorTemplate, node, volumePublishContexts); err != nil {
+	if err := attachExistingVolumes(ctx, w.pluginRegistry, w.persistentVolumeLister, actor, actorTemplate, node, volumePublishContexts); err != nil {
 		return nil, err
 	}
 	return volumePublishContexts, nil

@@ -24,6 +24,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/scheduling"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	atev1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
@@ -303,7 +304,7 @@ func TestResumeActor_TransientCrashUntilTheCallEnds(t *testing.T) {
 	defer cancel()
 
 	_, _, err := w.ResumeActor(ctx, actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("ResumeActor error = %v, want Unavailable", err)
 	}
 	stored, err := st.GetActor(context.Background(), actorRef)
@@ -354,8 +355,8 @@ func TestResumeActor_RestoreCutByWorkerLeaving(t *testing.T) {
 	tests := []struct {
 		name  string
 		leave func(t *testing.T, st store.Interface, worker *ateapipb.Worker)
-		// terminates is 0 for a worker whose record is gone: nothing is
-		// left to tear down on it.
+		// terminates is 1 either way: the teardown terminates the actor's
+		// workload on its assigned node, which outlives the worker's record.
 		terminates int
 	}{
 		{"draining", func(t *testing.T, st store.Interface, worker *ateapipb.Worker) {
@@ -370,7 +371,7 @@ func TestResumeActor_RestoreCutByWorkerLeaving(t *testing.T) {
 			if _, err := st.DeleteWorker(context.Background(), worker.GetMetadata().GetName(), store.DeletePreconditions{}); err != nil {
 				t.Errorf("DeleteWorker: %v", err)
 			}
-		}, 0},
+		}, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -437,7 +438,7 @@ func TestResumeActor_RecoveryCutUntilTheCallEnds(t *testing.T) {
 	defer cancel()
 
 	_, _, err := w.ResumeActor(ctx, actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("ResumeActor error = %v, want Unavailable", err)
 	}
 	if msg := status.Convert(err).Message(); !strings.Contains(msg, crashMessageWorkerUnreachable) {
@@ -473,7 +474,7 @@ func TestResumeActor_TransientCrashAfterTheCallEnded(t *testing.T) {
 	cancel()
 
 	_, _, err := w.ResumeActor(ended, actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("ResumeActor error = %v, want Unavailable", err)
 	}
 	if msg := status.Convert(err).Message(); !strings.Contains(msg, "wakeup probe cancelled") {
@@ -497,7 +498,7 @@ func TestResumeActor_SandboxKilledOnALiveWorkerStaysCrashed(t *testing.T) {
 	w, st, actorRef := newResumeRetryFixture(t, atelet)
 
 	_, _, err := w.ResumeActor(ctx, actorRef, nil)
-	if got := status.Code(err); got != codes.Internal {
+	if got := apierror.Code(err); got != codes.Internal {
 		t.Fatalf("ResumeActor error = %v, want the crash's Internal", err)
 	}
 	stored, err := st.GetActor(ctx, actorRef)
@@ -676,14 +677,14 @@ func TestRecoverTransientCrash(t *testing.T) {
 		wantState     ateapipb.ActorState
 	}{
 		{name: "suspended actor", crash: "resume failed: " + crashMessageWorkerDraining, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
-		{name: "paused actor keeps its pause", crash: "resume failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
+		{name: "paused actor keeps its pause", crash: "resume failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
 			wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_PAUSED},
 		{name: "another cause stays crashed", crash: "resume failed: atelet Run: no runnable process in container", wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
-		{name: "checkpoint returns to the external snapshot", crash: "suspend failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
+		{name: "checkpoint returns to the external snapshot", crash: "suspend failed: " + crashMessageWorkerPodGone, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
 			dropsLocal: true, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
 		{name: "a crash without an operation stays crashed", crash: crashMessageWorkerPodGone, wantState: ateapipb.ActorState_ACTOR_STATE_CRASHED},
 		{name: "trust-bundle guard returns to the snapshot", crash: trustBundleNamesCrash, wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
-		{name: "trust-bundle guard keeps the pause", crash: trustBundleNamesCrash, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeVmsWithLocalSnapshots: []string{"node-1"}},
+		{name: "trust-bundle guard keeps the pause", crash: trustBundleNamesCrash, local: &ateapipb.LocalSnapshot{SnapshotName: "local-1", NodeName: "node-1"},
 			wantRecovered: true, wantState: ateapipb.ActorState_ACTOR_STATE_PAUSED},
 	}
 	for _, tt := range tests {

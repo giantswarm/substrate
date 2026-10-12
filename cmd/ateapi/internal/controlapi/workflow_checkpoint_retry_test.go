@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/objectstore/objectstoretest"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
@@ -141,7 +142,7 @@ func TestSuspendActor_CheckpointCutByDrain(t *testing.T) {
 	w, st, actorRef, snapshot, objects := checkpointFixture(t, atelet)
 
 	_, err := w.SuspendActor(ctx, actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("SuspendActor error = %v, want Unavailable", err)
 	}
 	if msg := status.Convert(err).Message(); !strings.Contains(msg, "ateom.sock") || !strings.Contains(msg, crashMessageWorkerUnreachable) {
@@ -171,7 +172,7 @@ func TestSuspendActor_CheckpointCutUntilTheCallEnds(t *testing.T) {
 	w, st, actorRef, snapshot, _ := checkpointFixture(t, atelet)
 
 	_, err := w.SuspendActor(ctx, actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("SuspendActor error = %v, want Unavailable", err)
 	}
 	stored, err := st.GetActor(ctx, actorRef)
@@ -201,7 +202,7 @@ func TestPauseActor_CheckpointCutByDrain(t *testing.T) {
 	atelet.onCheckpoint = nil
 
 	_, err := w.PauseActor(context.Background(), actorRef, nil)
-	if got := status.Code(err); got != codes.Unavailable {
+	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("PauseActor error = %v, want Unavailable", err)
 	}
 	assertBackAtSnapshot(t, w, st, actorRef, snapshot, objects)
@@ -234,7 +235,7 @@ func TestSuspendActor_CheckpointCrashStaysCrashed(t *testing.T) {
 			}
 
 			_, err := w.SuspendActor(ctx, actorRef, nil)
-			if err == nil || status.Code(err) == codes.Unavailable {
+			if err == nil || apierror.Code(err) == codes.Unavailable {
 				t.Fatalf("SuspendActor error = %v, want the crash, not Unavailable", err)
 			}
 			stored, err := st.GetActor(ctx, actorRef)
