@@ -16,7 +16,11 @@ package ateapipb
 
 // EgressPolicyContractVersion is the egress policy contract this package's
 // EgressPolicy and EgressRule encode, named after the upstream release whose
-// shape they carry. A change of either message's field numbers or meaning
+// shape they carry, plus a "+" suffix for each field the line carries ahead of
+// that release. A change of either message's field numbers or meaning
 // changes it. ate-api reports it from GetEgressPolicyContract; kubectl-ate
 // refuses to write an egress policy to a server that reports another one.
-const EgressPolicyContractVersion = "v0.4.0-alpha1"
+//
+// "+path-prefix": CredentialHeader.path_prefix. A server without it drops the
+// field and applies a prefixed credential to every path of the host.
+const EgressPolicyContractVersion = "v0.4.0-alpha1+path-prefix"
