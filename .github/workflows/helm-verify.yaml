@@ -20,7 +20,10 @@ name: helm-verify
 on:
   pull_request:
   push:
-    branches: [main]
+    # giantswarm and the re-pin candidates (FORK.md, "Re-pin"): a rebased
+    # branch never merges cleanly, so a pull request from it gets no
+    # pull_request run — the push is what runs the check on it.
+    branches: [giantswarm, "sync/**"]
 permissions:
   contents: read
 jobs:
