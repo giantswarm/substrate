@@ -36,6 +36,7 @@ import (
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const probeTemplate = "probe"
@@ -43,16 +44,15 @@ const probeTemplate = "probe"
 var probeNamespace string
 
 // The suite's hostnames, one per injection outcome: each is covered by exactly
-// one https rule, so each selects exactly one CredentialHeader. echoHost is the
-// only one whose response matters — it echoes the request headers it
-// received back as JSON, which is what proves the header was on the wire.
+// one https rule, so each selects one CredentialHeader per request path.
+// echoHost is the only one whose response matters — it echoes the request
+// headers it received back as JSON, which is what proves the header was on
+// the wire.
 const (
 	echoHost           = "httpbin.org"
 	unfetchableHost    = "example.com"
 	unservedHost       = "example.org"
 	unauthorizedHost   = "example.net"
-	echoOrigin         = "https://" + echoHost + "/headers"
-	echoOriginPlain    = "http://" + echoHost + "/headers"
 	unfetchableOrigin  = "https://" + unfetchableHost + "/"
 	unservedOrigin     = "https://" + unservedHost + "/"
 	unauthorizedOrigin = "https://" + unauthorizedHost + "/"
@@ -62,6 +62,15 @@ const (
 // replaces a header only when the request carries it, so every fetch that
 // should trigger injection sends it.
 const placeholder = "Bearer actor-placeholder"
+
+// The echo host takes two schemes on one host, as a Git server does for Git
+// over HTTPS and for its REST API: Bearer on the paths under echoAPIPrefix,
+// Basic on every other path.
+const (
+	echoAPIPrefix = "/anything/api/"
+	wantHostWide  = "Basic " + e2e.CredentialInjectionToken
+	wantAPI       = "Bearer " + e2e.CredentialInjectionToken
+)
 
 var withPlaceholder = []string{"header=" + url.QueryEscape("Authorization:"+placeholder)}
 
@@ -79,6 +88,9 @@ var withPlaceholder = []string{"header=" + url.QueryEscape("Authorization:"+plac
 //     carries, and does not add one.
 //   - cleartext: the same fetch over plain HTTP, allowed by an http rule
 //     with the same effect, echoes the injected credential too.
+//   - per path: the echo host binds Basic host-wide and Bearer under
+//     echoAPIPrefix, and each request echoes the binding with the longest
+//     path prefix it is under, the host-wide one otherwise.
 //   - fail closed: a credential the policy requires but the provider will
 //     not or cannot produce denies the request — 403 for an unfetchable
 //     secret and for a namespace outside the atespace's authorization
@@ -113,23 +125,46 @@ func TestActorEgressCredentialInjection(t *testing.T) {
 	}
 	defer rc.Close()
 
-	for _, origin := range []string{echoOrigin, echoOriginPlain} {
-		t.Run(origin, func(t *testing.T) {
+	for _, scheme := range []string{"https", "http"} {
+		base := scheme + "://" + echoHost
+		t.Run(scheme, func(t *testing.T) {
 			// The upstream must receive the policy's credential instead of the
 			// actor's placeholder, on both HTTP and HTTPS.
-			wantHeader := "Bearer " + e2e.CredentialInjectionToken
-			replaced := fetchEcho(t, ctx, rc, id, origin, withPlaceholder)
-			if got := assertEchoedAuthorization(t, "injection fetch", replaced); got != wantHeader {
-				t.Errorf("upstream received Authorization %q, want the injected %q", got, wantHeader)
+			replaced := fetchEcho(t, ctx, rc, id, base+"/headers", withPlaceholder)
+			if got := assertEchoedAuthorization(t, "injection fetch", replaced); got != wantHostWide {
+				t.Errorf("upstream received Authorization %q, want the injected %q", got, wantHostWide)
 			}
 
 			// No header is added when the actor did not send one.
-			unasked := fetchEcho(t, ctx, rc, id, origin, nil)
+			unasked := fetchEcho(t, ctx, rc, id, base+"/headers", nil)
 			if got := assertEchoedAuthorization(t, "fetch without the header", unasked); got != "" {
 				t.Errorf("upstream received Authorization %q on a request that did not carry it, want none", got)
 			}
+
+			// Each request gets the binding of the longest path prefix it is
+			// under, the host-wide one otherwise; a prefix ends at a segment
+			// boundary.
+			for _, step := range []struct {
+				path string
+				want string
+			}{
+				{path: echoAPIPrefix + "v4/projects?per_page=1", want: wantAPI},
+				{path: echoAPIPrefix, want: wantAPI},
+				{path: "/anything/api", want: wantHostWide},
+				{path: "/anything/apis/v4", want: wantHostWide},
+				{path: "/anything/group/repo.git/info/refs?service=git-upload-pack", want: wantHostWide},
+			} {
+				resp := fetchEcho(t, ctx, rc, id, base+step.path, withPlaceholder)
+				if got := assertEchoedAuthorization(t, "fetch of "+step.path, resp); got != step.want {
+					t.Errorf("upstream received Authorization %q on %s, want %q", got, step.path, step.want)
+				}
+			}
 		})
 	}
+
+	t.Run("duplicate path prefix refused", func(t *testing.T) {
+		assertDuplicatePathPrefixRefused(t, ctx, clients, &ateapipb.ObjectRef{Atespace: probeNamespace, Name: id})
+	})
 
 	// Fail closed: each of these rules names a credential that cannot be
 	// injected, and the denial must be the mapped status, not a request that
@@ -165,6 +200,42 @@ func TestActorEgressCredentialInjection(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// assertDuplicatePathPrefixRefused proves admission refuses two entries for
+// one host, header and path prefix, and that the refused update leaves the
+// stored policy as it was.
+func assertDuplicatePathPrefixRefused(t *testing.T, ctx context.Context, clients *e2e.Clients, actor *ateapipb.ObjectRef) {
+	t.Helper()
+	stored, err := clients.SubstrateAPI.GetActorEgressPolicy(ctx, &ateapipb.GetActorEgressPolicyRequest{Actor: actor})
+	if err != nil {
+		t.Fatalf("GetActorEgressPolicy: %v", err)
+	}
+	dup := proto.Clone(stored).(*ateapipb.EgressPolicy)
+	i := slices.IndexFunc(dup.GetRules(), func(r *ateapipb.EgressRule) bool {
+		return slices.Contains(r.GetHttps().GetHostnames(), echoHost)
+	})
+	if i < 0 {
+		t.Fatalf("the stored policy has no https rule for %s: %v", echoHost, stored)
+	}
+	effects := dup.GetRules()[i].GetHttps().GetEffects()
+	effects.ReplaceHeaders = append(effects.ReplaceHeaders, &ateapipb.CredentialHeader{
+		Header:        "authorization",
+		Prefix:        "Token ",
+		CredentialUri: e2e.CredentialInjectionURI,
+		PathPrefix:    echoAPIPrefix,
+	})
+	_, err = clients.SubstrateAPI.UpdateActorEgressPolicy(ctx, &ateapipb.UpdateActorEgressPolicyRequest{Actor: actor, EgressPolicy: dup})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "path_prefix") {
+		t.Fatalf("UpdateActorEgressPolicy with a second Authorization entry on %s: err %v, want InvalidArgument naming path_prefix", echoAPIPrefix, err)
+	}
+	after, err := clients.SubstrateAPI.GetActorEgressPolicy(ctx, &ateapipb.GetActorEgressPolicyRequest{Actor: actor})
+	if err != nil {
+		t.Fatalf("GetActorEgressPolicy after the refused update: %v", err)
+	}
+	if !proto.Equal(after, stored) {
+		t.Errorf("the refused update changed the stored policy:\n got %v\nwant %v", after, stored)
 	}
 }
 
@@ -304,12 +375,21 @@ func createAndResumeActor(t *testing.T, ctx context.Context, clients *e2e.Client
 		}
 	})
 	// Exercise each credential outcome on both HTTP and HTTPS.
-	var rules []*ateapipb.EgressRule
+	apiToken := &ateapipb.CredentialHeader{
+		Header:        "Authorization",
+		Prefix:        "Bearer ",
+		CredentialUri: e2e.CredentialInjectionURI,
+		PathPrefix:    echoAPIPrefix,
+	}
+	echoHTTPS := e2e.EgressInjectHeader("Authorization", "Basic ", e2e.CredentialInjectionURI, echoHost)
+	echoHTTPS.Https.Effects.ReplaceHeaders = append(echoHTTPS.Https.Effects.ReplaceHeaders, apiToken)
+	echoHTTP := e2e.EgressInjectHeaderHTTP("Authorization", "Basic ", e2e.CredentialInjectionURI, echoHost)
+	echoHTTP.Http.Effects.ReplaceHeaders = append(echoHTTP.Http.Effects.ReplaceHeaders, apiToken)
+	rules := []*ateapipb.EgressRule{echoHTTPS, echoHTTP}
 	for _, credential := range []struct {
 		host string
 		uri  string
 	}{
-		{echoHost, e2e.CredentialInjectionURI},
 		{unfetchableHost, "ate-secret://k8s.io/default/" + e2e.CredentialSecretsNamespace + "/no-such-secret/token"},
 		{unservedHost, "ate-secret://other.io/default/" + e2e.CredentialSecretsNamespace + "/api-token/token"},
 		{unauthorizedHost, "ate-secret://k8s.io/default/kube-system/api-token/token"},

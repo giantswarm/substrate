@@ -91,7 +91,7 @@ func (h *Handler) handleRequest(ctx context.Context, md *extproc.RequestMetadata
 		return extproc.Result{}, h.refused(ctx, ref, ateattr.EgressRefusalNotInPolicy,
 			extproc.NewReqError(envoy_type.StatusCode_Forbidden, deniedBody))
 	}
-	injected, err := h.applyEffects(ctx, ref, dest, md.Headers, decision.Effects)
+	injected, err := h.applyEffects(ctx, ref, dest, md.Path, md.Headers, decision.Effects)
 	if err != nil {
 		if ctx.Err() != nil {
 			// The caller gave up mid-fetch: not a decision.
