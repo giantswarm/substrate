@@ -82,7 +82,7 @@ var (
 	postgresCAPoolFile = pflag.String(
 		"postgres-ca-pool",
 		"",
-		"File that contains the CA pool state for "+postgressigner.Name,
+		"File that contains the CA pool state for "+postgressigner.Name+"; empty runs no PostgreSQL signer",
 	)
 
 	postgresClientNamespace = pflag.String(
@@ -216,13 +216,20 @@ func main() {
 		os.Exit(1)
 	}
 	podIdentitySignerController := signercontroller.New(clock.RealClock{}, podidentitysigner.NewImpl(kc, podIdentityCAPool, pcrClient), hasher, pcrClient, trustBundles)
-	postgresCAPool, err := localca.NewRefreshingPool(*postgresCAPoolFile)
-	if err != nil {
-		slog.ErrorContext(ctx, "Error loading PostgreSQL CA pool state", slog.Any("err", err))
-		os.Exit(1)
+
+	// The PostgreSQL signer runs only with a CA pool: an installation whose
+	// ate-api-server logs in with its pod identity certificate has none.
+	if *postgresCAPoolFile != "" {
+		postgresCAPool, err := localca.NewRefreshingPool(*postgresCAPoolFile)
+		if err != nil {
+			slog.ErrorContext(ctx, "Error loading PostgreSQL CA pool state", slog.Any("err", err))
+			os.Exit(1)
+		}
+		postgresSignerController := signercontroller.New(clock.RealClock{}, postgressigner.NewImpl(*postgresClientNamespace, *postgresClientServiceAccount, postgresCAPool, pcrClient, additionalPostgresClients...), hasher, pcrClient, trustBundles)
+		go postgresSignerController.Run(ctx, *workersPerSigner)
+	} else {
+		slog.InfoContext(ctx, "No --postgres-ca-pool: not signing PostgreSQL login certificates")
 	}
-	postgresSignerController := signercontroller.New(clock.RealClock{}, postgressigner.NewImpl(*postgresClientNamespace, *postgresClientServiceAccount, postgresCAPool, pcrClient, additionalPostgresClients...), hasher, pcrClient, trustBundles)
-	go postgresSignerController.Run(ctx, *workersPerSigner)
 	go pcrClient.Informer().Run(ctx.Done())
 	go serviceDNSSignerController.Run(ctx, *workersPerSigner)
 	go podIdentitySignerController.Run(ctx, *workersPerSigner)
