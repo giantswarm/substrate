@@ -50,6 +50,9 @@ func MountDir(name, subPath string, readOnly bool) string {
 // Hostname is the UTS hostname for actor containers.
 const Hostname = "actor"
 
+// NoFileLimit is the RLIMIT_NOFILE of every actor container, soft and hard.
+const NoFileLimit = 1024
+
 // Options describes one actor container. Args, Env, Capabilities and User
 // arrive already resolved.
 type Options struct {
@@ -130,10 +133,12 @@ func Build(o Options) *specs.Spec {
 			Rlimits: []specs.POSIXRlimit{
 				{
 					Type: "RLIMIT_NOFILE",
-					// NOTE: raised from 1024 because proxy-heavy actors ran out
-					// of sockets; 1048576 is the kernel's default fs.nr_open.
-					Hard: 1048576,
-					Soft: 1048576,
+					// The limit every checkpoint was taken with: runsc refuses
+					// a restore whose spec carries other Rlimits than the
+					// checkpoint's, so changing it strands every golden and
+					// paused actor written before the change.
+					Hard: NoFileLimit,
+					Soft: NoFileLimit,
 				},
 			},
 		},
