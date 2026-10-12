@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [agent-substrate/substrate#2515](https://github.com/agent-substrate/substrate/pull/2515), open, from the branch `upstream/egress-credential-path-prefix` on upstream `main` @ `c4129c94`
-- **Our commit:** the fork's cherry-pick of the upstream commit, resolved against the line's `applyEffects`, which mints no actor JWT
+- **Our commit:** [#349](https://github.com/giantswarm/substrate/pull/349): the fork's cherry-pick of the upstream commit, resolved against the line's `applyEffects`, which mints no actor JWT
 
 ## Change
 
