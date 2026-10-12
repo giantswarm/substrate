@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** none: upstream raised the limit with no compatibility before its 1.0; the general fix (a restore under the limit its checkpoint was taken with) is to file
-- **Our commit:** `fix(ocispec): keep RLIMIT_NOFILE at 1024 so earlier checkpoints restore`
+- **Our commit:** [#353](https://github.com/giantswarm/substrate/pull/353) (`fix(ocispec): keep RLIMIT_NOFILE at 1024 so earlier checkpoints restore`)
 
 ## Change
 
