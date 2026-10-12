@@ -186,7 +186,7 @@ func TestCrashOnRestoreFailure(t *testing.T) {
 			st, cleanup := storetest.SetupTestStore(t)
 			defer cleanup()
 			seedActor(t, t.Context(), st, restoreTestActor)
-			w := &ActorWorkflow{store: st}
+			w := &ActorWorkflow{store: st, dialer: newDanglingDialer()}
 			err := w.crashOnRestoreFailure(tc.ctx(t), restoreTestActor, nil, tc.err)
 			if (tc.err == nil) != (err == nil) {
 				t.Fatalf("crashOnRestoreFailure() = %v, want error: %v", err, tc.err != nil)

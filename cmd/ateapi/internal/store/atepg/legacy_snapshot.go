@@ -32,6 +32,11 @@ const (
 	// ExternalSnapshot.source_local_snapshot_name as 1.4.0 to 1.5.0-rc.1
 	// numbered it.
 	legacyExternalSnapshotSourceLocalSnapshotName protowire.Number = 4
+	// LocalSnapshot.node_vms_with_local_snapshots up to the 1.8 line: the
+	// nodes holding the local snapshot, of which a pause records one.
+	legacyLocalSnapshotNodes protowire.Number = 2
+	// LocalSnapshot.content_scope as the 1.8 line numbered it.
+	legacyLocalSnapshotContentScope protowire.Number = 3
 )
 
 // migrateLegacyActor rewrites the snapshot records an older release wrote
@@ -51,6 +56,43 @@ func migrateLegacyActor(actor *ateapipb.Actor) {
 	builtOn := unknownString(st.ProtoReflect(), legacyActorStatusBuiltOnTemplateUID)
 	migrateLegacyExternalSnapshot(st.GetExternalSnapshot(), builtOn)
 	migrateLegacyExternalSnapshot(st.GetLocalSnapshot().GetDurableCopy(), builtOn)
+	migrateLegacyLocalSnapshot(st.GetLocalSnapshot())
+	migrateLegacyAssignedNode(st)
+}
+
+// migrateLegacyLocalSnapshot rewrites a local snapshot the 1.8 line recorded:
+// its node was field 2, a list holding the one node the pause ran on, and its
+// content scope field 3. Read as written, the snapshot has no node, so a
+// resume cannot find the worker holding it, and no content scope, so a DATA
+// snapshot would be restored as a FULL one.
+func migrateLegacyLocalSnapshot(ls *ateapipb.LocalSnapshot) {
+	if ls == nil {
+		return
+	}
+	if ls.NodeName == "" {
+		ls.NodeName = firstUnknownString(ls.ProtoReflect(), legacyLocalSnapshotNodes)
+	}
+	if ls.ContentScope == ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_UNSPECIFIED {
+		if v, ok := unknownVarint(ls.ProtoReflect(), legacyLocalSnapshotContentScope); ok {
+			ls.ContentScope = ateapipb.SnapshotContentScope(v)
+		}
+	}
+}
+
+// migrateLegacyAssignedNode records the node an actor of the 1.8 line is
+// attached to, which that line kept only on the worker assignment and the
+// local snapshot: the node of its worker, else the node holding its local
+// snapshot. Without it a running actor's pause crashes it for an unknown node,
+// and a delete or crash leaves its sandbox running.
+func migrateLegacyAssignedNode(st *ateapipb.ActorStatus) {
+	if st.AssignedNode != "" {
+		return
+	}
+	if node := st.GetWorkerAssignment().GetNodeName(); node != "" {
+		st.AssignedNode = node
+		return
+	}
+	st.AssignedNode = st.GetLocalSnapshot().GetNodeName()
 }
 
 func migrateLegacyExternalSnapshot(s *ateapipb.ExternalSnapshot, builtOn string) {
@@ -103,6 +145,58 @@ func unknownString(m protoreflect.Message, num protowire.Number) string {
 		b = b[l:]
 	}
 	return value
+}
+
+// firstUnknownString returns the first value of a length-delimited unknown
+// field of m, or "" if m holds none.
+func firstUnknownString(m protoreflect.Message, num protowire.Number) string {
+	for b := m.GetUnknown(); len(b) > 0; {
+		n, typ, l := protowire.ConsumeTag(b)
+		if l < 0 {
+			return ""
+		}
+		b = b[l:]
+		if n == num && typ == protowire.BytesType {
+			v, vl := protowire.ConsumeBytes(b)
+			if vl < 0 {
+				return ""
+			}
+			return string(v)
+		}
+		l = protowire.ConsumeFieldValue(n, typ, b)
+		if l < 0 {
+			return ""
+		}
+		b = b[l:]
+	}
+	return ""
+}
+
+// unknownVarint returns the last value of a varint unknown field of m, and
+// whether m holds one.
+func unknownVarint(m protoreflect.Message, num protowire.Number) (int32, bool) {
+	var value int32
+	found := false
+	for b := m.GetUnknown(); len(b) > 0; {
+		n, typ, l := protowire.ConsumeTag(b)
+		if l < 0 {
+			return value, found
+		}
+		b = b[l:]
+		if n == num && typ == protowire.VarintType {
+			v, vl := protowire.ConsumeVarint(b)
+			if vl < 0 {
+				return value, found
+			}
+			value, found = int32(v), true
+		}
+		l = protowire.ConsumeFieldValue(n, typ, b)
+		if l < 0 {
+			return value, found
+		}
+		b = b[l:]
+	}
+	return value, found
 }
 
 // discardUnknown drops the unknown fields of m and of every message it holds,

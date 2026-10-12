@@ -52,6 +52,14 @@ func withUnknownString[M proto.Message](m M, num protowire.Number, v string) M {
 	return m
 }
 
+// withUnknownVarint appends a varint field m's descriptor does not declare.
+func withUnknownVarint[M proto.Message](m M, num protowire.Number, v uint64) M {
+	r := m.ProtoReflect()
+	b := protowire.AppendTag(r.GetUnknown(), num, protowire.VarintType)
+	r.SetUnknown(protowire.AppendVarint(b, v))
+	return m
+}
+
 func legacyTestActor(status *ateapipb.ActorStatus) *ateapipb.Actor {
 	return &ateapipb.Actor{
 		Metadata:      &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-a", Uid: legacyTestActorUID},
@@ -105,12 +113,76 @@ func TestUnmarshalStoredMigratesLegacySnapshots(t *testing.T) {
 			},
 		}, legacyActorStatusBuiltOnTemplateUID, legacyTestTemplateUID)),
 		want: &ateapipb.ActorStatus{
-			State: ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			State:        ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			AssignedNode: "node-a",
 			LocalSnapshot: &ateapipb.LocalSnapshot{
 				SnapshotName: legacyTestLocalName,
 				NodeName:     "node-a",
 				DurableCopy:  migratedCopy,
 			},
+		},
+	}, {
+		// 1.8: the local snapshot's node is field 2, a list, and its
+		// content scope field 3; the actor status has no assigned node.
+		name: "1.8 paused actor",
+		written: legacyTestActor(&ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			LocalSnapshot: withUnknownVarint(withUnknownString(&ateapipb.LocalSnapshot{
+				SnapshotName: legacyTestLocalName,
+				DurableCopy:  proto.CloneOf(migratedCopy),
+			}, legacyLocalSnapshotNodes, "node-a"), legacyLocalSnapshotContentScope, uint64(ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA)),
+		}),
+		want: &ateapipb.ActorStatus{
+			State:        ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			AssignedNode: "node-a",
+			LocalSnapshot: &ateapipb.LocalSnapshot{
+				SnapshotName: legacyTestLocalName,
+				NodeName:     "node-a",
+				ContentScope: ateapipb.SnapshotContentScope_SNAPSHOT_CONTENT_SCOPE_DATA,
+				DurableCopy:  migratedCopy,
+			},
+		},
+	}, {
+		name: "1.8 running actor",
+		written: legacyTestActor(&ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_RUNNING,
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker: &ateapipb.ObjectRef{Name: "worker-b"}, WorkerPodUid: "pod-b", NodeName: "node-b",
+			},
+			ExternalSnapshot: &ateapipb.ExternalSnapshot{
+				SnapshotUri: suspendURI, ContentScope: full, ActorTemplateUid: legacyTestTemplateUID,
+			},
+		}),
+		want: &ateapipb.ActorStatus{
+			State:        ateapipb.ActorState_ACTOR_STATE_RUNNING,
+			AssignedNode: "node-b",
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker: &ateapipb.ObjectRef{Name: "worker-b"}, WorkerPodUid: "pod-b", NodeName: "node-b",
+			},
+			ExternalSnapshot: &ateapipb.ExternalSnapshot{
+				SnapshotUri: suspendURI, ContentScope: full, ActorTemplateUid: legacyTestTemplateUID,
+			},
+		},
+	}, {
+		// A resume from the durable copy placed the actor on another node:
+		// its worker's node is the one it is attached to.
+		name: "1.8 actor resumed away from its local snapshot",
+		written: legacyTestActor(&ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_RUNNING,
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker: &ateapipb.ObjectRef{Name: "worker-b"}, WorkerPodUid: "pod-b", NodeName: "node-b",
+			},
+			LocalSnapshot: withUnknownString(&ateapipb.LocalSnapshot{
+				SnapshotName: legacyTestLocalName,
+			}, legacyLocalSnapshotNodes, "node-a"),
+		}),
+		want: &ateapipb.ActorStatus{
+			State:        ateapipb.ActorState_ACTOR_STATE_RUNNING,
+			AssignedNode: "node-b",
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker: &ateapipb.ObjectRef{Name: "worker-b"}, WorkerPodUid: "pod-b", NodeName: "node-b",
+			},
+			LocalSnapshot: &ateapipb.LocalSnapshot{SnapshotName: legacyTestLocalName, NodeName: "node-a"},
 		},
 	}, {
 		name: "1.3 checkpoint suspend",
