@@ -45,7 +45,7 @@ type fakeWorkerPlugin struct {
 	mountCalls  []mountCall
 }
 
-func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, attributes map[string]string, _ volume.AccessMode) error {
+func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, volumeID string, targetPath string, attributes map[string]string, _ volume.AccessMode, _ bool) error {
 	f.mountCalls = append(f.mountCalls, mountCall{
 		volumeID:   volumeID,
 		targetPath: targetPath,

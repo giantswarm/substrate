@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/volume"
@@ -76,6 +77,26 @@ var pvAccessModes = map[ateapipb.VolumeAccessMode][]corev1.PersistentVolumeAcces
 	ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY: {corev1.ReadWriteMany},
 }
 
+// apiAccessModes maps a PersistentVolume access mode to the API's.
+var apiAccessModes = map[corev1.PersistentVolumeAccessMode]ateapipb.VolumeAccessMode{
+	corev1.ReadOnlyMany:  ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY,
+	corev1.ReadWriteMany: ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY,
+}
+
+// pvAccessMode returns the PersistentVolume's own access mode that permits
+// mode, the first in the PersistentVolume's order, or unspecified if none
+// does. It is the mode the volume is attached and published with, as the
+// kubelet does: a read-only mount of a read-write-many volume is a
+// read-write-many publish with the readonly flag.
+func pvAccessMode(pv *corev1.PersistentVolume, mode ateapipb.VolumeAccessMode) ateapipb.VolumeAccessMode {
+	for _, got := range pv.Spec.AccessModes {
+		if slices.Contains(pvAccessModes[mode], got) {
+			return apiAccessModes[got]
+		}
+	}
+	return ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED
+}
+
 // findPersistentVolume returns the PersistentVolume that holds the CSI
 // volume handle of driver, or nil.
 func findPersistentVolume(pvLister corev1listers.PersistentVolumeLister, driver, handle string) (*corev1.PersistentVolume, error) {
@@ -102,12 +123,8 @@ func resolveExistingVolume(pvLister corev1listers.PersistentVolumeLister, ev *at
 	if pv == nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "existing volume %q: no PersistentVolume of driver %q holds volume %q", name, ev.GetDriver(), ev.GetVolumeHandle())
 	}
-	for _, want := range pvAccessModes[ev.GetAccessMode()] {
-		for _, got := range pv.Spec.AccessModes {
-			if got == want {
-				return pv, nil
-			}
-		}
+	if pvAccessMode(pv, ev.GetAccessMode()) != ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED {
+		return pv, nil
 	}
 	return nil, status.Errorf(codes.FailedPrecondition, "existing volume %q: PersistentVolume %q permits %v, not %s", name, pv.Name, pv.Spec.AccessModes, ev.GetAccessMode())
 }
@@ -183,7 +200,9 @@ func existingVolumeMount(mount *ateapipb.VolumeMount, ev *ateapipb.ExistingVolum
 }
 
 // fillExistingVolumeContext sets each existing volume's volume context in
-// workloadSpec from its PersistentVolume, which the driver needs to mount it.
+// workloadSpec from its PersistentVolume, which the driver needs to mount it,
+// and its access mode: the PersistentVolume's own, read-only for a
+// read-only-many volume.
 func fillExistingVolumeContext(workloadSpec *ateletpb.WorkloadSpec, pvLister corev1listers.PersistentVolumeLister, actor *ateapipb.Actor) error {
 	for _, vol := range workloadSpec.GetVolumes() {
 		ev := existingVolume(actor, vol.GetName())
@@ -196,23 +215,29 @@ func fillExistingVolumeContext(workloadSpec *ateletpb.WorkloadSpec, pvLister cor
 			return err
 		}
 		ext.VolumeContext = pv.Spec.CSI.VolumeAttributes
+		ext.AccessMode = accessModeToAtelet(pvAccessMode(pv, ev.GetAccessMode()))
+		ext.ReadOnly = ev.GetAccessMode() == ateapipb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY
 	}
 	return nil
 }
 
 // attachExistingVolumes attaches the actor's mounted existing volumes to
-// node. They are never detached by the actor: other actors on the node may
-// be using them.
-func attachExistingVolumes(ctx context.Context, registry VolumePluginRegistry, actor *ateapipb.Actor, template *ateapipb.ActorTemplate, node string) error {
+// node with their PersistentVolume's own access mode. They are never detached
+// by the actor: other actors on the node may be using them.
+func attachExistingVolumes(ctx context.Context, registry VolumePluginRegistry, pvLister corev1listers.PersistentVolumeLister, actor *ateapipb.Actor, template *ateapipb.ActorTemplate, node string) error {
 	for _, ev := range actor.GetExistingVolumes() {
 		if !isVolumeMounted(ev.GetName(), template) {
 			continue
+		}
+		pv, err := resolveExistingVolume(pvLister, ev)
+		if err != nil {
+			return err
 		}
 		plugin, err := registry.GetPlugin(ctx, ev.GetDriver())
 		if err != nil {
 			return fmt.Errorf("failed to get volume plugin for %q: %w", ev.GetDriver(), err)
 		}
-		if err := plugin.AttachVolume(ctx, ev.GetVolumeHandle(), node, accessModeToVolume(ev.GetAccessMode())); err != nil {
+		if err := plugin.AttachVolume(ctx, ev.GetVolumeHandle(), node, accessModeToVolume(pvAccessMode(pv, ev.GetAccessMode()))); err != nil {
 			return fmt.Errorf("failed to attach existing volume %q to node %q: %w", ev.GetName(), node, err)
 		}
 	}

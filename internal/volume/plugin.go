@@ -45,6 +45,8 @@ type VolumePluginControlPlane interface {
 
 // VolumePluginWorkerPlane abstracts storage operations performed on worker nodes.
 type VolumePluginWorkerPlane interface {
-	MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string, mode AccessMode) error
+	// MountVolume publishes the volume at targetPath with the access mode the
+	// volume permits; readOnly publishes it read-only.
+	MountVolume(ctx context.Context, volumeID string, targetPath string, volumeContext map[string]string, mode AccessMode, readOnly bool) error
 	UnmountVolume(ctx context.Context, volumeID string, targetPath string, mode AccessMode) error
 }

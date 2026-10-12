@@ -295,7 +295,7 @@ func TestPlugin_MountVolume(t *testing.T) {
 	targetPath := filepath.Join(tmpDir, "target")
 
 	ctx := context.Background()
-	err = plugin.MountVolume(ctx, "test-vol", targetPath, nil, volume.ReadWriteOnce)
+	err = plugin.MountVolume(ctx, "test-vol", targetPath, nil, volume.ReadWriteOnce, false)
 	if err != nil {
 		t.Fatalf("MountVolume failed: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestPlugin_MountVolume(t *testing.T) {
 	os.RemoveAll(tmpDir)
 	os.MkdirAll(plugin.stagingDirPrefix, 0750)
 
-	err = plugin.MountVolume(ctx, "test-vol-2", targetPath, nil, volume.ReadWriteOnce)
+	err = plugin.MountVolume(ctx, "test-vol-2", targetPath, nil, volume.ReadWriteOnce, false)
 	if err != nil {
 		t.Errorf("MountVolume should have succeeded when NodeStageVolume is unimplemented, got: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestPlugin_MountVolumeMultiNode(t *testing.T) {
 	// Two actors on one node mount the same read-write-many volume.
 	targetA, targetB := filepath.Join(tmpDir, "a"), filepath.Join(tmpDir, "b")
 	for _, target := range []string{targetA, targetB} {
-		if err := plugin.MountVolume(ctx, "shared", target, nil, volume.ReadWriteMany); err != nil {
+		if err := plugin.MountVolume(ctx, "shared", target, nil, volume.ReadWriteMany, false); err != nil {
 			t.Fatalf("MountVolume %s: %v", target, err)
 		}
 	}
@@ -468,10 +468,29 @@ func TestPlugin_MountVolumeMultiNode(t *testing.T) {
 
 	// A read-only-many volume is published read-only.
 	published = nil
-	if err := plugin.MountVolume(ctx, "mirrors", targetA, nil, volume.ReadOnlyMany); err != nil {
+	if err := plugin.MountVolume(ctx, "mirrors", targetA, nil, volume.ReadOnlyMany, false); err != nil {
 		t.Fatalf("MountVolume: %v", err)
 	}
 	if req := published[0]; !req.GetReadonly() || req.GetVolumeCapability().GetAccessMode().GetMode() != csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY {
 		t.Errorf("read-only-many publish = %v, want read-only MULTI_NODE_READER_ONLY", req)
+	}
+
+	// A read-write-many volume mounted read-only is staged and published with
+	// its own mode and the readonly flag, as the kubelet does: a driver may
+	// refuse MULTI_NODE_READER_ONLY for it.
+	published, staged = nil, nil
+	var stageModes []csi.VolumeCapability_AccessMode_Mode
+	driver.nodeStageVolumeFunc = func(_ context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+		stageModes = append(stageModes, req.GetVolumeCapability().GetAccessMode().GetMode())
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+	if err := plugin.MountVolume(ctx, "efs", targetB, nil, volume.ReadWriteMany, true); err != nil {
+		t.Fatalf("MountVolume: %v", err)
+	}
+	if len(stageModes) != 1 || stageModes[0] != csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+		t.Errorf("stage access modes = %v, want MULTI_NODE_MULTI_WRITER", stageModes)
+	}
+	if req := published[0]; !req.GetReadonly() || req.GetVolumeCapability().GetAccessMode().GetMode() != csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER {
+		t.Errorf("read-only publish of a read-write-many volume = %v, want read-only MULTI_NODE_MULTI_WRITER", req)
 	}
 }
