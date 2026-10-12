@@ -50,7 +50,8 @@ const (
 // the moment: the actor is returned to the snapshot it was resuming from, its
 // worker freed, and the resume tried again with backoff on another worker,
 // waiting for one while the rolling pool has none free. An actor a suspend
-// or a pause left crashed for such a cause (transientCheckpointCrash) is
+// or a pause left crashed for such a cause, or one whose worker went away
+// under it with no operation in flight (lostWorkloadCrash), is
 // returned to its latest durable snapshot and resumed from it the same way. A
 // call whose attempts or context run out answers Unavailable naming the crash,
 // also while the actor's recovery is unfinished: the caller's retry returns it
@@ -105,8 +106,9 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 //     from: PAUSED while it holds its pause snapshot, SUSPENDED otherwise.
 //     Unlike RevertActor it keeps the pause snapshot, which the resume was
 //     restoring;
-//   - one a suspend or a pause crashed (transientCheckpointCrash) to its
-//     latest durable snapshot, SUSPENDED, as RevertActor does: the
+//   - one whose running workload the crash took (lostWorkloadCrash: a
+//     suspend or a pause interrupted, or a worker lost with no operation in
+//     flight) to its latest durable snapshot, SUSPENDED, as RevertActor does: the
 //     half-written snapshot is discarded and the local snapshots dropped.
 //
 // It reports the crash message whenever the actor was found crashed for a
@@ -141,9 +143,9 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 		return crash, false, nil
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
-	fromCheckpoint := transientCheckpointCrash(actor)
+	lostWorkload := lostWorkloadCrash(actor)
 	op := ateattr.OperationResume
-	if fromCheckpoint {
+	if lostWorkload {
 		op = ateattr.OperationRevert
 	}
 
@@ -156,7 +158,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	// is released. Any other has what the failed operation left torn down, as
 	// a revert does, and goes back unplaced.
 	rest := ateapipb.ActorState_ACTOR_STATE_SUSPENDED
-	if _, local := findLatestSnapshotStorage(actor.GetStatus(), ateapipb.SnapshotDurability_SNAPSHOT_DURABILITY_LOCAL, ateapipb.SnapshotStorageStatus_SNAPSHOT_STORAGE_STATUS_COMPLETED); local != nil && !fromCheckpoint {
+	if _, local := findLatestSnapshotStorage(actor.GetStatus(), ateapipb.SnapshotDurability_SNAPSHOT_DURABILITY_LOCAL, ateapipb.SnapshotStorageStatus_SNAPSHOT_STORAGE_STATUS_COMPLETED); local != nil && !lostWorkload {
 		rest = ateapipb.ActorState_ACTOR_STATE_PAUSED
 	}
 	if rest == ateapipb.ActorState_ACTOR_STATE_PAUSED {
@@ -167,7 +169,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	if err != nil {
 		return crash, false, fmt.Errorf("while freeing the worker of actor %s: %w", actorRef, err)
 	}
-	if fromCheckpoint {
+	if lostWorkload {
 		if err := w.ensureInProgressSnapshotDiscarded(leaseCtx, actor); err != nil {
 			return crash, false, fmt.Errorf("while discarding the snapshot actor %s was taking: %w", actorRef, err)
 		}
@@ -179,7 +181,7 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 		if rest == ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
 			toUpdate.Status.AssignedNode = ""
 		}
-		if fromCheckpoint {
+		if lostWorkload {
 			// Back to the latest durable snapshot: the local snapshots and the
 			// discarded in-progress durable one go, as in ensureRevertedFinalized.
 			removeSnapshotStorageEntries(toUpdate.Status, ateapipb.SnapshotDurability_SNAPSHOT_DURABILITY_LOCAL, nil)
