@@ -590,6 +590,102 @@ step; conversations and durable volumes survive it:
 The [snapshot reset runbook](snapshot-reset.md) is not part of this
 step: it stays the remedy for a corrupted snapshot store only.
 
+### Patch steps within 1.8
+
+Every released 1.8 patch has an entry here, newest first. A step from one
+1.8 patch to the next follows the numbered steps above with no extra
+action. None of the entries below changes the Postgres schema or needs a
+[snapshot reset](snapshot-reset.md), and none loses a conversation: an
+actor's snapshots are read as before, and a stored row an older patch
+wrote in another shape is rewritten when it is read, with no step to run.
+A new 1.8 patch adds its entry here.
+
+#### 1.8.3 to 1.8.4
+
+- **Persisted format:** unchanged. No proto field, no CRD and no chart
+  value differs between the two tags.
+- **Migration, automatic:** the ActorTemplate row migration of 1.8.3
+  (`migrateLegacyActorTemplate` in `cmd/ateapi/internal/store/atepg`)
+  covers one more case. A trust-bundle projection that carries neither
+  `names` nor the legacy single `name` is a row that 1.8.3's first status
+  write had already rewritten without its names: it now reads as the one
+  bundle `egress-mitm.ate.dev`, the only name a release that stored the
+  legacy field accepted. A projection that carries names is left alone.
+  The rewritten template is persisted by the template's next update.
+  Before this, every boot from such a template failed in atelet with `no
+  trust bundle names given`.
+- **Golden snapshots retaken, automatic:** the ActorTemplate reconciler
+  clears a golden failure that 1.8.3 or earlier recorded as terminal
+  (`GoldenActorUnexpectedState`, or a `GoldenActorCrashed` for a missing
+  trust-bundle name when every projection now names a bundle) and takes
+  the golden again; the golden recorded beside the failure stays the
+  template's golden until the new one is complete. A golden actor found
+  `DELETING`, `PAUSING`, `PAUSED` or `REVERTING` before its snapshot (a
+  `DELETING` one is a delete that a rollback of ate-api cut) is released
+  and the take retried instead of failing the template. A create from the template answers
+  `Unavailable` until its golden is complete; retry it.
+- **Interrupted suspends and pauses, automatic:** a suspend or pause that
+  a rolling worker pool interrupts while it checkpoints the running
+  workload now answers `Unavailable`; the actor is returned to its last
+  external snapshot, `SUSPENDED`, with its worker freed and the
+  half-written snapshot discarded, and the caller's retry resumes it. The
+  `ActorTransitionReconciler` does the same for an actor an earlier call
+  left `CRASHED` this way, so an actor 1.8.3 left crashed is recovered on
+  the first resync. Only a crash that holds an external snapshot is
+  recovered; the workload went with its worker, so the return loses
+  nothing the crash had not already lost. An actor in any other state is
+  left alone.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.8.2 to 1.8.3
+
+- **Persisted format:** the `WorkerPool` CRD gains two optional status
+  fields, `workerImage` and `conditions` (`WorkerImageOverridden`), and an
+  `Image` printer column; the chart's role grants ate-controller `create`
+  and `patch` on `events.k8s.io` events. Apply the new CRDs in step 1 as
+  usual. The Postgres schema and the protos are unchanged.
+- **Migration, automatic:** an ActorTemplate row written before the
+  trust-bundle projection took repeated `names` held its one bundle in the
+  old `name` field, which the current descriptor drops, so the projection
+  read as naming no bundle. The store now rewrites such a row when it
+  reads it: the old `name` becomes the one entry of `names`; the rewrite
+  is persisted by the template's next update. atelet refuses a boot from a
+  projection that names no bundle with `no trust bundle names given`,
+  where it used to index the empty list.
+- **Resume retries:** a resume that a worker drain cuts answers
+  `Unavailable` naming the crash, also while the actor's recovery is
+  unfinished; the next attempt or the `ActorTransitionReconciler` returns
+  the actor to the snapshot it was resuming, and the caller's retry
+  resumes it.
+- **Chart:** the atelet DaemonSet takes `atelet.updateStrategy`, default
+  `RollingUpdate` with `maxUnavailable: 25%`; `maxSurge` must stay 0 and
+  the chart refuses any other value.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.8.1 to 1.8.2
+
+- **Persisted format:** unchanged. No proto, CRD, chart or Postgres schema
+  change.
+- **Migration, automatic:** none to run. New behaviour on the first
+  resync: an actor that a resume crashed for a cause a rolling worker pool
+  produces is returned to the snapshot it was resuming (`PAUSED` while it
+  holds its pause snapshot, else `SUSPENDED`) by the
+  `ActorTransitionReconciler`, and a resume or golden take such a pool
+  interrupts is retried with backoff instead of failing the actor or the
+  template. A golden failure recorded as a transient crash is cleared and
+  the golden taken again.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.8.0 to 1.8.1
+
+The step is described in [the 1.7 to 1.8 step](#the-17-to-18-step): 1.8.1
+is the first 1.8 release a 1.7 install can step to, and never to 1.8.0.
+Between the two tags the only persisted-format change is the additive
+`snapshot_layout` field on `GoldenSnapshotStatus`, which records the
+layout a golden tag was written in; a golden recorded without it is taken
+again in the current layout, as that section says. No reset and no lost
+conversation.
+
 ### After the roll, on GKE
 
 > [!WARNING]
