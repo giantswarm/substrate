@@ -483,18 +483,72 @@ func (h *SessionHolder) Dialer() func(context.Context, string, string) (net.Conn
 // address is routable.
 func (s *SandboxSession) Dialer() func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		s.mu.Lock()
-		if s.Network == nil {
-			s.mu.Unlock()
-			return nil, net.ErrClosed
-		}
-		fd, err := unix.FcntlInt(uintptr(s.Network.GatewayNetNS), unix.F_DUPFD_CLOEXEC, 0)
-		s.mu.Unlock()
+		ns, err := s.retain(func(n *SandboxNetwork) netns.Handle { return n.GatewayNetNS })
 		if err != nil {
-			return nil, fmt.Errorf("while retaining the sandbox namespace: %w", err)
+			return nil, err
 		}
-		ns := netns.Handle(fd)
 		defer ns.Close()
 		return netns.Dialer(ns)(ctx, network, address)
 	}
+}
+
+// SandboxNetworkNotTaken starts the error of a sandbox that did not take the
+// actor's interface.
+const SandboxNetworkNotTaken = "the sandbox did not take the actor's network"
+
+// CheckRuntimeTaken fails when the kernel of the runtime namespace still
+// carries the actor's address. gVisor takes every interface of the namespace
+// it runs in and moves its addresses into its own stack, so once its sandbox
+// runs the kernel holds none. A kernel that still does answers every
+// connection to the actor with a reset, as if nothing listened, while the
+// workload listens in a sandbox that has no interface: the wakeup probe is
+// refused until its deadline and the workload's own output says it is ready.
+// Only a runtime that takes the interface (Veth) is checked.
+func (s *SandboxSession) CheckRuntimeTaken(ctx context.Context) error {
+	ns, err := s.retain(func(n *SandboxNetwork) netns.Handle { return n.RuntimeNetNS })
+	if err != nil {
+		return err
+	}
+	defer ns.Close()
+	var linkErr error
+	held := false
+	if err := netns.Do(ctx, ns, func(context.Context) error {
+		link, err := netlink.LinkByName(ActorVethName)
+		if err != nil {
+			linkErr = err
+			return nil
+		}
+		addrs, err := netlink.AddrList(link, netlink.FAMILY_V4)
+		if err != nil {
+			return fmt.Errorf("while listing the addresses of %s: %w", ActorVethName, err)
+		}
+		for _, addr := range addrs {
+			held = held || addr.IP.Equal(ActorVethAddr.IP)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	switch {
+	case linkErr != nil:
+		return fmt.Errorf("%s: %s is gone from its namespace: %w", SandboxNetworkNotTaken, ActorVethName, linkErr)
+	case held:
+		return fmt.Errorf("%s: %s in its namespace still carries %s", SandboxNetworkNotTaken, ActorVethName, ActorVethIP)
+	}
+	return nil
+}
+
+// retain duplicates one of the session's namespace handles, so a concurrent
+// Close cannot close it under the caller; the caller closes the duplicate.
+func (s *SandboxSession) retain(pick func(*SandboxNetwork) netns.Handle) (netns.Handle, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Network == nil {
+		return -1, net.ErrClosed
+	}
+	fd, err := unix.FcntlInt(uintptr(pick(s.Network)), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return -1, fmt.Errorf("while retaining the sandbox namespace: %w", err)
+	}
+	return netns.Handle(fd), nil
 }
