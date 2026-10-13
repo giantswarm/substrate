@@ -840,6 +840,28 @@ that step describes, nothing else runs.
   started from it.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.10
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.8.5 or 1.9.1 straight to a 1.10 patch is the 1.9 to 1.10 step and the
+patch entries in one roll.
+
+#### 1.10.0 to 1.10.1
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs between the two tags.
+- **Chart:** unchanged.
+- **Assignment:** when workers exist and none carries the labels of an
+  actor's worker selectors, the resume answers `ResourceExhausted` with
+  `no worker matches the selector "<selector>" (none of the <n> worker(s)
+  carries its labels)` instead of `no worker has room for the actor`.
+  Only the message changes: the status, the router's parking and the
+  scheduler metric's outcome stay those of a full pool.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
