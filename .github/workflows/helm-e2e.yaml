@@ -126,6 +126,7 @@ jobs:
       - name: Deploy egress demo
         run: hack/install-ate-kind.sh --deploy-demo-egress
       - name: Keep a gVisor pool that names an older worker on this release's
+        id: lanes-ready
         # The shape of an installation whose WorkerPool names the worker of the
         # Substrate release it was rendered for while a newer release runs
         # atelet: the pool must still run this build, or the actors the gVisor
@@ -141,18 +142,23 @@ jobs:
             echo "counter workers run ${got}, want ${want}" >&2
             exit 1
           fi
+      # Every lane below runs once the setup above succeeded, whatever an earlier
+      # lane did, so one lane's failure never hides another lane's result.
       - name: Run E2E tests (gVisor)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         # Identity rotates the cluster-wide egress CA. Run it last so HTTPS
         # tests keep a stable trust bundle and gateway signing certificate.
         env:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-gvisor.xml
         run: hack/run-e2e-kind.sh -v -skip '^TestActorIdentity_' -args --no-color
       - name: Run E2E tests (micro-VM)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         env:
           E2E_SANDBOX_CLASS: microvm
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-microvm.xml
         run: hack/run-e2e-kind.sh ./internal/e2e/suites/demo -v -args --no-color
       - name: Run E2E tests (atelet restart)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         # Deletes the atelet pod of a running actor's node and requires the next
         # suspend to commit a snapshot within a client's 30 s budget, as after a
         # DaemonSet roll. Its own step: nothing may use that atelet beside it.
@@ -161,10 +167,12 @@ jobs:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-atelet-restart.xml
         run: hack/run-e2e-kind.sh ./internal/e2e/suites/ateletrestart -v -args --no-color
       - name: Run E2E tests (identity and trust rotation)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         env:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-identity.xml
         run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
       - name: Run E2E tests (egress MITM CA rotation)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         # Rotates the egress MITM CA (add-ca, activate-ca, retire-ca) while
         # long-running, resumed and new actors fetch through the gateway, and
         # requires that no fetch fails. Here rather than in pr-workflow because
@@ -176,6 +184,7 @@ jobs:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/helm-mitm-rotation.xml
         run: hack/run-e2e-kind.sh ./internal/e2e/suites/egressmitm -run '^TestEgressMITMCARotation$' -timeout 20m -v -args --no-color
       - name: Run E2E tests (egress MITM CA rotation, micro-VM)
+        if: ${{ !cancelled() && steps.lanes-ready.outcome == 'success' }}
         # The same rotation on the micro-VM runtime, which delivers the bundle
         # over the virtio-fs share and restores actors with the snapshot's clock.
         env:
