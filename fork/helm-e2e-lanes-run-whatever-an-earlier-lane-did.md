@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [kagent-dev/substrate#71](https://github.com/kagent-dev/substrate/pull/71); agent-substrate/substrate has no helm-e2e. Falls away at the re-pin onto the first release that carries it
-- **Our commit:** this pull request
+- **Our commit:** [#366](https://github.com/giantswarm/substrate/pull/366)
 
 ## Change
 
