@@ -123,7 +123,7 @@ func TestFinalizeRunning_CommitsRunning(t *testing.T) {
 	})
 	w := &ActorWorkflow{store: persistence}
 
-	got, err := w.finalizeRunning(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+	got, err := w.finalizeRunning(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 	if err != nil {
 		t.Fatalf("finalizeRunning: %v", err)
 	}
