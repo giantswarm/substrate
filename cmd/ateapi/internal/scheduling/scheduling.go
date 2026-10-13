@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -51,6 +52,25 @@ type Constraints struct {
 // constraints has room. The cause can be full workers, or no worker that meets
 // the constraints at all.
 var ErrNoCapacity = errors.New("no worker that meets the constraints has room")
+
+// NoMatchingWorkerError is the ErrNoCapacity of a placement whose worker
+// selectors match the labels of none of the fleet's workers, whatever their
+// state, sandbox class or room. It tells a label mismatch (a selector or a
+// pool's labels renamed on one side only) from a full pool, which waiting does
+// not cure. It matches ErrNoCapacity through errors.Is.
+type NoMatchingWorkerError struct {
+	// Selector is the template's and the actor's worker selectors as one.
+	Selector string
+	// Workers counts the fleet's workers, none of which the selector matches.
+	Workers int
+}
+
+func (e *NoMatchingWorkerError) Error() string {
+	return fmt.Sprintf("%v: the selector %q matches none of the %d worker(s)", ErrNoCapacity, e.Selector, e.Workers)
+}
+
+// Is makes errors.Is(err, ErrNoCapacity) hold for a NoMatchingWorkerError.
+func (e *NoMatchingWorkerError) Is(target error) bool { return target == ErrNoCapacity }
 
 // Scheduler answers placement questions against the current worker fleet.
 type Scheduler interface {
@@ -113,7 +133,13 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 	}
 
 	var candidates []candidate
+	// selected counts the workers whose labels the selectors match, in any
+	// state and of any sandbox class.
+	selected := 0
 	for _, worker := range workers {
+		if matchesSelectors(worker, constraints) {
+			selected++
+		}
 		if !s.Applies(worker, constraints) {
 			continue
 		}
@@ -123,6 +149,10 @@ func (s *scheduler) Schedule(ctx context.Context, constraints Constraints) (*ate
 	}
 
 	if len(candidates) == 0 {
+		// An empty fleet is a pool still scaling up, not a label mismatch.
+		if selector := selectorString(constraints); selected == 0 && len(workers) > 0 && selector != "" {
+			return nil, &NoMatchingWorkerError{Selector: selector, Workers: len(workers)}
+		}
 		return nil, ErrNoCapacity
 	}
 	if len(candidates) == 1 {
@@ -222,15 +252,33 @@ func (s *scheduler) Applies(worker *ateapipb.Worker, constraints Constraints) bo
 		return false
 	}
 
-	set := labels.Set(worker.GetLabels())
-	if constraints.TemplateSelector != nil && !constraints.TemplateSelector.Matches(set) {
-		return false
-	}
-	if constraints.ActorSelector != nil && !constraints.ActorSelector.Matches(set) {
+	if !matchesSelectors(worker, constraints) {
 		return false
 	}
 
 	return len(constraints.RequiredNodes) == 0 || slices.Contains(constraints.RequiredNodes, worker.GetNodeName())
+}
+
+// matchesSelectors reports whether both of the constraints' worker selectors
+// match the worker's labels; a nil selector matches every worker.
+func matchesSelectors(worker *ateapipb.Worker, constraints Constraints) bool {
+	set := labels.Set(worker.GetLabels())
+	if constraints.TemplateSelector != nil && !constraints.TemplateSelector.Matches(set) {
+		return false
+	}
+	return constraints.ActorSelector == nil || constraints.ActorSelector.Matches(set)
+}
+
+// selectorString renders the template's and the actor's worker selectors as
+// the one selector a worker must match, "" when neither restricts.
+func selectorString(constraints Constraints) string {
+	var parts []string
+	for _, sel := range []labels.Selector{constraints.TemplateSelector, constraints.ActorSelector} {
+		if sel != nil && !sel.Empty() {
+			parts = append(parts, sel.String())
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 // HasRoom reports whether what the worker has left admits one more actor of

@@ -595,3 +595,90 @@ func TestScheduleMalformedLimitsIsNotNoCapacity(t *testing.T) {
 		t.Fatalf("Schedule() error = %v, want an error other than ErrNoCapacity", err)
 	}
 }
+
+// TestSchedule_NoMatchingWorker verifies that a placement whose selectors match
+// no worker of a non-empty fleet names the selector, while matching workers that
+// are full, not ACTIVE or of another sandbox class, and an empty fleet, keep the
+// bare ErrNoCapacity.
+func TestSchedule_NoMatchingWorker(t *testing.T) {
+	poolNew := labels.SelectorFromSet(labels.Set{"pool": "new"})
+	tierB := labels.SelectorFromSet(labels.Set{"tier": "b"})
+	tests := []struct {
+		name        string
+		fleet       fleet
+		constraints Constraints
+		want        *NoMatchingWorkerError // nil: the bare ErrNoCapacity
+	}{
+		{
+			name: "no worker carries the template selector's labels",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", map[string]string{"pool": "old"}),
+				worker("w-b", "gvisor", "node-b", map[string]string{"pool": "old"}),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew},
+			want:        &NoMatchingWorkerError{Selector: "pool=new", Workers: 2},
+		},
+		{
+			name: "the selectors are named as one",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", map[string]string{"pool": "new", "tier": "a"}),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew, ActorSelector: tierB},
+			want:        &NoMatchingWorkerError{Selector: "pool=new,tier=b", Workers: 1},
+		},
+		{
+			name: "matching workers are full",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", map[string]string{"pool": "new"}, assigned("demo", "resident")),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew},
+		},
+		{
+			name: "the matching worker is draining",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", map[string]string{"pool": "new"}, withState(ateapipb.WorkerState_WORKER_STATE_DRAINING)),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew},
+		},
+		{
+			name: "the matching worker is of another sandbox class",
+			fleet: fleet{
+				worker("w-a", "microvm", "node-a", map[string]string{"pool": "new"}),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew},
+		},
+		{
+			name:        "an empty fleet",
+			constraints: Constraints{SandboxClass: "gvisor", TemplateSelector: poolNew},
+		},
+		{
+			name: "no selector",
+			fleet: fleet{
+				worker("w-a", "gvisor", "node-a", nil, assigned("demo", "resident")),
+			},
+			constraints: Constraints{SandboxClass: "gvisor", ActorSelector: labels.SelectorFromSet(nil)},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New(tc.fleet, WithIntn(firstIntn))
+			_, err := s.Schedule(context.Background(), tc.constraints)
+			if !errors.Is(err, ErrNoCapacity) {
+				t.Fatalf("Schedule() error = %v, want ErrNoCapacity", err)
+			}
+			var got *NoMatchingWorkerError
+			if errors.As(err, &got) != (tc.want != nil) {
+				t.Fatalf("Schedule() error = %#v, want NoMatchingWorkerError: %v", err, tc.want != nil)
+			}
+			if tc.want == nil {
+				if err != ErrNoCapacity {
+					t.Errorf("Schedule() error = %v, want the bare ErrNoCapacity", err)
+				}
+				return
+			}
+			if *got != *tc.want {
+				t.Errorf("Schedule() error = %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}

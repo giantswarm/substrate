@@ -492,7 +492,7 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 		if err != nil {
 			if errors.Is(err, scheduling.ErrNoCapacity) {
 				outcome = ateattr.SchedulerOutcomeNoCapacity
-				return nil, nil, apierror.ResourceExhausted("no worker has room for the actor")
+				return nil, nil, noFreeWorkerError(err)
 			}
 			return nil, nil, err
 		}
@@ -602,6 +602,18 @@ func actorResourceLimits(tmpl *ateapipb.ActorTemplate) (cpuMilli, memBytes int64
 		}
 	}
 	return cpuMilli, memBytes, nil
+}
+
+// noFreeWorkerError turns the scheduler's ErrNoCapacity into the caller's
+// ResourceExhausted, which the router parks on until a worker frees up. A
+// selector that matches no worker is named, so a label mismatch does not read
+// as a full pool.
+func noFreeWorkerError(err error) error {
+	var unmatched *scheduling.NoMatchingWorkerError
+	if errors.As(err, &unmatched) {
+		return apierror.ResourceExhausted("no worker matches the selector %q (none of the %d worker(s) carries its labels)", unmatched.Selector, unmatched.Workers)
+	}
+	return apierror.ResourceExhausted("no worker has room for the actor")
 }
 
 func schedulingConstraints(actor *ateapipb.Actor, tmpl *ateapipb.ActorTemplate) (scheduling.Constraints, error) {
