@@ -103,6 +103,15 @@ hack/run-root-tests.sh
 
 New privileged tests only need the `roottest.Require` call — no CI changes.
 
+### The e2e lanes
+
+CI runs every e2e suite on two lanes, the gVisor ateom and the micro-VM ateom.
+A node-level arrangement a test makes must hold on both. The two differ in one
+known way: the micro-VM ateom clears its checkpoint directory before writing,
+the gVisor ateom only creates it. A test that blocked the checkpoint with an
+immutable file passed one lane and failed the other; a file under the
+directory's name is refused by both, so that is the arrangement to use.
+
 ### Copyright Headers
 
 Every file containing source code must include copyright and license
