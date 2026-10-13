@@ -198,31 +198,3 @@ func unknownVarint(m protoreflect.Message, num protowire.Number) (int32, bool) {
 	}
 	return value, found
 }
-
-// discardUnknown drops the unknown fields of m and of every message it holds,
-// as proto.UnmarshalOptions.DiscardUnknown does at decode time.
-func discardUnknown(m protoreflect.Message) {
-	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-		switch {
-		case fd.IsList():
-			if fd.Message() != nil {
-				for l, i := v.List(), 0; i < l.Len(); i++ {
-					discardUnknown(l.Get(i).Message())
-				}
-			}
-		case fd.IsMap():
-			if fd.MapValue().Message() != nil {
-				v.Map().Range(func(_ protoreflect.MapKey, mv protoreflect.Value) bool {
-					discardUnknown(mv.Message())
-					return true
-				})
-			}
-		case fd.Message() != nil:
-			discardUnknown(v.Message())
-		}
-		return true
-	})
-	if m.GetUnknown() != nil {
-		m.SetUnknown(nil)
-	}
-}
