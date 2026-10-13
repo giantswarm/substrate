@@ -1,8 +1,8 @@
 # A resume never answers RUNNING on a worker that started leaving under its restore
 
 - **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/resume-worker-leaving-under-restore`
-- **Our commit:** the fork's own commit, its pull request named here once open
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/resume-worker-leaving-under-restore`, stacked on `upstream/resume-restore-cut-by-drain` ([agent-substrate/substrate#2480](https://github.com/agent-substrate/substrate/pull/2480)), whose `workerLeavingCause` it reads
+- **Our commit:** [#384](https://github.com/giantswarm/substrate/pull/384): the fork's own commit
 
 ## Change
 
