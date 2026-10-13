@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [kagent-dev/substrate#39](https://github.com/kagent-dev/substrate/pull/39) — opened 2026-09-15 from `upstream/atelet-plugins-mount-propagation` (the chart hunk on upstream `main`; the chart test stays fork-only, upstream has no chart tests)
-- **Our commit:** `b79ed513`
+- **Our commit:** `b79ed513`; also [#15](https://github.com/giantswarm/substrate/pull/15) (`fix(helm): atelet mounts /var/lib/kubelet/plugins with HostToContainer propagation`)
 
 ## Change
 

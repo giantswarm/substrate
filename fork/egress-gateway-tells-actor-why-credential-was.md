@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file, with the agentgateway half: the 502 for unexpected answers needs upstream's agreement
-- **Our commit:** `feat/credential-provider-errors`
+- **Our commit:** `feat/credential-provider-errors`; merged as [#112](https://github.com/giantswarm/substrate/pull/112) (`feat(atenet): tell the actor why a credential was refused`)
 
 ## Change
 

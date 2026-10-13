@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file: the upstream-shaped patch is branch [`upstream/workerpool-spread`](https://github.com/giantswarm/substrate/tree/upstream/workerpool-spread) here (`05f37296`, on the mirror `main` @ `463f483c`; its message is the pull-request text). It answers agent-substrate/substrate#819 item 4 ("a default hostname spread or a documented values knob"; the maintainer on 2026-08-10: makes sense, little energy for it given #793, the node-level-runtime discussion closed without a plan); #212 → #247 shipped `spec.template` without spread, and nothing upstream carries anti-affinity or spread today (kagent-dev/substrate and agent-substrate/substrate searched 2026-09-15). Whether a hostname spread becomes a default is upstream's call — the patch adds the knob only. A team member opens the pull request with DCO sign-off once the team has reviewed it
-- **Our commit:** `d2ba96d2`, [#33](https://github.com/giantswarm/substrate/pull/33) (rebase-merged 2026-09-15; first release v0.0.30-gs.2)
+- **Our commit:** `d2ba96d2`, [#33](https://github.com/giantswarm/substrate/pull/33) (rebase-merged 2026-09-15; first release v0.0.30-gs.2); also [#98](https://github.com/giantswarm/substrate/pull/98) (`feat(workerpool): podAffinity on the worker pod template`)
 
 ## Change
 

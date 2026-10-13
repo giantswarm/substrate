@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** follows agent-substrate/substrate#1637 (shared volumes across actors, open), in the shape proposed there (https://github.com/agent-substrate/substrate/issues/1637#issuecomment-6083442678), on top of #1988's access modes (open); upstream puts it behind the Preview gate of #1994 (open), which this line does not carry, so it is ungated here. Exit: drops at the re-pin that carries #1637's API
-- **Our commit:** [#234](https://github.com/giantswarm/substrate/pull/234) (`feat: mount an existing volume per actor at a sub-path`)
+- **Our commit:** [#234](https://github.com/giantswarm/substrate/pull/234) (`feat: mount an existing volume per actor at a sub-path`); also [#342](https://github.com/giantswarm/substrate/pull/342) (`fix(volume): publish a read-only mount with the volume's own mode`)
 
 ## Change
 

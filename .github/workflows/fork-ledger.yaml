@@ -14,8 +14,8 @@
 
 # Fork (giantswarm/substrate): every pull request against a line names its
 # own number in the ledger (FORK.md, fork/), or carries the label no-ledger with a
-# "no-ledger: <reason>" line in its description; on a maintenance branch,
-# every pull request merged into it is in the branch's own copy. A workflow
+# "no-ledger: <reason>" line in its description; on every line, every pull
+# request merged into it is in the ledger. A workflow
 # of its own beside pr-workflow, so a label or a description edit re-runs
 # this check alone, not the suites. A re-pin candidate (sync/**, FORK.md,
 # "Re-pin") is a rebased branch whose pull request runs no pull_request
@@ -56,7 +56,7 @@ jobs:
           gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" --json "${FIELDS}" >"${RUNNER_TEMP}/pr.json"
           .github/scripts/fork-ledger.sh pr "${RUNNER_TEMP}/pr.json" FORK.md fork
       - name: Every merged pull request's row
-        if: github.event_name == 'pull_request' && startsWith(github.base_ref, 'release-')
+        if: github.event_name == 'pull_request'
         run: |
           gh pr list --repo "${GITHUB_REPOSITORY}" --base "${BASE}" --state merged --limit 1000 \
             --json "${FIELDS}" >"${RUNNER_TEMP}/merged.json"

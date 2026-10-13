@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not filed; upstream `main` carries the same v1.40.0 imports since its SDK bump to v1.45.0
-- **Our commit:** `04c3342f`
+- **Our commit:** `04c3342f`; also [#129](https://github.com/giantswarm/substrate/pull/129) (`fix(otel): use the semantic conventions of the SDK's own detectors`)
 
 ## Change
 

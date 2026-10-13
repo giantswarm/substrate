@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** none upstream; written upstream-ready, queued for review before it goes upstream; upstream would number the fields in its own range
-- **Our commit:** `feat(ateapi): fence Pause, Suspend and Resume with a lease token` (`giantswarm`), its backport on `release-1.3`
+- **Our commit:** `feat(ateapi): fence Pause, Suspend and Resume with a lease token` (`giantswarm`), its backport on `release-1.3`; also [#182](https://github.com/giantswarm/substrate/pull/182) (`feat(ateapi): fence Pause, Suspend and Resume with a lease token`)
 
 ## Change
 

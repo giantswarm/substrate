@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** test-only, superseded
-- **Our commit:** `giantswarm`: `fix(e2e): wait out a held actor lease in the lifecycle runner` (`2014424b`)
+- **Our commit:** `giantswarm`: `fix(e2e): wait out a held actor lease in the lifecycle runner` (`2014424b`); also [#188](https://github.com/giantswarm/substrate/pull/188) (`fix(e2e): wait out a held actor lease in the lifecycle runner`)
 
 ## Change
 

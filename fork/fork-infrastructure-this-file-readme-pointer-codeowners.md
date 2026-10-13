@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not for upstream
-- **Our commit:** the `giantswarm` branch history
+- **Our commit:** the `giantswarm` branch history; also [#197](https://github.com/giantswarm/substrate/pull/197) (`ci(e2e): upload each pod's whole log when the e2e job fails`), [#192](https://github.com/giantswarm/substrate/pull/192) (`fix(sync): delete the candidates a re-pin supersedes`), [#185](https://github.com/giantswarm/substrate/pull/185) (`fix(sync): land a re-pin as the candidate its checks passed on`), [#181](https://github.com/giantswarm/substrate/pull/181) (`fix(ci): validate skips the tagged maintenance branches`), [#97](https://github.com/giantswarm/substrate/pull/97) (`ci: the boilerplate check skips the aligned cliff.toml`), [#93](https://github.com/giantswarm/substrate/pull/93) (`fix(deps): otlploggrpc v0.21.0 for GO-2026-6508`), [#67](https://github.com/giantswarm/substrate/pull/67) (`ci: pin giantswarm/architect orb 10.10.0`), [#62](https://github.com/giantswarm/substrate/pull/62) (`ci: skip the alignment-managed files in the boilerplate check`), [#3](https://github.com/giantswarm/substrate/pull/3) (`ci(fork): the sync cancels the runs the mirror starts and opens hand-over PRs in this repository`), [#2](https://github.com/giantswarm/substrate/pull/2) (`ci(fork): the sync workflow pushes as the HeraldBot GitHub App`), [#1](https://github.com/giantswarm/substrate/pull/1) (`Bootstrap the Giant Swarm line: CI on the giantswarm branch, publishing to ghcr.io/giantswarm/substrate, upstream sync, ledger`)
 
 ## Change
 
