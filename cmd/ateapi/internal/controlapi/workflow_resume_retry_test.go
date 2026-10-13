@@ -42,6 +42,10 @@ var ateomSocketGone = status.Error(codes.Unknown, `ateom.RunWorkload: rpc error:
 // call, and its wakeup probe with it, is cancelled while its pod goes away.
 const wakeupProbeCancelledCrash = `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Canceled desc = while waiting for container wakeup probe: wakeup probe cancelled for "kagent" after 1.2s (3 attempts, last error: connection refused): context canceled`
 
+// sandboxNetworkCrash is the crash a resume records when the worker's sandbox
+// did not take the actor's network, so its wakeup probe was refused.
+const sandboxNetworkCrash = `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = the sandbox did not take the actor's network: eth0 in its namespace still carries 169.254.17.2`
+
 // runscKilled is the error a restore returns when its sandbox is killed: by
 // the worker pod going away, or by the kernel for its memory.
 var runscKilled = status.Error(codes.Internal, "while calling ateom.RestoreWorkload: rpc error: code = Internal desc = while starting pause container: while running `runsc start`: signal: killed")
@@ -67,12 +71,14 @@ func TestTransientResumeCrash(t *testing.T) {
 		{"atelet without an IP", crashed, `resume failed: atelet Restore: selected atelet "ate-system/atelet-x" has no assigned IPs`, true},
 		{"two atelet pods", crashed, `resume failed: atelet Restore: found 2 atelet pods on node "n-1", expected 1`, true},
 		{"wakeup probe cancelled under a rolling worker", crashed, wakeupProbeCancelledCrash, true},
+		{"sandbox did not take the network", crashed, sandboxNetworkCrash, true},
+		{"wakeup probe refused by a sandbox that did not take the network", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "counter" never returned 200 within 30s (18290 attempts, last error: connection refused); the sandbox did not take the actor's network: eth0 in its namespace still carries 169.254.17.2`, true},
 		{"worker unreachable after the failure", crashed, "resume failed: atelet Restore: " + runscKilled.Error() + " (" + crashMessageWorkerUnreachable + ")", true},
 		{"runsc killed on a draining worker", crashed, "resume failed: " + ateletCrashMessage("Restore", runscKilled) + " (" + crashMessageWorkerDraining + ")", true},
 		{"runsc killed on a live worker", crashed, "resume failed: " + ateletCrashMessage("Restore", runscKilled), false},
 		{"manifest unknown", crashed, "resume failed: atelet Restore: MANIFEST_UNKNOWN: manifest unknown", false},
 		{"no runnable process", crashed, "resume failed: atelet Run: no runnable process in container", false},
-		{"wakeup probe never answered", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "kagent" never returned 200 within 2m0s (40 attempts, last error: connection refused)`, false},
+		{"wakeup probe never answered", crashed, `resume failed: atelet Run: while calling ateom.RunWorkload: rpc error: code = Unknown desc = while waiting for container wakeup probe: wakeup probe for "kagent" never returned 200 within 2m0s (40 attempts, last error: connection refused); the sandbox holds the actor's network`, false},
 		// The template decides whether a resume outlives the trust-bundle
 		// guard (outlivedResumeCrash), not the crash alone.
 		{"trust-bundle guard", crashed, trustBundleNamesCrash, false},

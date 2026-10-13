@@ -60,7 +60,9 @@ const maxCrashMessageBytes = 4096
 // or restarted; the worker's call was cancelled under it, its wakeup probe
 // with it, while its pod went away (a cancellation of ate-api's own call
 // crashes nothing); the crash's teardown could not reach the worker any more,
-// whatever the failed call reported. The message is matched because atelet's
+// whatever the failed call reported; the worker's sandbox did not take the
+// actor's network, which refuses the wakeup probe however ready the workload
+// is (sandboxNetworkNotTaken). The message is matched because atelet's
 // failures reach ate-api as text only.
 var transientCrashCauses = []string{
 	crashMessageWorkerDraining,
@@ -75,7 +77,12 @@ var transientCrashCauses = []string{
 	"transport: Error while dialing",
 	"rpc error: code = Canceled",
 	"wakeup probe cancelled",
+	sandboxNetworkNotTaken,
 }
+
+// sandboxNetworkNotTaken is ateom's answer to a boot whose sandbox did not
+// take the actor's network (ateomnet.SandboxNetworkNotTaken).
+const sandboxNetworkNotTaken = "the sandbox did not take the actor's network"
 
 // transientCrashCause reports whether msg names one of transientCrashCauses.
 func transientCrashCause(msg string) bool {
