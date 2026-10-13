@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not ours: the step names `docs/upgrade.md`, a file of this line
-- **Our commit:** [#PR](https://github.com/giantswarm/substrate/pull/PR)
+- **Our commit:** [#378](https://github.com/giantswarm/substrate/pull/378)
 
 ## Change
 
