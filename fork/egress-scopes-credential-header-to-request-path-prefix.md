@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** proposed in [agent-substrate/substrate#2541](https://github.com/agent-substrate/substrate/issues/2541) (open). Upstream's maintainers call the egress API locked for GA and ask for API changes as issues first. The implementation, [agent-substrate/substrate#2515](https://github.com/agent-substrate/substrate/pull/2515) from the branch `upstream/egress-credential-path-prefix` on upstream `main` @ `c4129c94`, is a draft that waits on the issue.
-- **Our commit:** [#349](https://github.com/giantswarm/substrate/pull/349): the fork's cherry-pick of the upstream commit, resolved against the line's `applyEffects`, which mints no actor JWT
+- **Our commit:** [#349](https://github.com/giantswarm/substrate/pull/349) (ledger: [#370](https://github.com/giantswarm/substrate/pull/370)): the fork's cherry-pick of the upstream commit, resolved against the line's `applyEffects`, which mints no actor JWT
 
 ## Change
 
