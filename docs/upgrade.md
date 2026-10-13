@@ -737,8 +737,12 @@ the 1.8 entries. A step from 1.8.4 straight to a 1.9 patch is the 1.8 to
 
 #### 1.9.0 to 1.9.1
 
-- **Persisted format:** unchanged. No proto field, no CRD, no chart value
-  and no Postgres schema differs between the two tags.
+- **Persisted format:** unchanged. No proto field, no CRD and no Postgres
+  schema differs between the two tags.
+- **Chart:** the default `images.agentgateway`, the dataplane of
+  atenet-router and the egress gateway, moves from the agentgateway line's
+  2.3.0 to 2.3.5; both roll on the upgrade. An installation that sets its
+  own `images.agentgateway` keeps it.
 - **Object storage:** a process runs at most two large snapshot transfers
   at once (an upload of more than one part, a ranged download); the others
   wait for a slot. Objects of one part never wait. Suspends that a node's
