@@ -18,7 +18,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"testing"
 
@@ -27,6 +29,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/actorlock"
 	"github.com/agent-substrate/substrate/internal/apierror"
+	"github.com/agent-substrate/substrate/internal/ateomnet"
 	"github.com/agent-substrate/substrate/internal/resources"
 )
 
@@ -163,5 +166,25 @@ func TestBeginRPCRegistersBeforeCheckingForADrain(t *testing.T) {
 	}
 	if got := s.inFlight.Names(); len(got) != 0 {
 		t.Errorf("a refused RPC stayed registered: %v", got)
+	}
+}
+
+func TestCheckSandboxNetworkOfAnActorNotHosted(t *testing.T) {
+	s := &AteomService{actors: map[string]*hostedActor{}}
+	if err := s.checkSandboxNetwork(context.Background(), "gone"); err == nil {
+		t.Fatal("check of an actor not hosted here: got nil, want an error")
+	}
+}
+
+func TestWakeupProbeErrorNamesTheSandboxNetwork(t *testing.T) {
+	probeErr := fmt.Errorf(`wakeup probe for "app" never returned 200 within 30s`)
+	// A session whose network is gone fails the check, which the error quotes.
+	s := &AteomService{actors: map[string]*hostedActor{"uid": {network: &ateomnet.SandboxSession{}}}}
+	got := s.wakeupProbeError(context.Background(), "uid", probeErr)
+	if !errors.Is(got, probeErr) {
+		t.Fatalf("wakeupProbeError dropped the probe error: %v", got)
+	}
+	if want := "while waiting for container wakeup probe: " + probeErr.Error() + "; " + net.ErrClosed.Error(); got.Error() != want {
+		t.Fatalf("wakeupProbeError: got %q, want %q", got, want)
 	}
 }
