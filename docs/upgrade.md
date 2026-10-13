@@ -795,6 +795,51 @@ the 1.8 entries. A step from 1.8.4 straight to a 1.9 patch is the 1.8 to
 - **Migration:** none to run.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.9 to 1.10 step
+
+1.10.0 stays on upstream v0.5.0-alpha2 and adds the credential path
+prefix to the egress contract. Step to it from 1.9.1 with the numbered
+steps above; the step needs no migration, no snapshot reset and no
+manual step, and conversations and durable volumes survive it. A step
+from 1.8.5 straight to 1.10.0 is the 1.8 to 1.9 step, the 1.9.0 to 1.9.1
+entry and this one in one roll: the 1.8 rows are migrated on read as
+that step describes, nothing else runs.
+
+- **Persisted format:** the Postgres schema is unchanged (no file in
+  `migrations/` or `migrations_fork/` differs from 1.9.1), and so are the
+  CRDs and the snapshot layout. In the protos, `CredentialHeader` gains
+  the optional `path_prefix` (field 5): a stored egress policy written
+  before the step has no prefix, reads back as written and applies
+  host-wide, as before.
+- **Egress contract:** `GetEgressPolicyContract` answers
+  `v0.4.0-alpha1+path-prefix`. A `kubectl-ate` refuses to write an egress
+  policy to an ate-api of another contract, so after the step write
+  policies with a 1.10 client. Every entry without a `path_prefix` behaves
+  as on 1.9; the egress gateway (the agentgateway line's 2.3.5, the 1.9.1
+  default) applies a prefixed entry to the requests under its prefix only.
+- **Removed `on_pause`:** still accepted for a transition, as in the 1.8
+  to 1.9 step.
+- **Lost workers:** a running actor whose worker pod goes away, or whose
+  ateom restarts, with no operation in flight, returns to its own durable
+  snapshot and resumes elsewhere on its next resume, where 1.9 recorded it
+  `CRASHED`; an actor that never suspended is still recorded `CRASHED`,
+  since its only snapshot is the template's golden. A resume whose worker
+  starts draining or goes away while the restore runs is retried on
+  another worker instead of answering `RUNNING` there. A rolling worker
+  pool during the step therefore costs a turn in flight at most, never the
+  conversation up to the last checkpoint.
+- **Goldens:** taken again only when the snapshot layout changes, which
+  this step does not: the goldens 1.9 recorded are kept.
+- **Chart:** unchanged from 1.9.1, `images.agentgateway` included.
+- **Proven:** a step from 1.8.5 to 1.10.0-rc.5 while every worker pod of
+  the pool was deleted every 8 s for a minute: a suspended agent with a
+  three-turn conversation and a file on its durable volume resumed during
+  that drain (the resume retried past the leaving workers and answered
+  `READY`), answered from its first turn and read the file written on
+  1.8.5; its template's golden stayed in layout 2 and a new conversation
+  started from it.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
