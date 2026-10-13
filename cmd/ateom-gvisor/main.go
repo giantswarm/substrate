@@ -643,6 +643,9 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	if err := rcmd.cmdStart(ctx, os.Stdout, ocispec.PauseContainer); err != nil {
 		return nil, fmt.Errorf("while starting pause container: %w", err)
 	}
+	if err := s.checkSandboxNetwork(ctx, req.GetActorUid()); err != nil {
+		return nil, err
+	}
 
 	// Create and start each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
@@ -670,7 +673,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 
 	// Block until every wakeup-probe-enabled container reports 200.
 	if err := wakeupprobe.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())), tails.Lines); err != nil {
-		return nil, fmt.Errorf("while waiting for container wakeup probe: %w", err)
+		return nil, s.wakeupProbeError(ctx, req.GetActorUid(), err)
 	}
 	if err := s.tunnel.ActivateIngress(ateomstats.ActorAttributionFromRequest(req), s.sandboxDialer(req.GetActorUid())); err != nil {
 		return nil, err
@@ -983,6 +986,9 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 	default:
 		return nil, fmt.Errorf("unexpected snapshot scope: %v", req.GetScope())
 	}
+	if err := s.checkSandboxNetwork(ctx, req.GetActorUid()); err != nil {
+		return nil, err
+	}
 
 	// Create and restore each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
@@ -1020,7 +1026,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 
 	// Block until every wakeup-probe-enabled container reports 200.
 	if err := wakeupprobe.WaitAll(ctx, req.GetSpec().GetContainers(), ateomnet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())), tails.Lines); err != nil {
-		return nil, fmt.Errorf("while waiting for container wakeup probe: %w", err)
+		return nil, s.wakeupProbeError(ctx, req.GetActorUid(), err)
 	}
 	if err := s.tunnel.ActivateIngress(ateomstats.ActorAttributionFromRequest(req), s.sandboxDialer(req.GetActorUid())); err != nil {
 		return nil, err
