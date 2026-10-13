@@ -1825,6 +1825,7 @@ func TestTransientGoldenCrash(t *testing.T) {
 		{"resume failed: atelet Restore: found 2 atelet pods on node \"n-1\", expected 1", true},
 		{"resume failed: atelet Run: connection error: desc = \"transport: Error while dialing: dial tcp 10.0.0.1:8080: connect: connection refused\"", true},
 		{wakeupProbeCancelledCrash, true},
+		{sandboxNetworkCrash, true},
 		{manifestUnknownMsg, false},
 		{"resume failed: atelet Run: no runnable process in container", false},
 		{"", false},
