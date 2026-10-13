@@ -1,7 +1,7 @@
 # A running actor whose worker went away returns to its last durable snapshot
 
 - **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/running-actor-lost-worker`, stacked on `upstream/checkpoint-cut-by-drain` (the drain-cut checkpoint's row), where it reads the latest completed durable snapshot of upstream's snapshot records
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/worker-loss-to-snapshot`, stacked on `upstream/checkpoint-cut-by-drain` (the drain-cut checkpoint's row), where it reads the latest completed durable snapshot of upstream's snapshot records
 - **Our commit:** [#380](https://github.com/giantswarm/substrate/pull/380): the fork's own commit
 
 ## Change
