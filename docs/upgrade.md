@@ -760,6 +760,10 @@ the 1.8 entries. A step from 1.8.4 straight to a 1.9 patch is the 1.8 to
   `atenet.router.route.duration` for a 403 and a `PermissionDenied`, which
   1.9.0 counted as `resume_error`. An alert on `resume_error` no longer
   fires on policy refusals.
+- **API:** a request that carries the removed `SnapshotConfig.on_pause`
+  is accepted, where 1.9.0 refused it with `InvalidArgument`; see the 1.8
+  to 1.9 step. A client still on the 1.8 protos (kagent 1.10.x) creates
+  and edits templates on 1.9.1 again.
 - **Migration:** none to run.
 - **Reset:** none. **Conversations lost:** none.
 
