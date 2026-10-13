@@ -470,7 +470,7 @@ meta chart's ranges (giantswarm/agent-platform#580), the kagent line's `SUBSTRAT
   names each missing number.
 - **Experiments**: your own personal fork. Branches here exist to become pull requests.
 - **What CI runs on a pull request**: upstream's `pr-workflow` (unit, root-gated and e2e suites on kind, gVisor and
-  micro-VM lanes), `helm-e2e` (the charts on kind), `govulncheck` and `fork-ledger` (the ledger, above); `run-tests` and `govulncheck` are required. `govulncheck` runs once per Go
+  micro-VM lanes: every suite runs on both, so a node-level arrangement a test makes must hold on both ateoms; the micro-VM ateom clears its checkpoint directory before writing, the gVisor ateom only creates it, so blocking the checkpoint with an immutable file passes one lane and fails the other, while a file under the directory's name is refused by both; see `CONTRIBUTING.md`), `helm-e2e` (the charts on kind), `govulncheck` and `fork-ledger` (the ledger, above); `run-tests` and `govulncheck` are required. `govulncheck` runs once per Go
   module (upstream's matrix since v0.4.0-alpha1) and a job of the line reports the one `govulncheck` status the
   rulesets and the land step require.
   The CircleCI `publish` workflow runs on every push (a pull request's head publishes its own dev build) and on tags.
