@@ -101,7 +101,8 @@ func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resource
 
 // noFreeWorkerError turns the scheduler's refusal into the caller's status.
 // Without a node restriction the pool is full: ResourceExhausted, which the
-// router parks on until a worker frees up. Under one -- a PAUSED actor's
+// router parks on until a worker frees up; a selector that matches no worker
+// is named, so a label mismatch does not read as a full pool. Under one -- a PAUSED actor's
 // local snapshot -- the scan says which of three states the actor is in:
 //
 //   - eligible workers on the snapshot's node(s), all full: as above, with
@@ -115,6 +116,10 @@ func (w *ActorWorkflow) localSnapshotLost(ctx context.Context, actorRef resource
 // A node is gone only when no ACTIVE worker of any pool reports it and the
 // Node object is absent; either signal alone keeps the actor waiting.
 func (w *ActorWorkflow) noFreeWorkerError(ctx context.Context, actorRef resources.ActorRef, actor *ateapipb.Actor, actorTemplate *ateapipb.ActorTemplate, err error) error {
+	var unmatched *scheduling.NoMatchingWorkerError
+	if errors.As(err, &unmatched) {
+		return apierror.ResourceExhausted("no worker matches the selector %q (none of the %d worker(s) carries its labels)", unmatched.Selector, unmatched.Workers)
+	}
 	var restricted *scheduling.NoCapacityError
 	if !errors.As(err, &restricted) {
 		return apierror.ResourceExhausted("no worker has room for the actor")

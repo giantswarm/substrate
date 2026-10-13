@@ -178,6 +178,73 @@ func TestEnsureWorkerAssigned_ConflictExhaustionIsRetryable(t *testing.T) {
 	}
 }
 
+// TestAssignWorkerAttempt_NoFreeWorkerMessage pins the two refusals of an
+// assignment that finds no worker: a template selector that matches none of the
+// workers is named as such, while matching workers that are all full are "no
+// worker has room". Both stay ResourceExhausted, which the router parks on.
+func TestAssignWorkerAttempt_NoFreeWorkerMessage(t *testing.T) {
+	tests := []struct {
+		name        string
+		labels      map[string]string
+		busy        bool
+		wantMessage string
+	}{
+		{
+			name:        "no worker matches the selector",
+			labels:      map[string]string{"pool": "old"},
+			wantMessage: `no worker matches the selector "pool=new" (none of the 1 worker(s) carries its labels)`,
+		},
+		{
+			name:        "matching workers are full",
+			labels:      map[string]string{"pool": "new"},
+			busy:        true,
+			wantMessage: "no worker has room for the actor",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			persistence := newTestPersistence(t)
+			if _, err := persistence.CreateWorker(ctx, &ateapipb.Worker{
+				Metadata:        &ateapipb.ResourceMetadata{Name: testWorkerUID("pod-1")},
+				WorkerNamespace: "worker-ns",
+				WorkerPool:      "pool",
+				WorkerPod:       "pod-1",
+				WorkerPodUid:    testWorkerUID("pod-1"),
+				SandboxClass:    "gvisor",
+				Labels:          tc.labels,
+				Status:          &ateapipb.WorkerStatus{State: ateapipb.WorkerState_WORKER_STATE_ACTIVE, Capacity: &ateapipb.WorkerResources{Actors: 1}},
+			}); err != nil {
+				t.Fatalf("CreateWorker: %v", err)
+			}
+			if tc.busy {
+				seedAssignment(t, persistence, testWorkerUID("pod-1"), &ateapipb.ActorAssignment{
+					Actor:    &ateapipb.ObjectRef{Atespace: "team-b", Name: "resident"},
+					ActorUid: "resident-uid",
+				})
+			}
+			cacheCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			wc := workercache.New(persistence, time.Minute)
+			if err := wc.Start(cacheCtx); err != nil {
+				t.Fatalf("workercache.Start: %v", err)
+			}
+
+			w := &ActorWorkflow{store: persistence, workerCache: wc, scheduler: scheduling.New(wc)}
+			actor := &ateapipb.Actor{Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "id1", Uid: "actor-uid"}}
+			tmpl := &ateapipb.ActorTemplate{
+				SandboxConfig:  &ateapipb.SandboxConfig{SandboxClass: ateapipb.SandboxClass_SANDBOX_CLASS_GVISOR},
+				WorkerSelector: &ateapipb.Selector{MatchLabels: map[string]string{"pool": "new"}},
+			}
+			_, _, err := w.assignWorkerAttempt(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, tmpl)
+			st, _ := apierror.FromError(err)
+			if st.Code() != codes.ResourceExhausted || st.Message() != tc.wantMessage {
+				t.Errorf("assignWorkerAttempt() = %v %q, want %v %q", st.Code(), st.Message(), codes.ResourceExhausted, tc.wantMessage)
+			}
+		})
+	}
+}
+
 func TestAssignWorkerAttempt_SkipsWorkerAssignedInOtherAtespace(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
