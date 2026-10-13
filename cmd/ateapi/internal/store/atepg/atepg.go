@@ -33,6 +33,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/authz"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/defaults"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
+	"github.com/agent-substrate/substrate/internal/removedfields"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -344,19 +345,19 @@ type querier interface {
 
 // unmarshalStored decodes a stored proto, dropping fields this binary has no
 // descriptor for. This means a newer replica can have written such a field.
-// It also backfills defaults to make all resources are properly defaulted, even
-// the ones stored before a field with defaults was introduced. A row an older
-// release wrote in another shape is migrated first, from the fields it
-// dropped.
+// A field the API removed that a client may still send is kept, so the client
+// reads back what it wrote (package removedfields). It also backfills defaults
+// to make all resources are properly defaulted, even the ones stored before a
+// field with defaults was introduced. A row an older release wrote in another
+// shape is migrated first, from the fields it dropped.
 func unmarshalStored(b []byte, m proto.Message) error {
-	migrate := legacyMigration(m)
-	if err := (proto.UnmarshalOptions{DiscardUnknown: migrate == nil}).Unmarshal(b, m); err != nil {
+	if err := proto.Unmarshal(b, m); err != nil {
 		return err
 	}
-	if migrate != nil {
+	if migrate := legacyMigration(m); migrate != nil {
 		migrate()
-		discardUnknown(m.ProtoReflect())
 	}
+	removedfields.DiscardUnknown(m.ProtoReflect())
 	defaults.Apply(m)
 	return nil
 }
