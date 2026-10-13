@@ -141,8 +141,8 @@ The fork commits above are the replayed SHAs.
 
 Items the platform needs from Substrate whose fix is not yet written. The text below is the upstream-facing
 proposal (upstream has issues disabled, so it becomes a kagent-dev/substrate pull request when the patch
-exists, or a kagent-dev/kagent issue); it is queued in the team's upstream review list
-and opened only after the team has reviewed that list.
+exists, or a kagent-dev/kagent issue); it is queued as a row on [giantswarm/giantswarm#37742](https://github.com/giantswarm/giantswarm/issues/37742)
+and a human decides whether and when it goes upstream.
 
 ### Place an actor's restore only on a worker whose CPU covers the snapshot's feature set
 
@@ -473,13 +473,14 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
 
 ## Contributing
 
-- **Upstream first.** Every behavioural change goes upstream: a pull request against
-  [agent-substrate/substrate](https://github.com/agent-substrate/substrate) (issues are disabled there; discussion goes
-  through the pull request or the kagent community channels) with DCO sign-off (`git commit -s`); pull-request
-  workflows from forks wait for a maintainer's approval. The author of the fork commit opens the upstream pull
-  request directly, from a branch that holds the one upstream-ready commit, with the Giant Swarm step for a change that
-  belongs to our own organisation. The line carries the same change as a `git cherry-pick -x` of the upstream
-  commit (or, before merge, of your pull-request branch) until an upstream release contains it, with its ledger row.
+- **Upstream first, prepared here.** Every behavioural change is prepared for upstream
+  ([agent-substrate/substrate](https://github.com/agent-substrate/substrate); issues are disabled there) and is one
+  upstream-ready commit, DCO-signed (`git commit -s`), with no fork references. The commit goes onto the fork with its
+  ledger row in `fork/`, and is pushed as an `upstream/<slug>` branch on this repository, based on the mirror's `main`
+  at the pin. It is queued as a row on [giantswarm/giantswarm#37742](https://github.com/giantswarm/giantswarm/issues/37742). A human decides what goes upstream and
+  opens it; an agent never opens, comments on, reviews or closes a pull request or issue on the upstream repository.
+  The line carries the same change as a `git cherry-pick -x` of the upstream-ready commit until an upstream release
+  contains it, with its ledger row.
 - **Public only.** This repository is public: a ledger row, a commit message and this file cite public issues and pull
   requests only, and where the reasoning lives in a private tracker it is written out in a sentence here instead.
 - **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
