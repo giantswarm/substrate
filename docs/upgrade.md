@@ -717,6 +717,14 @@ survive it.
   resumes on its node with its snapshot's scope as written.
 - **Fencing:** a request without a `FencingToken` is admitted as before,
   so a client that sends none behaves as on 1.8.
+- **Removed `on_pause`, accepted for a transition:** ate-api accepts
+  `SnapshotConfig.on_pause` (field 1) in a request, ignores its value and
+  returns the template with it as it was written, so a client still built
+  against the 1.8 protos (kagent 1.10.x) keeps creating and editing
+  templates and reads back what it wrote. It logs `Request carries a
+  removed field; ignoring it` once per client, naming the field, the
+  method and the principal. The transition ends once no client sends it.
+  Every other unknown field is still refused.
 - **Before step 1:** a `SandboxConfig` of a sandbox class other than
   `gvisor` that sets `pauseImage` is refused by the new CRD on its next
   create or update; drop the field from such objects. The chart renders
