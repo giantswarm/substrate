@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file: the upstream-shaped patch is branch [`upstream/actor-lifecycle-budgets`](https://github.com/giantswarm/substrate/tree/upstream/actor-lifecycle-budgets) here (`40b3d12c` + `861e41d1`, on the mirror `main` @ `007eb1ee`; the messages are the pull-request text). agent-substrate/substrate#646 is the shape (`Canceled` strands actors in RESUMING/SUSPENDING), #1383 the failure; agent-substrate/substrate#991 (closed unmerged 2026-08-25) was the same `WithoutCancel` fix, #1761 and #1914 report the same problems. A team member opens the pull request with DCO sign-off once the team has reviewed it
-- **Our commit:** `76a6abc8`, [#22](https://github.com/giantswarm/substrate/pull/22) (rebase-merged 2026-09-12)
+- **Our commit:** `76a6abc8`, [#22](https://github.com/giantswarm/substrate/pull/22) (rebase-merged 2026-09-12); also [#201](https://github.com/giantswarm/substrate/pull/201) (`fix(ateapi): finish suspends and pauses whose replica died`)
 
 ## Change
 

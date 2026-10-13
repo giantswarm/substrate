@@ -101,6 +101,13 @@ and 10002 (upstream's `publish_context` is field 4), carried on upstream's `Moun
 second name the bundled provider gets in `ate-setup`'s rendered egress policies; the fencing token is listed as no secret for the
 redaction check; generated code regenerated with `hack/update/codegen.sh`.
 
+Pull requests merged into `giantswarm` whose change the line no longer carries as a patch of its own (the line check names every merged
+pull request): [#260](https://github.com/giantswarm/substrate/pull/260) (upstream's PATH_MAX-safe snapshot tars, the #2110 and #2111 cherry-picks dropped at the 2026-10-12 re-pin),
+[#65](https://github.com/giantswarm/substrate/pull/65) (the identity e2e suite's egress trust-bundle rotation, dropped at the same re-pin), [#128](https://github.com/giantswarm/substrate/pull/128) (agent-substrate/substrate#1833,
+the connection string no longer logged, dropped when upstream carried it), [#5](https://github.com/giantswarm/substrate/pull/5) and [#70](https://github.com/giantswarm/substrate/pull/70) (the agentgateway line's builds
+`v1.5.1-gs.1` and 2.1.2 for the atenet data plane) and [#111](https://github.com/giantswarm/substrate/pull/111) with [#113](https://github.com/giantswarm/substrate/pull/113) (2.2.2, with the `agentgateway-image` parameter): the
+pin table names the agentgateway the line runs now.
+
 Dropped at the re-pin onto v0.0.29 (2026-09-14): the `cherry-pick -x` of kagent-dev/substrate#33 (atelet's
 cluster-wide read of sandbox configs, `74b45f9e` → upstream `af7d1539`, in v0.0.29, which closes the row that carried it) and the chart half of #9 (the egress actor check as a frontend policy, which kagent-dev/substrate#28
 made under agentgateway#3318's name `substrateEgressActorResolution`; the line's dataplane `v1.5.1-gs.4` carries
@@ -490,7 +497,7 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
   branch keeps its own copy of this file as its ledger), or
   carries the label `no-ledger` with a line `no-ledger: <reason>` in its description. The `fork-ledger` workflow
   checks it on every pull request (`docs(fork)` pull requests, re-pin candidates and bot pull requests need no
-  ledger entry) and, on a maintenance branch, that every pull request merged into it has its row in the branch's copy; it
+  ledger entry) and, on every line, that every pull request merged into it has its row in the line's ledger; it
   names each missing number.
 - **Experiments**: your own personal fork. Branches here exist to become pull requests.
 - **What CI runs on a pull request**: upstream's `pr-workflow` (unit, root-gated and e2e suites on kind, gVisor and

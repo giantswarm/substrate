@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** the root-container shape of agent-substrate/substrate#2180 (open); upstream-shaped branch `upstream/childreap-tracked-subprocesses` on the mirror `main`, queued for review before it goes upstream
-- **Our commit:** `release-1.3`: [#133](https://github.com/giantswarm/substrate/pull/133) (first release 1.3.1); `giantswarm`: [#135](https://github.com/giantswarm/substrate/pull/135)
+- **Our commit:** `release-1.3`: [#133](https://github.com/giantswarm/substrate/pull/133) (first release 1.3.1); `giantswarm`: [#135](https://github.com/giantswarm/substrate/pull/135); also [#186](https://github.com/giantswarm/substrate/pull/186) (`fix(childreap): share the tracked PIDs across every reaper`)
 
 ## Change
 
