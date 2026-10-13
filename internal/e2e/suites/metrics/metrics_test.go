@@ -284,7 +284,11 @@ func triggerActorCrash(t *testing.T, ctx context.Context, clients *e2e.Clients, 
 		t.Fatalf("Actor %s has no assigned worker pod to delete", actorID)
 	}
 
-	waitForStatus(t, ctx, clients, actorID, ateapipb.ActorState_ACTOR_STATE_CRASHED)
+	// The actor suspended before, so it holds an external snapshot of its own:
+	// the control plane records the crash and returns the actor to that
+	// snapshot at the next resync, and CRASHED is only passed through. The wait
+	// is on the state it comes to rest in.
+	waitForStatus(t, ctx, clients, actorID, ateapipb.ActorState_ACTOR_STATE_SUSPENDED)
 }
 
 func resume(t *testing.T, ctx context.Context, clients *e2e.Clients, actorID string) {
