@@ -786,7 +786,14 @@ func (w *ActorWorkflow) egressGateway() *ateletpb.EgressGateway {
 	return &ateletpb.EgressGateway{Address: w.egressGatewayAddress}
 }
 
-// finalizeRunning re-reads the actor for a fresh version and commits RUNNING.
+// finalizeRunning re-reads the actor for a fresh version and commits RUNNING,
+// unless its worker started leaving while the restore ran: drained, its
+// record gone or its pod replaced (workerLeavingCause). Such a worker is
+// about to take the workload with it, so RUNNING there would answer the
+// caller with an actor that is lost the moment the pod goes. The actor is
+// crashed by the resume instead: it served nothing since the snapshot it was
+// restored from, so ResumeActor returns it to that snapshot and places it on
+// another worker, or answers Unavailable for the caller to retry.
 func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.ActorRef) (_ *ateapipb.Actor, err error) {
 	ctx, done := stepSpan(ctx, "FinalizeRunning")
 	defer func() { err = done(err) }()
@@ -794,6 +801,14 @@ func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.
 	latestActor, err := w.store.GetActor(ctx, actorRef)
 	if err != nil {
 		return nil, err
+	}
+	if cause := workerLeavingCause(ctx, w.store, latestActor); cause != "" {
+		slog.LogAttrs(ctx, slog.LevelInfo, "Assigned worker started leaving under the restore; crashing actor",
+			append(ateattr.ActorRefLogAttrs(actorRef), slog.String("cause", cause))...)
+		if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, cause); cerr != nil {
+			return nil, cerr
+		}
+		return nil, apierror.Aborted("actor %s crashed: %s", actorRef, cause)
 	}
 
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {

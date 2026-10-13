@@ -132,6 +132,110 @@ func TestFinalizeRunning_CommitsRunning(t *testing.T) {
 	}
 }
 
+// TestFinalizeRunning_WorkerLeaving verifies the last step of a resume never
+// commits RUNNING on a worker that started leaving under the restore: the
+// actor is crashed by the resume, with the cause a later resume recovers
+// from, and its worker freed. On a worker that keeps serving it commits
+// RUNNING.
+func TestFinalizeRunning_WorkerLeaving(t *testing.T) {
+	tests := []struct {
+		name string
+		// workerState is the stored worker's state; UNSPECIFIED for a worker
+		// whose record is gone.
+		workerState    ateapipb.WorkerState
+		wantCode       codes.Code
+		wantActorState ateapipb.ActorState
+		wantCrash      string
+	}{
+		{
+			name:           "active worker",
+			workerState:    ateapipb.WorkerState_WORKER_STATE_ACTIVE,
+			wantCode:       codes.OK,
+			wantActorState: ateapipb.ActorState_ACTOR_STATE_RUNNING,
+		},
+		{
+			name:           "draining worker",
+			workerState:    ateapipb.WorkerState_WORKER_STATE_DRAINING,
+			wantCode:       codes.Aborted,
+			wantActorState: ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			wantCrash:      "resume failed: " + crashMessageWorkerDraining,
+		},
+		{
+			name:           "worker gone",
+			wantCode:       codes.Aborted,
+			wantActorState: ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			wantCrash:      "resume failed: " + crashMessageWorkerGone,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			persistence := newTestPersistence(t)
+			actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
+			workerName := testWorkerUID("pod-1")
+			created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+				Metadata:      &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+				ActorTemplate: &ateapipb.ObjectRef{Atespace: "team-a", Name: "tmpl-2"},
+				Status: &ateapipb.ActorStatus{
+					State: ateapipb.ActorState_ACTOR_STATE_RESUMING,
+					WorkerAssignment: &ateapipb.WorkerAssignment{
+						Worker:          &ateapipb.ObjectRef{Name: workerName},
+						WorkerNamespace: "worker-ns",
+						WorkerPool:      "pool",
+						WorkerPod:       "pod-1",
+						WorkerPodUid:    workerName,
+					},
+				},
+			})
+			if tt.workerState != ateapipb.WorkerState_WORKER_STATE_UNSPECIFIED {
+				if _, err := persistence.CreateWorker(ctx, &ateapipb.Worker{
+					Metadata:        &ateapipb.ResourceMetadata{Name: workerName},
+					WorkerNamespace: "worker-ns",
+					WorkerPool:      "pool",
+					WorkerPod:       "pod-1",
+					WorkerPodUid:    workerName,
+					SandboxClass:    "gvisor",
+					Status:          &ateapipb.WorkerStatus{State: tt.workerState, Capacity: &ateapipb.WorkerResources{Actors: 1}},
+				}); err != nil {
+					t.Fatalf("CreateWorker: %v", err)
+				}
+				seedAssignment(t, persistence, workerName, &ateapipb.ActorAssignment{
+					Actor:    &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
+					ActorUid: created.GetMetadata().GetUid(),
+				})
+			}
+			w := &ActorWorkflow{store: persistence}
+
+			_, err := w.finalizeRunning(ctx, actorRef)
+			if got := apierror.Code(err); got != tt.wantCode {
+				t.Fatalf("finalizeRunning code = %v, want %v (err: %v)", got, tt.wantCode, err)
+			}
+			stored, err := persistence.GetActor(ctx, actorRef)
+			if err != nil {
+				t.Fatalf("GetActor: %v", err)
+			}
+			if got := stored.GetStatus().GetState(); got != tt.wantActorState {
+				t.Errorf("state = %v, want %v", got, tt.wantActorState)
+			}
+			if got := stored.GetStatus().GetCrash().GetMessage(); got != tt.wantCrash {
+				t.Errorf("crash = %q, want %q", got, tt.wantCrash)
+			}
+			if tt.wantCrash == "" {
+				return
+			}
+			if !transientResumeCrash(stored) {
+				t.Error("transientResumeCrash = false, want the crash a later resume recovers from")
+			}
+			if stored.GetStatus().GetWorkerAssignment() != nil {
+				t.Errorf("worker assignment = %v, want it cleared", stored.GetStatus().GetWorkerAssignment())
+			}
+			if _, err := persistence.FindWorkerHostingActor(ctx, created.GetMetadata().GetUid()); err == nil {
+				t.Error("a worker still hosts the actor, want it freed")
+			}
+		})
+	}
+}
+
 // bindErrorStore fails every claim, standing in for a worker that moved or
 // vanished between the pick and the write.
 type bindErrorStore struct {
