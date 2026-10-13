@@ -41,13 +41,14 @@ For a breaking change, describe the upgrade step in the pull request's "Breaking
 
 ## Cut a release
 
-1. Tag the release commit `vX.Y.Z`, or `vX.Y.Z-rc.N` for a release candidate, and push the tag. The [`release-notes`](../../.github/workflows/release-notes.yaml) workflow runs [`hack/release/draft-release.sh`](../../hack/release/draft-release.sh), which creates a draft release. The notes cover every change since the previous `vX.Y.Z` release and end with a list of committers. A release candidate is marked as a prerelease.
-2. Edit the draft:
+1. For a patch release (`vX.Y.Z` with `Z` above 0), add the [`docs/upgrade.md`](../upgrade.md) entry for this patch before tagging: what changes in persisted data, whether a migration runs, and whether a reset is needed. The entry lands in the release commit's history, so the tag carries it.
+2. Tag the release commit `vX.Y.Z`, or `vX.Y.Z-rc.N` for a release candidate, and push the tag. The [`release-notes`](../../.github/workflows/release-notes.yaml) workflow runs [`hack/release/draft-release.sh`](../../hack/release/draft-release.sh), which creates a draft release. The notes cover every change since the previous `vX.Y.Z` release and end with a list of committers. A release candidate is marked as a prerelease.
+3. Edit the draft:
    - Write a summary at the top.
    - Rewrite each breaking change with its upgrade step.
    - Optionally, group the feature sections under one `## Features` heading.
    - Remove Other Changes entries users do not need, and move entries that landed in the wrong section.
-3. Publish the release.
+4. Publish the release.
 
 If the workflow did not run, start it from the Actions tab with the tag as input, or run the script with an authenticated `gh` that has write access to the repository:
 
