@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** [agent-substrate/substrate#2542](https://github.com/agent-substrate/substrate/pull/2542), open, from the branch `upstream/onpause-tolerance` on upstream `main` @ `f03327bd`; a compatibility shim for the field [#2309](https://github.com/agent-substrate/substrate/pull/2309) removed, which upstream's pre-v1.0 policy may decline
-- **Our commit:** [#372](https://github.com/giantswarm/substrate/pull/372): the fork's cherry-pick of the upstream pull request's two commits as one; `unmarshalStored` differs from upstream's, since the line migrates legacy rows there
+- **Our commit:** [#372](https://github.com/giantswarm/substrate/pull/372): the fork's cherry-pick of the upstream pull request's two commits as one; `unmarshalStored` differs from upstream's, since the line migrates legacy rows there; `release-1.9`: [#373](https://github.com/giantswarm/substrate/pull/373), the same commits cherry-picked onto `v1.9.1-rc.5`
 
 ## Change
 
