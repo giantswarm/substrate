@@ -600,6 +600,38 @@ actor's snapshots are read as before, and a stored row an older patch
 wrote in another shape is rewritten when it is read, with no step to run.
 A new 1.8 patch adds its entry here.
 
+#### 1.8.4 to 1.8.5
+
+The step rolls by the range of changes `v1.8.4..v1.8.5`.
+
+- **Persisted format:** unchanged. No Postgres schema, CRD or chart value
+  differs between the two tags. The atelet RPC gains one field,
+  `ExternalVolumeSource.read_only` (field 5), which ate-api sets and atelet
+  reads; neither side stores it.
+- **Migration, automatic:** none to run.
+- **Resume of an actor the trust-bundle guard crashed, automatic:** an
+  actor whose template row 1.8.3 had rewritten without its trust-bundle
+  names was recorded `CRASHED` on a resume with `no trust bundle names
+  given`, and stayed so after 1.8.4 read the template with its name again
+  ([#332](https://github.com/giantswarm/substrate/issues/332),
+  [#335](https://github.com/giantswarm/substrate/pull/335)). Such a crash
+  is now outlived: when the template, as the store reads it, names a bundle
+  in every trust-bundle projection, the actor is returned to its last
+  snapshot (`SUSPENDED`, or `PAUSED` while it holds its pause snapshot)
+  with its worker freed, and the next resume places it on a worker. The
+  `ActorTransitionReconciler` recovers one no request resumes, on the first
+  resync. The actor never ran since that snapshot, so the return loses
+  nothing. An actor whose template still names no bundle stays `CRASHED`
+  and is not retried in a loop.
+- **Read-only volume mounts:** a read-only mount of an existing volume asks
+  the CSI driver for the access mode of the volume's own PersistentVolume,
+  as the kubelet does, and publishes it read-only, where 1.8.4 asked for
+  `MULTI_NODE_READER_ONLY` even on a `ReadWriteMany` volume. Drivers that
+  accept only the PersistentVolume's mode (the AWS EFS driver) no longer
+  fail `NodePublishVolume` with `invalid access mode`. A `ReadOnlyMany`
+  volume still mounts as before.
+- **Reset:** none. **Conversations lost:** none.
+
 #### 1.8.3 to 1.8.4
 
 - **Persisted format:** unchanged. No proto field, no CRD and no chart
