@@ -932,7 +932,7 @@ patch entries and this one in one roll.
   actor is gone, `503` when ate-api is unavailable or the mint timed out,
   `500` otherwise. No credential provider is needed.
 - **Chart:** `images.agentgateway` is the agentgateway line's
-  `2.4.0-rc.2` (2.3.6 + the actor JWT injection).
+  `2.4.0` (2.3.6 + the actor JWT injection).
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
