@@ -17,10 +17,11 @@ package controllers
 // RBAC needed by atecontroller components outside this package, which
 // controller-gen (paths="./...") does not scan:
 //   - internal/workersync's pod informer lists and watches worker pods, and
-//     the syncer deletes worker pods that reach a terminal phase.
+//     the syncer deletes worker pods that reach a terminal phase; the busy
+//     marker applies its marking to worker pods that host Actors.
 //   - internal/k8sresolver watches ateapi's EndpointSlices to dial it.
 //
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;delete;patch
 //+kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch,namespace=ate-system
 
 //go:generate bash ../../../../hack/gen-rbac.sh
