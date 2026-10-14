@@ -316,3 +316,15 @@ service account key it holds.
         root: /run/servicedns.podcert.ate.dev/trust-bundle.pem
 {{- end }}
 {{- end -}}
+
+{{/*
+The busy-worker annotations as the key=value list --busy-worker-annotations
+takes, keys sorted so the render is stable.
+*/}}
+{{- define "substrate.busyWorkerAnnotations" -}}
+{{- $pairs := list -}}
+{{- range $k := keys . | sortAlpha -}}
+{{- $pairs = append $pairs (printf "%s=%s" $k (toString (get $ $k))) -}}
+{{- end -}}
+{{- join "," $pairs -}}
+{{- end -}}
