@@ -1,0 +1,53 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package atepg
+
+import (
+	"testing"
+
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+)
+
+func TestUnmarshalStoredClearsStaleCrash(t *testing.T) {
+	crash := &ateapipb.ActorCrash{Message: "suspend failed: worker pod is gone"}
+	tests := []struct {
+		name      string
+		state     ateapipb.ActorState
+		wantCrash *ateapipb.ActorCrash
+	}{
+		{name: "a CRASHED actor keeps its crash", state: ateapipb.ActorState_ACTOR_STATE_CRASHED, wantCrash: crash},
+		{name: "a SUSPENDED actor drops a stale crash", state: ateapipb.ActorState_ACTOR_STATE_SUSPENDED},
+		{name: "a PAUSED actor drops a stale crash", state: ateapipb.ActorState_ACTOR_STATE_PAUSED},
+		{name: "a RUNNING actor drops a stale crash", state: ateapipb.ActorState_ACTOR_STATE_RUNNING},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := proto.Marshal(legacyTestActor(&ateapipb.ActorStatus{State: tc.state, Crash: proto.CloneOf(crash)}))
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			got := &ateapipb.Actor{}
+			if err := unmarshalStored(b, got); err != nil {
+				t.Fatalf("unmarshalStored: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantCrash, got.GetStatus().GetCrash(), protocmp.Transform()); diff != "" {
+				t.Errorf("crash (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

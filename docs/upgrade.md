@@ -883,6 +883,11 @@ patch entries in one roll.
   other record the operation read that is gone (its worker, a worker's
   claim) answers `Aborted` with `a record the operation read is gone for
   Actor …, please retry`.
+- **Crash record of a suspended actor:** a suspend whose checkpoint
+  completed after the actor crashed commits `SUSPENDED` with no crash
+  record. Before, the actor kept the crash it survived in
+  `status.crash`. An actor stored with such a record reads without it
+  from the new ate-api-server on; its next update persists that.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
