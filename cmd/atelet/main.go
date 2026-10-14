@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -1279,6 +1280,16 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		return nil, err
 	}
 
+	// Record the sandbox binaries that run the guest on-node before ateom
+	// starts it, as Run does: a subsequent Checkpoint of this restored actor
+	// re-pins the same version (Checkpoint overwrites the identity fields from
+	// its own request), and a Terminate after a restore that failed in ateom
+	// tears it down with the same runsc. Without the record the actor could
+	// not be checkpointed later, so a failed write fails the restore.
+	if err := writeSandboxRecord(actorUID, runtimeRec); err != nil {
+		return nil, err
+	}
+
 	client, err := s.dialAteom(ctx, req.GetTargetAteomUid())
 	if err != nil {
 		return nil, err
@@ -1319,14 +1330,6 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		return nil, fmt.Errorf("while calling ateom.RestoreWorkload: %w", err)
 	}
 
-	// Record the sandbox binaries actually running the guest on-node so a
-	// subsequent Checkpoint of this restored actor can re-pin the same version
-	// (Checkpoint overwrites the identity fields from its own request).
-	if err := writeSandboxRecord(actorUID, runtimeRec); err != nil {
-		// Note: crash the actor right away, if we cannot write the sandbox record now, we will not be able to checkpoint it later.
-		return nil, err
-	}
-
 	return &ateletpb.RestoreResponse{}, nil
 }
 
@@ -1340,17 +1343,15 @@ func (s *AteomHerder) Terminate(ctx context.Context, req *ateletpb.TerminateRequ
 	actorRef := resources.ActorRef{Atespace: req.GetAtespace(), Name: req.GetActorName()}
 	actorUID := req.GetActorUid()
 
-	if req.GetTargetAteomUid() != "" {
-		var assetPaths map[string]string
-		sandboxRec, err := readSandboxRecord(actorUID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read sandbox record during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
-		}
-		paths, err := s.ensureSandboxAssets(ctx, sandboxRec)
+	sandboxRec, err := s.sandboxRecordToTerminate(ctx, req, actorRef)
+	if err != nil {
+		return nil, err
+	}
+	if sandboxRec != nil {
+		assetPaths, err := s.ensureSandboxAssets(ctx, sandboxRec)
 		if err != nil {
 			return nil, fmt.Errorf("failed to ensure sandbox assets during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
 		}
-		assetPaths = paths
 
 		client, err := s.dialAteom(ctx, req.GetTargetAteomUid())
 		if err != nil {
@@ -1402,6 +1403,27 @@ func (s *AteomHerder) Terminate(ctx context.Context, req *ateletpb.TerminateRequ
 	}
 
 	return &ateletpb.TerminateResponse{}, nil
+}
+
+// sandboxRecordToTerminate returns the sandbox record of the workload
+// Terminate tears down on ateom, or nil when there is none to tear down: no
+// target ateom, or no Run or Restore of the actor ever handed it to ateom on
+// this node. ateom cleans up after a RestoreWorkload it fails itself, so a
+// missing record means nothing runs there and the node cleanup goes on.
+func (s *AteomHerder) sandboxRecordToTerminate(ctx context.Context, req *ateletpb.TerminateRequest, actorRef resources.ActorRef) (*sandboxAssetsRecord, error) {
+	if req.GetTargetAteomUid() == "" {
+		return nil, nil
+	}
+	actorUID := req.GetActorUid()
+	sandboxRec, err := readSandboxRecord(actorUID)
+	if errors.Is(err, fs.ErrNotExist) {
+		slog.InfoContext(ctx, "no sandbox record during terminate, nothing to tear down on ateom", slog.Any("actor", actorRef), slog.String("actorUID", actorUID))
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sandbox record during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
+	}
+	return sandboxRec, nil
 }
 
 // checkLocalSnapshotFiles verifies each snapshot file exists in dir as a
