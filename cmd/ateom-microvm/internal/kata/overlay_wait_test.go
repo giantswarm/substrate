@@ -28,23 +28,34 @@ import (
 // TestWaitForSocketReturnsPromptly pins the reason this helper exists: it sits on
 // the restore path, so what it costs is decided by how often it looks, not by how
 // long virtiofsd takes to bind. A socket appearing after 5ms should not cost a
-// 50ms tick.
+// 50ms tick. The bound is on the poll interval, which the helper controls; a
+// wall-clock bound on the whole wait would measure the runner's scheduling
+// latency instead.
 func TestWaitForSocketReturnsPromptly(t *testing.T) {
+	if socketPollInterval > 5*time.Millisecond {
+		t.Errorf("socketPollInterval = %s; a socket appearing after 5ms would wait out the tick", socketPollInterval)
+	}
+}
+
+// TestWaitForSocketAppearsLater covers a socket that does not exist yet when the
+// wait starts: it returns once the socket appears, without error.
+func TestWaitForSocketAppearsLater(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "vfsd.sock")
+	created := make(chan error, 1)
 	go func() {
 		time.Sleep(5 * time.Millisecond)
 		f, err := os.Create(path)
 		if err == nil {
-			_ = f.Close()
+			err = f.Close()
 		}
+		created <- err
 	}()
 
-	start := time.Now()
-	if err := waitForSocket(context.Background(), path, 5*time.Second); err != nil {
+	if err := waitForSocket(context.Background(), path, time.Minute); err != nil {
 		t.Fatalf("waitForSocket: %v", err)
 	}
-	if elapsed := time.Since(start); elapsed > 40*time.Millisecond {
-		t.Errorf("waited %s for a socket that appeared after 5ms; the poll interval dominates", elapsed)
+	if err := <-created; err != nil {
+		t.Fatalf("creating the socket: %v", err)
 	}
 }
 
