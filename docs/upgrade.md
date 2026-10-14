@@ -893,6 +893,17 @@ patch entries in one roll.
   commits `PAUSED` with that snapshot and writes no crash record. Before,
   the commit kept the crash in `status.crash`, which the read migration
   above hid. A crash that dropped the local checkpoint still stands.
+- **gVisor boot whose sandbox did not take the actor's network:** ateom
+  fails the boot right after the pause container starts or is restored,
+  with `the sandbox did not take the actor's network: eth0 in its
+  namespace still carries 169.254.17.2`, instead of the wakeup probe
+  being refused until its deadline. The cause is transient: a golden
+  take is retried instead of failing the template with
+  `GoldenActorCrashed`, and a resume that crashed for it returns the
+  actor to its snapshot. A missed wakeup probe also states whether the
+  sandbox holds the actor's network. A template that failed before the
+  roll keeps its recorded failure: an older ateom's message names no
+  network cause.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
