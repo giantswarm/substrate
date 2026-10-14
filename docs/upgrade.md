@@ -933,6 +933,15 @@ patch entries and this one in one roll.
   `500` otherwise. No credential provider is needed.
 - **Chart:** `images.agentgateway` is the agentgateway line's
   `2.4.0` (2.3.6 + the actor JWT injection).
+- **Busy worker marking:** ate-controller can mark the worker pods that
+  host actors (`--busy-worker-annotations`, chart
+  `ateController.busyWorker.annotations`, off by default): while a Worker
+  reports an allocated actor its pod carries the given annotations, for
+  Karpenter `karpenter.sh/do-not-disrupt: "true"`, and the label
+  `ate.dev/busy=true`; both go once it hosts none. ate-controller's
+  ClusterRole gains `patch` on pods. Turned on, a node roll (this one
+  included) waits for a busy worker's actors, or for the NodePool's
+  `terminationGracePeriod`, before Karpenter drains its node.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 

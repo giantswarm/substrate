@@ -169,6 +169,18 @@ ateController:
     # node-local protocol with no cross-version guarantee, so the release that
     # runs atelet picks the worker build. false runs each pool's workerImage.
     followRelease: true
+  busyWorker:
+    # Annotations ate-controller sets on a worker pod while it hosts at least
+    # one Actor, and removes once it hosts none; the pod also carries the
+    # label ate.dev/busy=true while marked. An Actor's run is lost when its
+    # worker pod goes, so on a Karpenter cluster
+    # {karpenter.sh/do-not-disrupt: "true"} keeps consolidation, drift and
+    # expiry off a node while a worker on it is busy, and idle workers stay
+    # consolidatable. Empty disables the marking.
+    annotations: {}
+    # How often the marking is converged with the registry: the longest an
+    # Actor runs on an unmarked worker.
+    syncPeriod: 5s
 
 # Additional arguments appended to the ateapi defaults.
 ateApi:
