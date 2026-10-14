@@ -874,6 +874,15 @@ patch entries in one roll.
   the suspend answered `NotFound` ("Actor … not found") for an actor that
   exists. The same holds for the release in a crash, a delete and a
   revert.
+- **Pause during a worker's termination:** a pause whose worker's record
+  was deleted under its release answers with the actor the worker's
+  delete crashed, instead of `NotFound`. Before, it answered that the
+  actor does not exist.
+- **Missing records on Pause, Resume, Suspend and Revert:** `NotFound`
+  ("Actor … not found") answers only an actor that does not exist. Any
+  other record the operation read that is gone (its worker, a worker's
+  claim) answers `Aborted` with `a record the operation read is gone for
+  Actor …, please retry`.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
