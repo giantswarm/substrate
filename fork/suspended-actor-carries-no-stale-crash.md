@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** prepared on `upstream/suspended-clears-crash` (the suspend commit); the read migration is the line's own, as upstream's `AGENTS.md` keeps no compatibility with older rows before v1.0.0
-- **Our commit:** the pull request adding this file: a `cherry-pick -x` of the upstream-ready commit and the line's read migration
+- **Our commit:** [#413](https://github.com/giantswarm/substrate/pull/413): a `cherry-pick -x` of the upstream-ready commit and the line's read migration
 
 ## Change
 
