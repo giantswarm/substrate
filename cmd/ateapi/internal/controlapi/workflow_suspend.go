@@ -361,8 +361,9 @@ func (w *ActorWorkflow) ensureVolumesDetached(ctx context.Context, actor *ateapi
 // latest record, and commits SUSPENDED whatever state that record holds: the
 // step runs only once the checkpoint completed, so an actor an out-of-band
 // transition crashed meanwhile (e.g. the syncer, after its worker died) is
-// committed SUSPENDED with that checkpoint, not left CRASHED. With no
-// assignment left there is nothing to release, and the commit still runs.
+// committed SUSPENDED with that checkpoint, not left CRASHED, and its crash
+// record is cleared with it. With no assignment left there is nothing to
+// release, and the commit still runs.
 func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate) (_ *ateapipb.Actor, err error) {
 	ctx, done := stepSpan(ctx, "FinalizeSuspended")
 	defer func() { err = done(err) }()
@@ -429,6 +430,9 @@ func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef r
 	t = time.Now()
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_SUSPENDED
+		// A crash record describes a CRASHED actor; one the actor survived
+		// with its checkpoint is not its current state.
+		toUpdate.Status.Crash = nil
 		// The recorded URI is under the actor's own prefix, so the actor now
 		// owns its external snapshot rather than borrowing the tag's it may
 		// have been created from.
