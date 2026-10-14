@@ -58,6 +58,7 @@ func migrateLegacyActor(actor *ateapipb.Actor) {
 	migrateLegacyExternalSnapshot(st.GetLocalSnapshot().GetDurableCopy(), builtOn)
 	migrateLegacyLocalSnapshot(st.GetLocalSnapshot())
 	migrateLegacyAssignedNode(st)
+	migrateStaleCrash(st)
 }
 
 // migrateLegacyLocalSnapshot rewrites a local snapshot the 1.8 line recorded:
