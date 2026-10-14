@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/wait-for-socket-poll-bound`, on the mirror `main` at the pin (v0.5.0-alpha2)
-- **Our commit:** the fork's own commit, a `git cherry-pick -x` of the upstream-ready one
+- **Our commit:** [#408](https://github.com/giantswarm/substrate/pull/408): the fork's own commit, a `git cherry-pick -x` of the upstream-ready one
 
 ## Change
 
