@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** none opened
-- **Our commit:** the fork's own commit
+- **Our commit:** [#410](https://github.com/giantswarm/substrate/pull/410): the fork's own commit
 
 ## Change
 
