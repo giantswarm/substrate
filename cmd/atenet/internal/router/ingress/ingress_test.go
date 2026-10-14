@@ -49,6 +49,12 @@ func (m *mockClient) ResumeActor(ctx context.Context, in *ateapipb.ResumeActorRe
 	return m.resumeFn(ctx, in, opts...)
 }
 
+// GetActor answers as for an actor in no particular state, so a parked
+// FailedPrecondition stays retryable.
+func (m *mockClient) GetActor(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+	return &ateapipb.Actor{}, nil
+}
+
 func requestMetadata(actorName, atespace string, headers ...*corev3.HeaderValue) *extproc.RequestMetadata {
 	headers = append(headers,
 		&corev3.HeaderValue{Key: atenet.TargetActorHeader, Value: atespace + "/" + actorName},

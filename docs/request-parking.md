@@ -122,10 +122,18 @@ waiting are returned immediately (fail fast):
 | `Aborted` (concurrent resume)          | Retry (always)                    |
 | `ResourceExhausted` (no room)          | **Park & retry** (when enabled)   |
 | `FailedPrecondition` (transient state) | **Park & retry** (when enabled)   |
+| `FailedPrecondition`, actor `CRASHED`  | Fail fast → `503`                 |
 | `Unavailable` (control-plane blip)     | **Park & retry** (when enabled)   |
 | `NotFound`                             | Fail fast → `404`                 |
 | `DeadlineExceeded`                     | Fail fast → `504`                 |
 | `PermissionDenied` / `Unauthenticated` | Fail fast → `403` / `401`         |
+
+A `FailedPrecondition` is the one code whose cause the router checks: it reads
+the actor once, and an actor in `CRASHED` fails fast. A crashed actor leaves
+that state only through an explicit `RevertActor` or `DeleteActor` (a crash the
+control plane recovers by itself it recovers within the `ResumeActor` call), so
+the caller gets the refusal at once and decides how to recover. A failed read
+keeps the request parked.
 
 When parking is **disabled** (`--parked-request-max=0`), the router fails fast:
 `FailedPrecondition` and `Unavailable` are returned immediately, there is no

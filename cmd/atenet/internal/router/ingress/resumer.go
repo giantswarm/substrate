@@ -165,7 +165,8 @@ func NewActorResumer(apiClient ateapipb.ControlClient, opts ...resumerOption) *A
 // momentary condition into a bounded wait instead of an immediate failure — a
 // parked request should ride out a blip, not fail on it with budget remaining.
 // FailedPrecondition stays retryable too: it no longer carries saturation, but
-// it does cover states a concurrent operation can move the actor out of.
+// it does cover states a concurrent operation can move the actor out of —
+// except CRASHED, which runFlight checks for separately (see crashed).
 // All other codes (NotFound, DeadlineExceeded, PermissionDenied, ...) are
 // returned to the caller so the HTTP boundary can map them with full fidelity.
 func (r *ActorResumer) retryable(err error) bool {
@@ -177,6 +178,25 @@ func (r *ActorResumer) retryable(err error) bool {
 	default:
 		return false
 	}
+}
+
+// crashed reports whether err, a FailedPrecondition answer to a resume, is the
+// control plane refusing an actor in ACTOR_STATE_CRASHED. Such an actor leaves
+// that state only through an explicit RevertActor or DeleteActor (a crash the
+// control plane recovers by itself it recovers within the ResumeActor call),
+// so no wait clears the refusal: the caller gets it at once and decides how to
+// recover, instead of the flight retrying it until the budget elapses. The
+// actor is read only on a FailedPrecondition answer; a failed read keeps the
+// answer retryable.
+func (r *ActorResumer) crashed(ctx context.Context, actorRef resources.ActorRef, err error) bool {
+	if status.Code(err) != codes.FailedPrecondition {
+		return false
+	}
+	actor, getErr := r.apiClient.GetActor(ctx, &ateapipb.GetActorRequest{Actor: actorRef.ToObjectRef()})
+	if getErr != nil {
+		return false
+	}
+	return actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED
 }
 
 // ResumeActor ensures the actor is running.
@@ -233,7 +253,7 @@ func (r *ActorResumer) runFlight(f *resumeActorFlight, key string, actorRef reso
 			return true, nil
 		}
 
-		if r.retryable(err) {
+		if r.retryable(err) && !r.crashed(bgCtx, actorRef, err) {
 			// A caller that is shed reads err to pick its outcome.
 			f.signalRetrying(err)
 			lastRetryErr = err // remember it in case the budget elapses
