@@ -332,6 +332,68 @@ func TestEnsureSuspendedFinalized_NoAssignment(t *testing.T) {
 	}
 }
 
+// TestEnsureSuspendedFinalized_CrashRecord verifies that a suspend whose
+// checkpoint completed commits SUSPENDED with that checkpoint and no crash
+// record: on the plain path the actor had none, and an actor an out-of-band
+// transition crashed after the checkpoint (e.g. its worker died) does not
+// carry that crash into SUSPENDED.
+func TestEnsureSuspendedFinalized_CrashRecord(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state ateapipb.ActorState
+		crash *ateapipb.ActorCrash
+	}{
+		{
+			name:  "plain",
+			state: ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+		},
+		{
+			name:  "crashed after checkpoint",
+			state: ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			crash: &ateapipb.ActorCrash{Message: "worker pod is gone"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			persistence := newTestPersistence(t)
+
+			snapshotURI := someActorSnapshotURI(t, testStorageLocation, "team-a", "2026-01-01t00-00-00z-abc")
+			storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+				Metadata: &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "actor-1"},
+				Status: &ateapipb.ActorStatus{
+					State:                 tc.state,
+					Crash:                 tc.crash,
+					InProgressSnapshotUri: snapshotURI,
+				},
+			})
+
+			w := &ActorWorkflow{store: persistence}
+			tmpl := &ateapipb.ActorTemplate{
+				Metadata:       &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "tmpl", Uid: "tmpl-uid-1"},
+				SnapshotConfig: &ateapipb.SnapshotConfig{StorageLocation: testStorageLocation},
+			}
+			ref := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+			if _, err := w.ensureSuspendedFinalized(ctx, ref, tmpl); err != nil {
+				t.Fatalf("ensureSuspendedFinalized: %v", err)
+			}
+
+			stored, err := persistence.GetActor(ctx, ref)
+			if err != nil {
+				t.Fatalf("GetActor: %v", err)
+			}
+			if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+				t.Errorf("state = %v, want SUSPENDED", got)
+			}
+			if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != snapshotURI {
+				t.Errorf("SnapshotUri = %q, want the checkpoint %q", got, snapshotURI)
+			}
+			if crash := stored.GetStatus().GetCrash(); crash != nil {
+				t.Errorf("crash = %v, want none on a SUSPENDED actor", crash)
+			}
+		})
+	}
+}
+
 // TestEnsureSuspendedFinalized_ReleasesReplacedSnapshot verifies which external
 // snapshot a suspend collects. The actor's previous one goes away, because
 // nothing else can name it — unless the actor was only borrowing it from a tag,
