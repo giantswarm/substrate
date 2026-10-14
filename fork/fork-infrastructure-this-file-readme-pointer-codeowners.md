@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not for upstream
-- **Our commit:** the `giantswarm` branch history
+- **Our commit:** the `giantswarm` branch history; also [#430](https://github.com/giantswarm/substrate/pull/430) and [#428](https://github.com/giantswarm/substrate/pull/428) (`ci(fork): remove upstream's agentgateway-image.yaml; fail a workflow naming ghcr.io`)
 
 ## Change
 
