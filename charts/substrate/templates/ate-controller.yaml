@@ -88,6 +88,10 @@ spec:
 {{- if .Values.ateController.gvisorWorker.followRelease }}
         - "--gvisor-worker-image={{ include "substrate.componentImage" (list "ateom-gvisor" .) }}"
 {{- end }}
+{{- with .Values.ateController.busyWorker.annotations }}
+        - {{ printf "--busy-worker-annotations=%s" (include "substrate.busyWorkerAnnotations" .) | quote }}
+        - {{ printf "--busy-worker-sync-period=%s" $.Values.ateController.busyWorker.syncPeriod | quote }}
+{{- end }}
         env:
         - name: POD_NAMESPACE
           valueFrom:
