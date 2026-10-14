@@ -1,0 +1,46 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork (giantswarm/substrate): a pull request that ships a change carries its
+# docs/upgrade.md entry or says why it needs none (docs/dev/release-notes.md,
+# "Cut a release"). A workflow of its own, so an edit of the description
+# re-runs this check alone, not the suites.
+name: upgrade-entry
+on:
+  pull_request:
+    branches: [giantswarm, "release-*"]
+    types: [opened, synchronize, reopened, edited]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  upgrade-entry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Fixture runs of the check
+        run: .github/scripts/upgrade-entry-test.sh
+      - name: This pull request's entry
+        run: |
+          gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" \
+            --json number,title,body,files,headRefName,author >"${RUNNER_TEMP}/pr.json"
+          .github/scripts/upgrade-entry.sh "${RUNNER_TEMP}/pr.json"
