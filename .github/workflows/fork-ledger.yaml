@@ -50,6 +50,15 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Fixture runs of the check
         run: .github/scripts/fork-ledger-test.sh
+      # The line publishes from CircleCI to gsoci only; a re-pin replays
+      # upstream's workflow files, which publish to GitHub's container
+      # registry. The bracket keeps this file out of its own match.
+      - name: No workflow publishes to GitHub's container registry
+        run: |
+          if grep -n 'ghcr[.]io' .github/workflows/*; then
+            echo "::error::a workflow names GitHub's container registry; the line publishes from CircleCI to gsoci only (FORK.md, Publishing): remove it"
+            exit 1
+          fi
       - name: This pull request's row
         if: github.event_name == 'pull_request'
         run: |
