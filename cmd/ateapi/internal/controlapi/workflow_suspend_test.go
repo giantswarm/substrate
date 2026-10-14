@@ -584,6 +584,89 @@ func TestEnsureSuspendedFinalized_ReleasesOnlyOwnWorker(t *testing.T) {
 	}
 }
 
+// workerDeletedUnderReleaseStore runs the worker's DeleteWorker workflow, as
+// ate-controller does once a worker's pod is gone, just before the release
+// that follows the worker's read.
+type workerDeletedUnderReleaseStore struct {
+	store.Interface
+	t *testing.T
+}
+
+func (s workerDeletedUnderReleaseStore) ReleaseActorFromWorker(ctx context.Context, workerName, actorUID string) (*ateapipb.Worker, error) {
+	if _, err := NewWorkerWorkflow(s.Interface).DeleteWorker(ctx, workerName, store.DeletePreconditions{}); err != nil {
+		s.t.Fatalf("DeleteWorker: %v", err)
+	}
+	return s.Interface.ReleaseActorFromWorker(ctx, workerName, actorUID)
+}
+
+// TestEnsureSuspendedFinalized_WorkerDeletedUnderRelease covers a suspend whose
+// checkpoint completed while the worker's pod terminated gracefully: the pod
+// goes away once the checkpoint stops the sandbox, and the worker's delete
+// lands between finalize's read of the worker and its release. The suspend
+// commits the snapshot it took; it never answers that the actor is not found.
+func TestEnsureSuspendedFinalized_WorkerDeletedUnderRelease(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+	workerName := testWorkerUID("pod-1")
+	snapshotURI := someActorSnapshotURI(t, testStorageLocation, "team-a", "snapshot-1")
+
+	created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+		Status: &ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_SUSPENDING,
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker:          &ateapipb.ObjectRef{Name: workerName},
+				WorkerNamespace: "worker-ns",
+				WorkerPool:      "pool",
+				WorkerPod:       "pod-1",
+				WorkerPodUid:    workerName,
+			},
+			InProgressSnapshotUri: snapshotURI,
+		},
+	})
+	if _, err := persistence.CreateWorker(ctx, &ateapipb.Worker{
+		Metadata:        &ateapipb.ResourceMetadata{Name: workerName},
+		WorkerNamespace: "worker-ns",
+		WorkerPool:      "pool",
+		WorkerPod:       "pod-1",
+		WorkerPodUid:    workerName,
+		Status:          &ateapipb.WorkerStatus{},
+	}); err != nil {
+		t.Fatalf("CreateWorker: %v", err)
+	}
+	seedAssignment(t, persistence, workerName, &ateapipb.ActorAssignment{
+		Actor:    &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
+		ActorUid: created.GetMetadata().GetUid(),
+	})
+
+	w := &ActorWorkflow{store: workerDeletedUnderReleaseStore{Interface: persistence, t: t}}
+	tmpl := &ateapipb.ActorTemplate{
+		Metadata:       &ateapipb.ResourceMetadata{Atespace: "team-a", Name: "tmpl", Uid: "tmpl-uid-1"},
+		SnapshotConfig: &ateapipb.SnapshotConfig{StorageLocation: testStorageLocation},
+	}
+	stored, err := w.ensureSuspendedFinalized(ctx, actorRef, tmpl)
+	if errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("ensureSuspendedFinalized = %v, which SuspendActor answers as the actor not being found", err)
+	}
+	if err != nil {
+		t.Fatalf("ensureSuspendedFinalized: %v", err)
+	}
+
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_SUSPENDED {
+		t.Errorf("state = %v, want SUSPENDED", got)
+	}
+	if got := stored.GetStatus().GetExternalSnapshot().GetSnapshotUri(); got != snapshotURI {
+		t.Errorf("ExternalSnapshot.SnapshotUri = %q, want the checkpoint's %q", got, snapshotURI)
+	}
+	if stored.GetStatus().GetWorkerAssignment() != nil {
+		t.Errorf("WorkerAssignment = %v, want cleared", stored.GetStatus().GetWorkerAssignment())
+	}
+	if _, err := persistence.GetWorker(ctx, workerName); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetWorker = %v, want the worker deleted", err)
+	}
+}
+
 // TestCommitSnapshotScope verifies golden actors always commit Full — new
 // actors resume the golden snapshot Full, so the template's onCommit must not
 // thin it down to a data-only capture.

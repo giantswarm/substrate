@@ -862,6 +862,22 @@ patch entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.10.1 to 1.10.2
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs between the two tags.
+- **Chart:** unchanged.
+- **Suspend during a worker's termination:** a suspend whose checkpoint
+  completed while the worker's pod went away commits the snapshot and
+  answers with the `SUSPENDED` actor. Before, when the worker's record
+  was deleted between the suspend's read of the worker and its release,
+  the suspend answered `NotFound` ("Actor … not found") for an actor that
+  exists. The same holds for the release in a crash, a delete and a
+  revert.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
