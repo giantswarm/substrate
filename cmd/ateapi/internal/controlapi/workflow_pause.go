@@ -207,9 +207,12 @@ func (w *ActorWorkflow) ensureAteletPaused(ctx context.Context, actorRef resourc
 // owned by this actor), records where the local snapshot lives, and commits
 // PAUSED with the assignment cleared in a single update — or CRASHED when the
 // worker's node name was lost, since a local snapshot on an unknown node can
-// never be resumed. It re-reads the actor first so an out-of-band transition
-// (e.g. the syncer crashing the actor after its worker died) is not
-// overwritten: with no assignment left there is nothing to finalize.
+// never be resumed. It runs only once the checkpoint completed and re-reads
+// the actor, which an out-of-band transition (e.g. the syncer, after its
+// worker died) may have crashed meanwhile. A crash that dropped the local
+// checkpoint stands: there is no snapshot to commit PAUSED with. A crash
+// that left the checkpoint in place is committed PAUSED with it and its crash
+// record cleared, since the record describes a CRASHED actor only.
 func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate) (_ *ateapipb.Actor, err error) {
 	ctx, done := stepSpan(ctx, "FinalizePaused")
 	defer func() { err = done(err) }()
@@ -247,6 +250,13 @@ func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef reso
 		if err != nil {
 			return nil, err
 		}
+		if latestActor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED &&
+			latestActor.GetStatus().GetInProgressLocalSnapshotName() == "" {
+			// The worker's delete crashed the actor and dropped the local
+			// checkpoint with its sandbox: there is no snapshot to record, so
+			// the crash stands.
+			return latestActor, nil
+		}
 		wasAlreadyCrashed := latestActor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED
 		newState := ateapipb.ActorState_ACTOR_STATE_PAUSED
 		var crashStatus *ateapipb.ActorCrash
@@ -271,7 +281,10 @@ func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef reso
 
 		storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {
 			toUpdate.Status.State = newState
-			if newState == ateapipb.ActorState_ACTOR_STATE_CRASHED && !wasAlreadyCrashed {
+			switch {
+			case newState == ateapipb.ActorState_ACTOR_STATE_PAUSED:
+				toUpdate.Status.Crash = nil
+			case !wasAlreadyCrashed:
 				toUpdate.Status.Crash = crashStatus
 			}
 			// TODO(dberkov) - what if InProgressLocalSnapshotName is empty? That shouldn't be possible.

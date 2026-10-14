@@ -144,6 +144,113 @@ func TestEnsurePausedFinalized_AlreadyCrashed(t *testing.T) {
 	}
 }
 
+// TestEnsurePausedFinalized_CrashRecord covers a pause finalized over an
+// actor an out-of-band transition crashed after its checkpoint completed. A
+// crash that left the local checkpoint in place is committed PAUSED with it
+// and without the crash record; a crash that dropped the checkpoint with its
+// sandbox stands, since a PAUSED actor without a snapshot cannot be resumed.
+func TestEnsurePausedFinalized_CrashRecord(t *testing.T) {
+	crash := &ateapipb.ActorCrash{Message: "worker pod is gone"}
+	for _, tc := range []struct {
+		name  string
+		state ateapipb.ActorState
+		crash *ateapipb.ActorCrash
+		// checkpoint is the in-progress local snapshot the crash left, if any.
+		checkpoint string
+		// workerGone deletes the worker before finalize, as the crash that
+		// dropped the checkpoint did.
+		workerGone bool
+		wantState  ateapipb.ActorState
+		wantCrash  *ateapipb.ActorCrash
+		wantLocal  string
+	}{
+		{
+			name:       "plain",
+			state:      ateapipb.ActorState_ACTOR_STATE_PAUSING,
+			checkpoint: "local-snap-1",
+			wantState:  ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			wantLocal:  "local-snap-1",
+		},
+		{
+			name:       "crashed after checkpoint, checkpoint kept",
+			state:      ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			crash:      crash,
+			checkpoint: "local-snap-1",
+			wantState:  ateapipb.ActorState_ACTOR_STATE_PAUSED,
+			wantLocal:  "local-snap-1",
+		},
+		{
+			name:       "crashed after checkpoint, checkpoint dropped",
+			state:      ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			crash:      crash,
+			workerGone: true,
+			wantState:  ateapipb.ActorState_ACTOR_STATE_CRASHED,
+			wantCrash:  crash,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, cleanup := storetest.SetupTestStore(t)
+			defer cleanup()
+			ctx := context.Background()
+			actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+
+			workerName := testWorkerUID("worker-pod-1")
+			created := storetest.MustCreateActor(t, ctx, st, &ateapipb.Actor{
+				Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+				Status: &ateapipb.ActorStatus{
+					State:        tc.state,
+					Crash:        tc.crash,
+					AssignedNode: "node1",
+					WorkerAssignment: &ateapipb.WorkerAssignment{
+						Worker:          &ateapipb.ObjectRef{Name: workerName},
+						WorkerNamespace: "default",
+						WorkerPool:      "pool1",
+						WorkerPod:       "worker-pod-1",
+						WorkerPodUid:    workerName,
+					},
+					InProgressLocalSnapshotName: tc.checkpoint,
+				},
+			})
+			if !tc.workerGone {
+				if _, err := st.CreateWorker(ctx, &ateapipb.Worker{
+					Metadata:        &ateapipb.ResourceMetadata{Name: workerName},
+					WorkerNamespace: "default",
+					WorkerPool:      "pool1",
+					WorkerPod:       "worker-pod-1",
+					WorkerPodUid:    workerName,
+					NodeName:        "node1",
+					Status:          &ateapipb.WorkerStatus{},
+				}); err != nil {
+					t.Fatalf("CreateWorker: %v", err)
+				}
+				seedAssignment(t, st, workerName, &ateapipb.ActorAssignment{
+					Actor:    &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
+					ActorUid: created.GetMetadata().GetUid(),
+				})
+			}
+
+			w := &ActorWorkflow{store: st}
+			if _, err := w.ensurePausedFinalized(ctx, actorRef, &ateapipb.ActorTemplate{}); err != nil {
+				t.Fatalf("ensurePausedFinalized: %v", err)
+			}
+
+			stored, err := st.GetActor(ctx, actorRef)
+			if err != nil {
+				t.Fatalf("GetActor: %v", err)
+			}
+			if got := stored.GetStatus().GetState(); got != tc.wantState {
+				t.Errorf("state = %v, want %v", got, tc.wantState)
+			}
+			if got := stored.GetStatus().GetLocalSnapshot().GetSnapshotName(); got != tc.wantLocal {
+				t.Errorf("LocalSnapshot = %q, want %q", got, tc.wantLocal)
+			}
+			if got := stored.GetStatus().GetCrash().GetMessage(); got != tc.wantCrash.GetMessage() {
+				t.Errorf("crash = %q, want %q", got, tc.wantCrash.GetMessage())
+			}
+		})
+	}
+}
+
 // TestEnsurePausedFinalized_RecordsContentScope verifies pause finalization
 // records the scope the pause checkpoint captured (the template's onCommit)
 // in LocalSnapshot, so a later suspend or resume of the PAUSED actor knows
