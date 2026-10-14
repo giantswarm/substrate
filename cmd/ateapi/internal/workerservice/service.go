@@ -21,6 +21,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/localca"
+	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 )
 
@@ -32,10 +33,10 @@ type Server struct {
 	// state every request is authorized against.
 	store store.Interface
 
-	// suspender runs the suspend a Worker asks for. It is the same entry point
-	// Control.SuspendActor uses, so a Worker's request is subject to every
-	// precondition a client's would be.
-	suspender actorSuspender
+	// actors runs what a Worker asks for or reports: the suspend is the same
+	// entry point Control.SuspendActor uses, so a Worker's request is subject
+	// to every precondition a client's would be.
+	actors actorLifecycle
 
 	// ateletSPIFFEID is the identity the calling atelet must present.
 	ateletSPIFFEID string
@@ -43,18 +44,19 @@ type Server struct {
 	actorIDCAPool localca.Pool
 }
 
-// actorSuspender is the in-process slice of the Control service this package
+// actorLifecycle is the in-process slice of the Control service this package
 // drives. *controlapi.RPCService satisfies it.
-type actorSuspender interface {
+type actorLifecycle interface {
 	SuspendActor(ctx context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error)
+	CrashExitedActor(ctx context.Context, actorRef resources.ActorRef, actorUID, workerName, reason string) (*ateapipb.Actor, error)
 }
 
 var _ ateapipb.WorkerServiceServer = (*Server)(nil)
 
-func New(store store.Interface, suspender actorSuspender, ateletSPIFFEID string, actorIDCAPool localca.Pool) *Server {
+func New(store store.Interface, actors actorLifecycle, ateletSPIFFEID string, actorIDCAPool localca.Pool) *Server {
 	return &Server{
 		store:          store,
-		suspender:      suspender,
+		actors:         actors,
 		ateletSPIFFEID: ateletSPIFFEID,
 		actorIDCAPool:  actorIDCAPool,
 	}

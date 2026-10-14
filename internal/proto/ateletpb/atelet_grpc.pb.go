@@ -36,6 +36,7 @@ const (
 	AteomSupport_MintActorCertificate_FullMethodName = "/atelet.AteomSupport/MintActorCertificate"
 	AteomSupport_RegisterWorker_FullMethodName       = "/atelet.AteomSupport/RegisterWorker"
 	AteomSupport_RequestActorSuspend_FullMethodName  = "/atelet.AteomSupport/RequestActorSuspend"
+	AteomSupport_ReportActorExit_FullMethodName      = "/atelet.AteomSupport/ReportActorExit"
 )
 
 // AteomSupportClient is the client API for AteomSupport service.
@@ -65,6 +66,15 @@ type AteomSupportClient interface {
 	// would need: the control plane answers this by driving a suspend back
 	// through atelet into the calling ateom.
 	RequestActorSuspend(ctx context.Context, in *RequestActorSuspendRequest, opts ...grpc.CallOption) (*RequestActorSuspendResponse, error)
+	// ReportActorExit reports that the sandbox of an actor this worker hosts
+	// exited while no lifecycle operation was running on it, for atelet to
+	// forward to the control plane's WorkerService, which this mirrors.
+	//
+	// Success means the control plane recorded the actor as crashed; an error is
+	// its refusal, passed through as it was given. Callers must not hold a lock
+	// the resulting Terminate would need: the control plane answers this by
+	// tearing the actor down through atelet in the calling ateom.
+	ReportActorExit(ctx context.Context, in *ReportActorExitRequest, opts ...grpc.CallOption) (*ReportActorExitResponse, error)
 }
 
 type ateomSupportClient struct {
@@ -105,6 +115,16 @@ func (c *ateomSupportClient) RequestActorSuspend(ctx context.Context, in *Reques
 	return out, nil
 }
 
+func (c *ateomSupportClient) ReportActorExit(ctx context.Context, in *ReportActorExitRequest, opts ...grpc.CallOption) (*ReportActorExitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportActorExitResponse)
+	err := c.cc.Invoke(ctx, AteomSupport_ReportActorExit_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AteomSupportServer is the server API for AteomSupport service.
 // All implementations must embed UnimplementedAteomSupportServer
 // for forward compatibility.
@@ -132,6 +152,15 @@ type AteomSupportServer interface {
 	// would need: the control plane answers this by driving a suspend back
 	// through atelet into the calling ateom.
 	RequestActorSuspend(context.Context, *RequestActorSuspendRequest) (*RequestActorSuspendResponse, error)
+	// ReportActorExit reports that the sandbox of an actor this worker hosts
+	// exited while no lifecycle operation was running on it, for atelet to
+	// forward to the control plane's WorkerService, which this mirrors.
+	//
+	// Success means the control plane recorded the actor as crashed; an error is
+	// its refusal, passed through as it was given. Callers must not hold a lock
+	// the resulting Terminate would need: the control plane answers this by
+	// tearing the actor down through atelet in the calling ateom.
+	ReportActorExit(context.Context, *ReportActorExitRequest) (*ReportActorExitResponse, error)
 	mustEmbedUnimplementedAteomSupportServer()
 }
 
@@ -150,6 +179,9 @@ func (UnimplementedAteomSupportServer) RegisterWorker(context.Context, *Register
 }
 func (UnimplementedAteomSupportServer) RequestActorSuspend(context.Context, *RequestActorSuspendRequest) (*RequestActorSuspendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestActorSuspend not implemented")
+}
+func (UnimplementedAteomSupportServer) ReportActorExit(context.Context, *ReportActorExitRequest) (*ReportActorExitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportActorExit not implemented")
 }
 func (UnimplementedAteomSupportServer) mustEmbedUnimplementedAteomSupportServer() {}
 func (UnimplementedAteomSupportServer) testEmbeddedByValue()                      {}
@@ -226,6 +258,24 @@ func _AteomSupport_RequestActorSuspend_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AteomSupport_ReportActorExit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportActorExitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AteomSupportServer).ReportActorExit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AteomSupport_ReportActorExit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AteomSupportServer).ReportActorExit(ctx, req.(*ReportActorExitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AteomSupport_ServiceDesc is the grpc.ServiceDesc for AteomSupport service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -244,6 +294,10 @@ var AteomSupport_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestActorSuspend",
 			Handler:    _AteomSupport_RequestActorSuspend_Handler,
+		},
+		{
+			MethodName: "ReportActorExit",
+			Handler:    _AteomSupport_ReportActorExit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

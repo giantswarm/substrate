@@ -28,6 +28,11 @@ func ValidateRequestActorSuspendRequest(ctx context.Context, req *ateletpb.Reque
 	return Validate_RequestActorSuspendRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)
 }
 
+// ValidateReportActorExitRequest runs the generated validation for req.
+func ValidateReportActorExitRequest(ctx context.Context, req *ateletpb.ReportActorExitRequest) field.ErrorList {
+	return Validate_ReportActorExitRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)
+}
+
 // ValidateMintActorCertificateRequest runs the generated validation for req.
 func ValidateMintActorCertificateRequest(ctx context.Context, req *ateletpb.MintActorCertificateRequest) field.ErrorList {
 	return Validate_MintActorCertificateRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)

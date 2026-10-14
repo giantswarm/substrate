@@ -2398,6 +2398,22 @@ service WorkerService {
   // retries a suspend it had already been granted therefore sees a failure
   // rather than a repeat of its success.
   rpc RequestActorSuspend(RequestActorSuspendRequest) returns (RequestActorSuspendResponse);
+
+  // ReportActorExit tells the control plane that the sandbox of a running
+  // Actor the calling Worker hosts exited on its own: no lifecycle operation
+  // stopped it. Only the Worker can observe that; without the report the Actor
+  // stays RUNNING with nothing behind it, and every request routed to it waits
+  // out its caller's deadline.
+  //
+  // The control plane crashes the Actor, as for any other lost workload,
+  // recording reason in its crash, so a client sees the crash and can revert
+  // it. Served only for an Actor that is RUNNING on that Worker; any other
+  // state is refused as FailedPrecondition, since an operation in flight owns
+  // the Actor's fate and fails on the exited sandbox itself.
+  //
+  // atelet calls this with its own client certificate, as it does for
+  // RequestActorSuspend, naming the Worker its caller proved itself to be.
+  rpc ReportActorExit(ReportActorExitRequest) returns (ReportActorExitResponse);
 }
 
 message RegisterWorkerRequest {
@@ -2497,6 +2513,41 @@ message RequestActorSuspendRequest {
 
 message RequestActorSuspendResponse {
   // The Actor as the suspend workflow left it.
+  Actor actor = 1;
+}
+
+message ReportActorExitRequest {
+  // The Worker making the report. atespace is always empty; Workers are
+  // global-scoped. atelet fills this in from its caller's certificate, so it
+  // names the Worker the report provably came from.
+  //
+  // +k8s:required
+  // +k8s:beta(since: "0.0")=+k8s:subfield(atespace)=+k8s:forbidden # TODO: get rid of beta prefix
+  ObjectRef worker = 1;
+
+  // The Actor whose sandbox exited. It must be assigned to worker; a Worker
+  // may speak only for what it hosts.
+  //
+  // +k8s:required
+  // +k8s:subfield(atespace)=+k8s:required
+  ObjectRef actor = 2;
+
+  // The UID of the Actor the Worker was hosting, which pins the report to one
+  // incarnation, as for RequestActorSuspend.
+  //
+  // +k8s:required
+  // +k8s:format=k8s-uuid
+  string actor_uid = 3;
+
+  // What the Worker observed, recorded in the Actor's crash message.
+  //
+  // +k8s:required
+  // +k8s:maxLength=1024
+  string reason = 4;
+}
+
+message ReportActorExitResponse {
+  // The Actor as the report left it.
   Actor actor = 1;
 }
 
