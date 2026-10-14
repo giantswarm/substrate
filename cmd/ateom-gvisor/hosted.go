@@ -52,6 +52,7 @@ func (s *AteomService) admitActor(attribution resources.ActorAttribution) (*host
 	var stale *ateomnet.SandboxSession
 	if old, ok := s.actors[attribution.UID]; ok {
 		stale = old.network
+		old.session.closeSandbox()
 	} else if len(s.actors)+s.draining >= s.maxActors {
 		return nil, nil, apierror.ResourceExhausted("worker is full: %d actors", s.maxActors)
 	}
@@ -117,6 +118,7 @@ func (s *AteomService) unhostActor(ctx context.Context, actorUID string) error {
 	hosted, ok := s.actors[actorUID]
 	delete(s.actors, actorUID)
 	if ok {
+		hosted.session.closeSandbox()
 		// Retain capacity until network cleanup completes.
 		s.draining++
 	}
@@ -177,8 +179,11 @@ func (s *AteomService) setSession(actorUID string, session *workloadSession) {
 	s.actorsMu.Lock()
 	defer s.actorsMu.Unlock()
 	if hosted, ok := s.actors[actorUID]; ok {
+		hosted.session.closeSandbox()
 		hosted.session = session
+		return
 	}
+	session.closeSandbox()
 }
 
 // checkSandboxNetwork fails when the actor's sandbox did not take its network

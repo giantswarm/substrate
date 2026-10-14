@@ -276,6 +276,90 @@ func TestRequestActorSuspendSurfacesRefusal(t *testing.T) {
 		t.Errorf("code = %v (err %v), want FailedPrecondition", got, err)
 	}
 }
+
+type fakeExitService struct {
+	ateapipb.WorkerServiceClient
+
+	got []*ateapipb.ReportActorExitRequest
+	err error
+}
+
+func (s *fakeExitService) ReportActorExit(_ context.Context, in *ateapipb.ReportActorExitRequest, _ ...grpc.CallOption) (*ateapipb.ReportActorExitResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	s.got = append(s.got, in)
+	return &ateapipb.ReportActorExitResponse{}, nil
+}
+
+func exitReport() *ateletpb.ReportActorExitRequest {
+	return &ateletpb.ReportActorExitRequest{
+		ActorAtespace: "team-a",
+		ActorName:     "actor-1",
+		ActorUid:      "01234567-89ab-cdef-0123-456789abcdef",
+		Reason:        "sandbox process 42 exited",
+	}
+}
+
+func TestReportActorExitNamesTheCallingWorker(t *testing.T) {
+	workers := &fakeExitService{}
+	svc := &ateomSupportServer{workers: workers}
+
+	if _, err := svc.ReportActorExit(workerContext(t, "pod-a"), exitReport()); err != nil {
+		t.Fatalf("ReportActorExit() failed: %v", err)
+	}
+
+	want := []*ateapipb.ReportActorExitRequest{{
+		// The Worker is named from the certificate, never the request.
+		Worker:   &ateapipb.ObjectRef{Name: "pod-a"},
+		Actor:    &ateapipb.ObjectRef{Atespace: "team-a", Name: "actor-1"},
+		ActorUid: "01234567-89ab-cdef-0123-456789abcdef",
+		Reason:   "sandbox process 42 exited",
+	}}
+	if diff := cmp.Diff(want, workers.got, protocmp.Transform()); diff != "" {
+		t.Errorf("forwarded request mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestReportActorExitRejects(t *testing.T) {
+	noReason := exitReport()
+	noReason.Reason = ""
+	tests := []struct {
+		name     string
+		ctx      context.Context
+		req      *ateletpb.ReportActorExitRequest
+		wantCode codes.Code
+	}{
+		{"no certificate", context.Background(), exitReport(), codes.Unauthenticated},
+		{"no reason", workerContext(t, "pod-a"), noReason, codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workers := &fakeExitService{}
+			svc := &ateomSupportServer{workers: workers}
+			_, err := svc.ReportActorExit(tt.ctx, tt.req)
+			if got := status.Code(err); got != tt.wantCode {
+				t.Errorf("code = %v (err %v), want %v", got, err, tt.wantCode)
+			}
+			if len(workers.got) != 0 {
+				t.Errorf("rejected report was still forwarded: %v", workers.got)
+			}
+		})
+	}
+}
+
+// A refusal is passed through as given, so ateom can tell it from a transport
+// failure it retries.
+func TestReportActorExitSurfacesRefusal(t *testing.T) {
+	workers := &fakeExitService{err: status.Error(codes.FailedPrecondition, "Actor is SUSPENDING")}
+	svc := &ateomSupportServer{workers: workers}
+
+	_, err := svc.ReportActorExit(workerContext(t, "pod-a"), exitReport())
+	if got := status.Code(err); got != codes.FailedPrecondition {
+		t.Errorf("code = %v (err %v), want FailedPrecondition", got, err)
+	}
+}
+
 func TestMintActorCertificateForwardsToWorkerService(t *testing.T) {
 	wantCerts := [][]byte{[]byte("cert-der-bytes")}
 	workers := &fakeWorkerService{

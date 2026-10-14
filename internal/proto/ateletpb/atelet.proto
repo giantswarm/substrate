@@ -43,6 +43,16 @@ service AteomSupport {
   // would need: the control plane answers this by driving a suspend back
   // through atelet into the calling ateom.
   rpc RequestActorSuspend(RequestActorSuspendRequest) returns (RequestActorSuspendResponse) {}
+
+  // ReportActorExit reports that the sandbox of an actor this worker hosts
+  // exited while no lifecycle operation was running on it, for atelet to
+  // forward to the control plane's WorkerService, which this mirrors.
+  //
+  // Success means the control plane recorded the actor as crashed; an error is
+  // its refusal, passed through as it was given. Callers must not hold a lock
+  // the resulting Terminate would need: the control plane answers this by
+  // tearing the actor down through atelet in the calling ateom.
+  rpc ReportActorExit(ReportActorExitRequest) returns (ReportActorExitResponse) {}
 }
 
 message RegisterWorkerRequest {
@@ -140,6 +150,36 @@ message RequestActorSuspendRequest {
 }
 
 message RequestActorSuspendResponse {
+}
+
+message ReportActorExitRequest {
+  // The actor whose sandbox exited. atelet forwards this to the control
+  // plane, which serves it only if the actor is assigned to the worker the
+  // caller's certificate names.
+  //
+  // +k8s:required
+  // +k8s:format=k8s-short-name
+  string actor_atespace = 1;
+
+  // +k8s:required
+  // +k8s:format=k8s-short-name
+  string actor_name = 2;
+
+  // The UID of the actor --- used to guard against deletion and recreation of
+  // an actor with the same name, as for MintActorCertificate.
+  //
+  // +k8s:required
+  // +k8s:format=k8s-uuid
+  string actor_uid = 3;
+
+  // What the worker observed, recorded in the actor's crash message.
+  //
+  // +k8s:required
+  // +k8s:maxLength=1024
+  string reason = 4;
+}
+
+message ReportActorExitResponse {
 }
 
 message MintActorCertificateRequest {

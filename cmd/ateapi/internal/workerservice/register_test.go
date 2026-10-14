@@ -47,7 +47,7 @@ func setRequest(actors int32) *ateapipb.RegisterWorkerRequest {
 func TestRegisterWorker(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 1, Resources: resources.CPUMemory(2000, 0)})
 
 	got, err := s.RegisterWorker(ateletauthtest.ContextWith(ateletauthtest.CertOn(t, testNode)), setRequest(4094))
@@ -68,7 +68,7 @@ func TestRegisterWorker(t *testing.T) {
 func TestRegisterWorker_RecordsHardware(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 1})
 	authed := ateletauthtest.ContextWith(ateletauthtest.CertOn(t, testNode))
 
@@ -103,7 +103,7 @@ func TestRegisterWorker_RecordsHardware(t *testing.T) {
 func TestRegisterWorker_OtherNodeIsNotFound(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 1})
 
 	_, err := s.RegisterWorker(ateletauthtest.ContextWith(ateletauthtest.CertOn(t, "some-other-node")), setRequest(4094))
@@ -127,7 +127,7 @@ func TestRegisterWorker_OtherNodeIsNotFound(t *testing.T) {
 func TestRegisterWorker_UnchangedDoesNotWrite(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seeded := seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 4094})
 
 	for range 3 {
@@ -147,7 +147,7 @@ func TestRegisterWorker_UnchangedDoesNotWrite(t *testing.T) {
 func TestRegisterWorker_Errors(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 1})
 	authed := ateletauthtest.ContextWith(ateletauthtest.CertOn(t, testNode))
 
@@ -192,7 +192,7 @@ func TestRegisterWorker_Errors(t *testing.T) {
 func TestRegisterWorker_RejectsNonsense(t *testing.T) {
 	st, cleanup := storetest.SetupTestStore(t)
 	defer cleanup()
-	s := New(st, &fakeSuspender{}, testAteletSPIFFEID, nil)
+	s := New(st, &fakeActors{}, testAteletSPIFFEID, nil)
 	seeded := seedReportedWorker(t, st, testNode, &ateapipb.WorkerResources{Actors: 4094})
 	authed := ateletauthtest.ContextWith(ateletauthtest.CertOn(t, testNode))
 

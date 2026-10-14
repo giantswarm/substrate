@@ -603,6 +603,18 @@ func (s *RPCService) RecoverTransientCrash(ctx context.Context, actorRef resourc
 	return recovered, err
 }
 
+// CrashExitedActor crashes a running actor whose sandbox exited, for
+// WorkerService.ReportActorExit; it is not part of the Control API.
+func (s *RPCService) CrashExitedActor(ctx context.Context, actorRef resources.ActorRef, actorUID, workerName, reason string) (*ateapipb.Actor, error) {
+	setSpanActorRefAttributes(ctx, actorRef)
+	actor, err := s.actorWorkflow.CrashExitedActor(ctx, actorRef, actorUID, workerName, reason)
+	if err != nil {
+		return nil, s.lifecycleError(ctx, actorRef, err)
+	}
+	setSpanActorAttributes(ctx, actor)
+	return actor, nil
+}
+
 func (s *RPCService) RevertActor(ctx context.Context, req *ateapipb.RevertActorRequest) (*ateapipb.RevertActorResponse, error) {
 	if errs := apivalidation.ValidateRevertActorRequest(ctx, req); len(errs) > 0 {
 		return nil, resources.ToAPIError(errs)
