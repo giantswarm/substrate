@@ -240,32 +240,32 @@ func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef reso
 	}
 
 	// 1. Free the worker (if it hasn't been freed yet)
-	if assignment := latestActor.GetStatus().GetWorkerAssignment(); assignment != nil {
-		worker, err := w.store.GetWorker(ctx, assignment.GetWorker().GetName())
+	if latestActor.GetStatus().GetWorkerAssignment() != nil {
+		// Drop just this actor's assignment; any other actors the worker
+		// hosts keep theirs. A worker deleted before or during the release
+		// took the assignment with it.
+		sandboxClass, released, err := releaseWorker(ctx, w.store, latestActor)
 		if err != nil {
-			if !errors.Is(err, store.ErrNotFound) {
-				return nil, fmt.Errorf("while getting worker for release: %w", err)
+			if errors.Is(err, store.ErrVersionConflict) {
+				return nil, apierror.Aborted("concurrent update conflict, please retry")
 			}
-			slog.Warn("Worker already gone during finalize pause, skipping release", "worker", assignment.GetWorkerPod())
-		} else {
-			// Drop just this actor's assignment; any other actors the worker
-			// hosts keep theirs.
-			released, err := w.store.ReleaseActorFromWorker(ctx, worker.GetMetadata().GetName(), latestActor.GetMetadata().GetUid())
-			if err != nil {
-				if errors.Is(err, store.ErrVersionConflict) {
-					return nil, apierror.Aborted("concurrent update conflict, please retry")
-				}
-				return nil, err
-			}
-			if w.workerCache != nil {
-				w.workerCache.Observe(released)
-			}
+			return nil, err
+		}
+		if released != nil && w.workerCache != nil {
+			w.workerCache.Observe(released)
 		}
 
 		// 2. Clear the actor's assignment, now that the worker is freed
 		latestActor, err = w.store.GetActor(ctx, actorRef)
 		if err != nil {
 			return nil, err
+		}
+		if latestActor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED &&
+			latestActor.GetStatus().GetInProgressLocalSnapshotName() == "" {
+			// The worker's delete crashed the actor under the release and
+			// dropped the local checkpoint with its sandbox: there is no
+			// snapshot to record, so the crash stands.
+			return latestActor, nil
 		}
 		wasAlreadyCrashed := latestActor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_CRASHED
 		newState := ateapipb.ActorState_ACTOR_STATE_PAUSED
@@ -281,10 +281,6 @@ func (w *ActorWorkflow) ensurePausedFinalized(ctx context.Context, actorRef reso
 			crashStatus = newActorCrash(ateattr.OperationPause, crashMessageLocalSnapshotNodeUnknown)
 		}
 		contentScope := actorTemplate.GetSnapshotConfig().GetOnCommit()
-		sandboxClass := ""
-		if worker != nil {
-			sandboxClass = worker.GetSandboxClass()
-		}
 		// Snapshot crash attributes before pod and pool pointers are cleared below.
 		latestActor.Status.State = newState
 		crashAttrs := ateattr.ActorMetricAttributes(latestActor, sandboxClass, ateattr.OperationPause)
