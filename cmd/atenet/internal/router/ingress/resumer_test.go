@@ -38,11 +38,19 @@ import (
 type resumerMockClient struct {
 	ateapipb.ControlClient
 	resumeFn func(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error)
+	getFn    func(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error)
 }
 
 func (m *resumerMockClient) ResumeActor(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
 	if m.resumeFn != nil {
 		return m.resumeFn(ctx, in, opts...)
+	}
+	return nil, status.Error(codes.Unimplemented, "unimplemented")
+}
+
+func (m *resumerMockClient) GetActor(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+	if m.getFn != nil {
+		return m.getFn(ctx, in, opts...)
 	}
 	return nil, status.Error(codes.Unimplemented, "unimplemented")
 }
@@ -1085,5 +1093,110 @@ func TestActorResumer_FlightKeepsCallerTraceContext(t *testing.T) {
 	}
 	if !got.IsSampled() {
 		t.Error("flight RPC lost the caller's sampled flag")
+	}
+}
+
+// TestActorResumer_CrashedActorIsNotParked verifies a resume the control plane
+// refuses because the actor is CRASHED fails at once with that refusal even
+// while parking is enabled: a crashed actor leaves that state only through an
+// explicit revert or delete, so retrying until the budget elapses only delays
+// the caller.
+func TestActorResumer_CrashedActorIsNotParked(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var resumeCalls, getCalls atomic.Int32
+		mock := &resumerMockClient{
+			resumeFn: func(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
+				resumeCalls.Add(1)
+				return nil, status.Error(codes.FailedPrecondition, "AssignWorker prerequisite not met for Actor: team-a/actor-crashed (got: ACTOR_STATE_CRASHED, want ACTOR_STATE_SUSPENDED or ACTOR_STATE_PAUSED)")
+			},
+			getFn: func(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+				getCalls.Add(1)
+				if got, want := in.GetActor().GetName(), "actor-crashed"; got != want {
+					t.Errorf("GetActor name = %q, want %q", got, want)
+				}
+				return &ateapipb.Actor{
+					Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED},
+				}, nil
+			},
+		}
+
+		resumer := NewActorResumer(mock, withParking(ParkedRequestConfig{Max: 1, Budget: 30 * time.Second}))
+		start := time.Now()
+		_, outcome, err := resumer.ResumeActor(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "actor-crashed"})
+		if got := status.Code(err); got != codes.FailedPrecondition {
+			t.Fatalf("expected FailedPrecondition, got %v (err=%v)", got, err)
+		}
+		var budget *budgetExhaustedError
+		if errors.As(err, &budget) {
+			t.Errorf("a crashed actor must not be reported as budget exhaustion: %v", err)
+		}
+		if outcome != ResumeOutcomeUnknown {
+			t.Errorf("outcome = %q, want %q on a failed resume", outcome, ResumeOutcomeUnknown)
+		}
+		if elapsed := time.Since(start); elapsed >= time.Second {
+			t.Errorf("the resume took %v; a crashed actor must not be parked", elapsed)
+		}
+		if got := resumeCalls.Load(); got != 1 {
+			t.Errorf("expected exactly 1 resume attempt, got %d", got)
+		}
+		if got := getCalls.Load(); got != 1 {
+			t.Errorf("expected exactly 1 actor read, got %d", got)
+		}
+	})
+}
+
+// TestActorResumer_FailedPreconditionParkedUnlessCrashed verifies a
+// FailedPrecondition answer stays parked while the actor is in any state other
+// than CRASHED, or while its state cannot be read: a concurrent operation can
+// still move it to a resumable state.
+func TestActorResumer_FailedPreconditionParkedUnlessCrashed(t *testing.T) {
+	tests := []struct {
+		name  string
+		getFn func(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error)
+	}{
+		{
+			name: "suspending",
+			getFn: func(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+				return &ateapipb.Actor{
+					Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_SUSPENDING},
+				}, nil
+			},
+		},
+		{
+			name: "read fails",
+			getFn: func(ctx context.Context, in *ateapipb.GetActorRequest, opts ...grpc.CallOption) (*ateapipb.Actor, error) {
+				return nil, status.Error(codes.Unavailable, "ateapi restarting")
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var resumeCalls atomic.Int32
+				mock := &resumerMockClient{
+					resumeFn: func(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
+						if resumeCalls.Add(1) < 3 {
+							return nil, status.Error(codes.FailedPrecondition, "MarkResuming prerequisite not met (got: ACTOR_STATE_SUSPENDING)")
+						}
+						return &ateapipb.ResumeActorResponse{Actor: &ateapipb.Actor{
+							Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_RUNNING},
+						}, Resumed: true}, nil
+					},
+					getFn: tc.getFn,
+				}
+
+				resumer := NewActorResumer(mock, withParking(ParkedRequestConfig{Max: 1, Budget: 30 * time.Second}))
+				actor, _, err := resumer.ResumeActor(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "actor-a"})
+				if err != nil {
+					t.Fatalf("expected the parked resume to succeed, got %v", err)
+				}
+				if got := actor.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_RUNNING {
+					t.Errorf("actor state = %v, want RUNNING", got)
+				}
+				if got := resumeCalls.Load(); got != 3 {
+					t.Errorf("expected 3 resume attempts, got %d", got)
+				}
+			})
+		})
 	}
 }
