@@ -985,6 +985,12 @@ entries in one roll.
   revert and resume take it from there. Before, such an actor stayed
   `RUNNING` with nothing behind it, and every turn sent to it waited out
   the client's deadline.
+- **A request to a crashed actor:** atenet-router answers it at once with
+  the control plane's refusal (`503`, `actor <id> unavailable:
+  AssignWorker prerequisite not met … ACTOR_STATE_CRASHED …`) after one
+  `ResumeActor` call and one `GetActor` read. Before, it retried the
+  refusal for its whole park budget (30 s, 37 calls), and the client's
+  revert waited with it. A router still on 1.11.1 keeps the old wait.
 - **During the roll:** a report that reaches an atelet or ate-api-server
   still on 1.11.1 is answered `Unimplemented` and logged by ateom; the
   actor stays as it was, as on 1.11.1. Reports land once the worker, its
