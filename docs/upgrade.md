@@ -970,6 +970,29 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.11.1 to 1.11.2
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs between the two
+  tags. Two RPCs are added: `AteomSupport.ReportActorExit` (ateom to
+  atelet) and `WorkerService.ReportActorExit` (atelet to
+  ate-api-server).
+- **Chart:** unchanged.
+- **Sandbox exit of a running actor:** ateom watches the sandbox of every
+  actor it hosts and reports one that exits while no lifecycle operation
+  stopped it; ate-api-server crashes the actor with `sandbox exited while
+  the actor was running: sandbox process <pid> exited`, and its client's
+  revert and resume take it from there. Before, such an actor stayed
+  `RUNNING` with nothing behind it, and every turn sent to it waited out
+  the client's deadline.
+- **During the roll:** a report that reaches an atelet or ate-api-server
+  still on 1.11.1 is answered `Unimplemented` and logged by ateom; the
+  actor stays as it was, as on 1.11.1. Reports land once the worker, its
+  node's atelet and ate-api-server all run 1.11.2.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
