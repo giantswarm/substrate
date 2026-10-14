@@ -357,9 +357,12 @@ func (w *ActorWorkflow) ensureVolumesDetached(ctx context.Context, actor *ateapi
 // external snapshot (a suspend that uploaded nothing — the pause was already
 // durable — keeps the one it finds), and commits SUSPENDED with the assignment
 // cleared in a single update, then releases the external snapshot that update
-// replaced. It re-reads the actor first so an out-of-band transition (e.g. the
-// syncer crashing the actor after its worker died) is not overwritten: with no
-// assignment left there is nothing to finalize.
+// replaced. It re-reads the actor first, so the commit is conditioned on the
+// latest record, and commits SUSPENDED whatever state that record holds: the
+// step runs only once the checkpoint completed, so an actor an out-of-band
+// transition crashed meanwhile (e.g. the syncer, after its worker died) is
+// committed SUSPENDED with that checkpoint, not left CRASHED. With no
+// assignment left there is nothing to release, and the commit still runs.
 func (w *ActorWorkflow) ensureSuspendedFinalized(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate) (_ *ateapipb.Actor, err error) {
 	ctx, done := stepSpan(ctx, "FinalizeSuspended")
 	defer func() { err = done(err) }()
