@@ -888,6 +888,11 @@ patch entries in one roll.
   record. Before, the actor kept the crash it survived in
   `status.crash`. An actor stored with such a record reads without it
   from the new ate-api-server on; its next update persists that.
+- **Crash record of a paused actor:** a pause whose checkpoint completed
+  after the actor crashed, with the local checkpoint left in place,
+  commits `PAUSED` with that snapshot and writes no crash record. Before,
+  the commit kept the crash in `status.crash`, which the read migration
+  above hid. A crash that dropped the local checkpoint still stands.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
