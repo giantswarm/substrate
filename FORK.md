@@ -349,7 +349,9 @@ the index signed, with provenance and an SPDX SBOM, annotated `io.giantswarm.ups
 (see "Versions"); the pipeline computes none. Every other branch runs the same six builds with `push: false`: a
 pull request validates the Dockerfile for both platforms and nothing leaves the builder. Nothing is ever pushed by
 hand, nothing publishes from GitHub Actions, and nothing pushes to ghcr.io: the registry credentials exist in
-CircleCI's `architect` context only, and the signing identity is the pipeline's own.
+CircleCI's `architect` context only, and the signing identity is the pipeline's own. `fork-ledger` fails a pull
+request or a re-pin candidate whose tree has a workflow file naming `ghcr.io`, so a publishing workflow upstream adds
+is removed before it lands.
 
 | Artifact | Name |
 |---|---|
@@ -505,8 +507,10 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
   micro-VM lanes: every suite runs on both, so a node-level arrangement a test makes must hold on both ateoms; the micro-VM ateom clears its checkpoint directory before writing, the gVisor ateom only creates it, so blocking the checkpoint with an immutable file passes one lane and fails the other, while a file under the directory's name is refused by both; see `CONTRIBUTING.md`), `helm-e2e` (the charts on kind), `govulncheck` and `fork-ledger` (the ledger, above); `run-tests` and `govulncheck` are required. `govulncheck` runs once per Go
   module (upstream's matrix since v0.4.0-alpha1) and a job of the line reports the one `govulncheck` status the
   rulesets and the land step require.
-  The CircleCI `publish` workflow runs on every push (a pull request's head publishes its own dev build) and on tags.
+  CircleCI's `validate` workflow builds every image for both platforms on a pull request's branch and pushes
+  nothing; its `publish` workflow runs on pushes to `giantswarm` and on release tags ("Publishing").
 - Upstream's `release.yaml` (dispatch-only; it would have pushed images and charts to ghcr.io under an arbitrary
-  tag) and `release-notes.yaml` (it drafts a GitHub release with upstream's notes on every `v*` tag, which
+  tag), `agentgateway-image.yaml` (dispatch-only; it would have built an agentgateway commit and pushed it to
+  `ghcr.io/giantswarm/substrate/agentgateway`, while the line runs the agentgateway line's gsoci release) and `release-notes.yaml` (it drafts a GitHub release with upstream's notes on every `v*` tag, which
   `zz_generated.auto_release` owns here) are **removed** on this branch: nothing publishes from GitHub Actions. Do not push tags other than
   `vX.Y.Z-gs.N` releases.
