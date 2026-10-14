@@ -945,6 +945,31 @@ patch entries and this one in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.11
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.10 straight to a 1.11 patch is the 1.10 to 1.11 step and the patch
+entries in one roll.
+
+#### 1.11.0 to 1.11.1
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs between the two tags.
+- **Chart:** unchanged.
+- **Terminate after a failed restore:** atelet records an actor's
+  sandbox (`sandbox-assets.json`) before ateom restores it, as it does
+  before a run, and a terminate of an actor without that record skips
+  ateom and goes on with the node cleanup. Before, a restore that failed
+  in ateom (its sandbox died during `runsc restore`) left no record, and
+  every terminate of the actor failed with `failed to read sandbox
+  record`: a revert stayed in `REVERTING` and a delete answered
+  `FailedPrecondition` (`could not be torn down`). Actors stuck that way
+  on 1.11.0 revert or delete once their node's atelet runs 1.11.1.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
