@@ -32,6 +32,8 @@ import (
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -66,6 +68,12 @@ type fakeAteom struct {
 	// preserveRestoreDir records the PreserveRestoreDir flag from the most
 	// recent RestoreWorkload request.
 	preserveRestoreDir bool
+	// restoreErr, when set, fails RestoreWorkload as a sandbox dying during
+	// runsc restore does.
+	restoreErr error
+	// terminateRunscPath records the RunscPath of the most recent
+	// TerminateWorkload request.
+	terminateRunscPath string
 }
 
 func (f *fakeAteom) recordActorDirs(rpc string, actorDirs *ateompb.ActorDirs) {
@@ -96,6 +104,9 @@ func (f *fakeAteom) CheckpointWorkload(_ context.Context, req *ateompb.Checkpoin
 func (f *fakeAteom) RestoreWorkload(_ context.Context, req *ateompb.RestoreWorkloadRequest) (*ateompb.RestoreWorkloadResponse, error) {
 	f.recordActorDirs("RestoreWorkload", req.GetActorDirs())
 	f.preserveRestoreDir = req.GetPreserveRestoreDir()
+	if f.restoreErr != nil {
+		return nil, f.restoreErr
+	}
 	dir := req.GetActorDirs().GetRestoreDir()
 	f.restored = map[string]string{}
 	for name := range f.snapshotFiles {
@@ -110,6 +121,7 @@ func (f *fakeAteom) RestoreWorkload(_ context.Context, req *ateompb.RestoreWorkl
 
 func (f *fakeAteom) TerminateWorkload(_ context.Context, req *ateompb.TerminateWorkloadRequest) (*ateompb.TerminateWorkloadResponse, error) {
 	f.recordActorDirs("TerminateWorkload", req.GetActorDirs())
+	f.terminateRunscPath = req.GetRunscPath()
 	return &ateompb.TerminateWorkloadResponse{}, nil
 }
 
@@ -297,15 +309,30 @@ func TestLocalSnapshotGC(t *testing.T) {
 // TestRestoreUsesRequestSandboxAssets checks that Restore runs the actor with
 // the sandbox assets on the request, not the ones recorded in the snapshot
 // manifest.
-func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
+// checkpointedActor is an actor Run and checkpointed locally on a fake ateom,
+// ready to be restored with a different pause image than it ran with.
+type checkpointedActor struct {
+	herder          *AteomHerder
+	ateom           *fakeAteom
+	spec            *ateletpb.WorkloadSpec
+	checkpointPause string
+	restorePause    string
+	restore         *ateletpb.RestoreRequest
+}
+
+const (
+	checkpointedActorUID     = "actor-uid-1"
+	checkpointedWorkerPodUID = "worker-pod-uid-1"
+)
+
+func newCheckpointedActor(t *testing.T) checkpointedActor {
+	t.Helper()
 	useTempNodeDirs(t)
 	ctx := t.Context()
 
 	const (
 		atespace     = "ate-demo"
 		actorName    = "counter"
-		actorUID     = "actor-uid-1"
-		workerPodUID = "worker-pod-uid-1"
 		snapshotName = "pause-snap-1"
 	)
 
@@ -348,10 +375,10 @@ func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
 	if _, err := s.Run(ctx, &ateletpb.RunRequest{
 		Atespace:              atespace,
 		ActorName:             actorName,
-		ActorUid:              actorUID,
+		ActorUid:              checkpointedActorUID,
 		ActorTemplateAtespace: "default",
 		ActorTemplateName:     "counter",
-		WorkerPodUid:          workerPodUID,
+		WorkerPodUid:          checkpointedWorkerPodUID,
 		SandboxAssets:         assetsWithPause(checkpointPause),
 		Spec:                  spec,
 	}); err != nil {
@@ -361,10 +388,10 @@ func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
 	if _, err := s.Checkpoint(ctx, &ateletpb.CheckpointRequest{
 		Atespace:              atespace,
 		ActorName:             actorName,
-		ActorUid:              actorUID,
+		ActorUid:              checkpointedActorUID,
 		ActorTemplateAtespace: "default",
 		ActorTemplateName:     "counter",
-		WorkerPodUid:          workerPodUID,
+		WorkerPodUid:          checkpointedWorkerPodUID,
 		Spec:                  spec,
 		Fidelity:              ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
 		Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
@@ -375,7 +402,7 @@ func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
 		t.Fatalf("Checkpoint: %v", err)
 	}
 
-	manifest, err := os.ReadFile(filepath.Join(ateletpath.LocalSnapshotDir(actorUID, snapshotName), sandboxManifestName))
+	manifest, err := os.ReadFile(filepath.Join(ateletpath.LocalSnapshotDir(checkpointedActorUID, snapshotName), sandboxManifestName))
 	if err != nil {
 		t.Fatalf("reading snapshot manifest: %v", err)
 	}
@@ -387,30 +414,83 @@ func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
 		t.Fatalf("manifest pause image = %q, want %q", manifestRec.PauseImage, checkpointPause)
 	}
 
-	if _, err := s.Restore(ctx, &ateletpb.RestoreRequest{
-		Atespace:              atespace,
-		ActorName:             actorName,
-		ActorUid:              actorUID,
-		ActorTemplateAtespace: "default",
-		ActorTemplateName:     "counter",
-		WorkerPodUid:          workerPodUID,
-		SandboxAssets:         assetsWithPause(restorePause),
-		Spec:                  spec,
-		Fidelity:              ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
-		Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
-		Config: &ateletpb.RestoreRequest_LocalConfig{
-			LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
+	return checkpointedActor{
+		herder:          s,
+		ateom:           ateom,
+		spec:            spec,
+		checkpointPause: checkpointPause,
+		restorePause:    restorePause,
+		restore: &ateletpb.RestoreRequest{
+			Atespace:              atespace,
+			ActorName:             actorName,
+			ActorUid:              checkpointedActorUID,
+			ActorTemplateAtespace: "default",
+			ActorTemplateName:     "counter",
+			WorkerPodUid:          checkpointedWorkerPodUID,
+			SandboxAssets:         assetsWithPause(restorePause),
+			Spec:                  spec,
+			Fidelity:              ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
+			Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
+			Config: &ateletpb.RestoreRequest_LocalConfig{
+				LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
+			},
 		},
-	}); err != nil {
+	}
+}
+
+func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
+	a := newCheckpointedActor(t)
+
+	if _, err := a.herder.Restore(t.Context(), a.restore); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 
-	got, err := readSandboxRecord(actorUID)
+	got, err := readSandboxRecord(checkpointedActorUID)
 	if err != nil {
 		t.Fatalf("reading on-node sandbox record: %v", err)
 	}
-	if got.PauseImage != restorePause {
-		t.Errorf("restored actor pause image = %q, want the request's %q", got.PauseImage, restorePause)
+	if got.PauseImage != a.restorePause {
+		t.Errorf("restored actor pause image = %q, want the request's %q", got.PauseImage, a.restorePause)
+	}
+}
+
+// TestTerminateAfterRestoreFailedInAteom verifies that a restore ateom fails
+// still records the sandbox it handed to ateom, so the Terminate that reverts
+// or deletes the crashed actor tears it down on ateom with that runsc and
+// resets the node.
+func TestTerminateAfterRestoreFailedInAteom(t *testing.T) {
+	a := newCheckpointedActor(t)
+	ctx := t.Context()
+	a.ateom.restoreErr = status.Error(codes.Internal, "sandbox died during runsc restore")
+
+	if _, err := a.herder.Restore(ctx, a.restore); err == nil {
+		t.Fatal("Restore succeeded, want the ateom failure")
+	}
+
+	got, err := readSandboxRecord(checkpointedActorUID)
+	if err != nil {
+		t.Fatalf("reading on-node sandbox record after the failed restore: %v", err)
+	}
+	if got.PauseImage != a.restorePause {
+		t.Errorf("sandbox record pause image = %q, want the restore request's %q", got.PauseImage, a.restorePause)
+	}
+
+	if _, err := a.herder.Terminate(ctx, &ateletpb.TerminateRequest{
+		Atespace:              a.restore.GetAtespace(),
+		ActorName:             a.restore.GetActorName(),
+		ActorUid:              checkpointedActorUID,
+		ActorTemplateAtespace: "default",
+		ActorTemplateName:     "counter",
+		WorkerPodUid:          checkpointedWorkerPodUID,
+		Spec:                  a.spec,
+	}); err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+	if a.ateom.terminateRunscPath == "" {
+		t.Error("TerminateWorkload was not called with the restore's runsc")
+	}
+	if _, err := os.Stat(ateletpath.ActorPath(checkpointedActorUID)); !os.IsNotExist(err) {
+		t.Errorf("actor dir survived terminate: %v", err)
 	}
 }
 
@@ -696,6 +776,47 @@ func TestTerminateWithoutWorkerPodUID(t *testing.T) {
 	}
 	if _, err := os.Stat(ateletpath.LocalCheckpointsDir(actorUID)); !os.IsNotExist(err) {
 		t.Errorf("local checkpoint dir survived terminate: %v", err)
+	}
+	if _, err := os.Stat(ateletpath.ActorPath(actorUID)); !os.IsNotExist(err) {
+		t.Errorf("actor dir survived terminate: %v", err)
+	}
+}
+
+// TestTerminateWithoutSandboxRecord verifies that Terminate of an actor no Run
+// or Restore ever handed to ateom on this node (an atelet that recorded the
+// sandbox only after a successful restore left none) skips ateom and still
+// resets the node, so the crashed actor can be reverted or deleted.
+func TestTerminateWithoutSandboxRecord(t *testing.T) {
+	useTempNodeDirs(t)
+	const actorUID = "actor-uid-1"
+
+	if err := resetActorDirs(actorUID); err != nil {
+		t.Fatalf("resetActorDirs: %v", err)
+	}
+
+	ateom := &fakeAteom{}
+	serveFakeAteom(t, ateom)
+
+	s := &AteomHerder{
+		ateomDialer:       newAteomDialer(1),
+		systemInfoVolumes: newSystemInfoVolumeRefresher(nil, nil),
+	}
+	if _, err := s.Terminate(t.Context(), &ateletpb.TerminateRequest{
+		Atespace:              "ate-demo",
+		ActorName:             "counter",
+		ActorUid:              actorUID,
+		ActorTemplateAtespace: "default",
+		ActorTemplateName:     "counter",
+		WorkerPodUid:          "worker-pod-uid-1",
+		Spec: &ateletpb.WorkloadSpec{
+			Containers: []*ateletpb.Container{{Name: "app", Image: "example.com/app:v1"}},
+		},
+	}); err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+
+	if got := ateom.actorDirs["TerminateWorkload"]; got != nil {
+		t.Errorf("TerminateWorkload was called on ateom (%v), want skipped without a sandbox record", got)
 	}
 	if _, err := os.Stat(ateletpath.ActorPath(actorUID)); !os.IsNotExist(err) {
 		t.Errorf("actor dir survived terminate: %v", err)
