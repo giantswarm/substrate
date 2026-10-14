@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/router-crashed-actor-no-retry` (`e97cfcdc8`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
-- **Our commit:** the PR adding this file: a `git cherry-pick -x` of the upstream-ready commit
+- **Our commit:** [#443](https://github.com/giantswarm/substrate/pull/443): a `git cherry-pick -x` of the upstream-ready commit
 
 ## Change
 
