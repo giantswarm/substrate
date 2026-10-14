@@ -20,6 +20,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/internal/installdefaults"
+	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 )
 
@@ -34,16 +35,33 @@ const (
 // certificates from ateletauthtest carry.
 var testAteletSPIFFEID = installdefaults.SPIFFEID(installdefaults.SystemNamespace, installdefaults.AteletServiceAccount)
 
-// fakeSuspender stands in for the Control service. What it records is the
+// fakeActors stands in for the Control service. What it records is the
 // point of most of the suspend tests: whether the request reached the suspend
 // at all.
-type fakeSuspender struct {
+type fakeActors struct {
 	calls []*ateapipb.SuspendActorRequest
 	resp  *ateapipb.SuspendActorResponse
 	err   error
+
+	crashes  []crashExitedCall
+	crashErr error
 }
 
-func (f *fakeSuspender) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
+// crashExitedCall is one CrashExitedActor call.
+type crashExitedCall struct {
+	actorRef                     resources.ActorRef
+	actorUID, workerName, reason string
+}
+
+func (f *fakeActors) CrashExitedActor(_ context.Context, actorRef resources.ActorRef, actorUID, workerName, reason string) (*ateapipb.Actor, error) {
+	f.crashes = append(f.crashes, crashExitedCall{actorRef, actorUID, workerName, reason})
+	if f.crashErr != nil {
+		return nil, f.crashErr
+	}
+	return &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: ateapipb.ActorState_ACTOR_STATE_CRASHED}}, nil
+}
+
+func (f *fakeActors) SuspendActor(_ context.Context, req *ateapipb.SuspendActorRequest) (*ateapipb.SuspendActorResponse, error) {
 	f.calls = append(f.calls, req)
 	return f.resp, f.err
 }

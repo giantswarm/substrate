@@ -1890,6 +1890,7 @@ const (
 	WorkerService_RegisterWorker_FullMethodName            = "/ateapi.WorkerService/RegisterWorker"
 	WorkerService_MintAteomActorCertificate_FullMethodName = "/ateapi.WorkerService/MintAteomActorCertificate"
 	WorkerService_RequestActorSuspend_FullMethodName       = "/ateapi.WorkerService/RequestActorSuspend"
+	WorkerService_ReportActorExit_FullMethodName           = "/ateapi.WorkerService/ReportActorExit"
 )
 
 // WorkerServiceClient is the client API for WorkerService service.
@@ -1937,6 +1938,21 @@ type WorkerServiceClient interface {
 	// retries a suspend it had already been granted therefore sees a failure
 	// rather than a repeat of its success.
 	RequestActorSuspend(ctx context.Context, in *RequestActorSuspendRequest, opts ...grpc.CallOption) (*RequestActorSuspendResponse, error)
+	// ReportActorExit tells the control plane that the sandbox of a running
+	// Actor the calling Worker hosts exited on its own: no lifecycle operation
+	// stopped it. Only the Worker can observe that; without the report the Actor
+	// stays RUNNING with nothing behind it, and every request routed to it waits
+	// out its caller's deadline.
+	//
+	// The control plane crashes the Actor, as for any other lost workload,
+	// recording reason in its crash, so a client sees the crash and can revert
+	// it. Served only for an Actor that is RUNNING on that Worker; any other
+	// state is refused as FailedPrecondition, since an operation in flight owns
+	// the Actor's fate and fails on the exited sandbox itself.
+	//
+	// atelet calls this with its own client certificate, as it does for
+	// RequestActorSuspend, naming the Worker its caller proved itself to be.
+	ReportActorExit(ctx context.Context, in *ReportActorExitRequest, opts ...grpc.CallOption) (*ReportActorExitResponse, error)
 }
 
 type workerServiceClient struct {
@@ -1971,6 +1987,16 @@ func (c *workerServiceClient) RequestActorSuspend(ctx context.Context, in *Reque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RequestActorSuspendResponse)
 	err := c.cc.Invoke(ctx, WorkerService_RequestActorSuspend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workerServiceClient) ReportActorExit(ctx context.Context, in *ReportActorExitRequest, opts ...grpc.CallOption) (*ReportActorExitResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportActorExitResponse)
+	err := c.cc.Invoke(ctx, WorkerService_ReportActorExit_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -2022,6 +2048,21 @@ type WorkerServiceServer interface {
 	// retries a suspend it had already been granted therefore sees a failure
 	// rather than a repeat of its success.
 	RequestActorSuspend(context.Context, *RequestActorSuspendRequest) (*RequestActorSuspendResponse, error)
+	// ReportActorExit tells the control plane that the sandbox of a running
+	// Actor the calling Worker hosts exited on its own: no lifecycle operation
+	// stopped it. Only the Worker can observe that; without the report the Actor
+	// stays RUNNING with nothing behind it, and every request routed to it waits
+	// out its caller's deadline.
+	//
+	// The control plane crashes the Actor, as for any other lost workload,
+	// recording reason in its crash, so a client sees the crash and can revert
+	// it. Served only for an Actor that is RUNNING on that Worker; any other
+	// state is refused as FailedPrecondition, since an operation in flight owns
+	// the Actor's fate and fails on the exited sandbox itself.
+	//
+	// atelet calls this with its own client certificate, as it does for
+	// RequestActorSuspend, naming the Worker its caller proved itself to be.
+	ReportActorExit(context.Context, *ReportActorExitRequest) (*ReportActorExitResponse, error)
 	mustEmbedUnimplementedWorkerServiceServer()
 }
 
@@ -2040,6 +2081,9 @@ func (UnimplementedWorkerServiceServer) MintAteomActorCertificate(context.Contex
 }
 func (UnimplementedWorkerServiceServer) RequestActorSuspend(context.Context, *RequestActorSuspendRequest) (*RequestActorSuspendResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RequestActorSuspend not implemented")
+}
+func (UnimplementedWorkerServiceServer) ReportActorExit(context.Context, *ReportActorExitRequest) (*ReportActorExitResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportActorExit not implemented")
 }
 func (UnimplementedWorkerServiceServer) mustEmbedUnimplementedWorkerServiceServer() {}
 func (UnimplementedWorkerServiceServer) testEmbeddedByValue()                       {}
@@ -2116,6 +2160,24 @@ func _WorkerService_RequestActorSuspend_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkerService_ReportActorExit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportActorExitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkerServiceServer).ReportActorExit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkerService_ReportActorExit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkerServiceServer).ReportActorExit(ctx, req.(*ReportActorExitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WorkerService_ServiceDesc is the grpc.ServiceDesc for WorkerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2134,6 +2196,10 @@ var WorkerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestActorSuspend",
 			Handler:    _WorkerService_RequestActorSuspend_Handler,
+		},
+		{
+			MethodName: "ReportActorExit",
+			Handler:    _WorkerService_ReportActorExit_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
