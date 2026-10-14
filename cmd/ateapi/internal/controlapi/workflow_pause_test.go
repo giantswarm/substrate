@@ -16,8 +16,10 @@ package controlapi
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ateattr"
@@ -94,6 +96,71 @@ func TestEnsurePausedFinalized_WorkerGone(t *testing.T) {
 	}
 	if got := (*records)[0].attrs[string(ateattr.ActorUIDKey)]; got == "" {
 		t.Error("crash record carries no ate.actor.uid")
+	}
+}
+
+// TestEnsurePausedFinalized_WorkerDeletedUnderRelease covers a pause whose
+// checkpoint completed while the worker's pod terminated: the worker's delete
+// lands between finalize's read of the worker and its release, crashes the
+// actor and drops the local checkpoint with its sandbox. The pause answers
+// with the CRASHED actor: it neither fails on the worker being gone nor
+// commits PAUSED without a snapshot.
+func TestEnsurePausedFinalized_WorkerDeletedUnderRelease(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
+	workerName := testWorkerUID("pod-1")
+
+	created := storetest.MustCreateActor(t, ctx, persistence, &ateapipb.Actor{
+		Metadata: &ateapipb.ResourceMetadata{Atespace: actorRef.Atespace, Name: actorRef.Name},
+		Status: &ateapipb.ActorStatus{
+			State: ateapipb.ActorState_ACTOR_STATE_PAUSING,
+			WorkerAssignment: &ateapipb.WorkerAssignment{
+				Worker:          &ateapipb.ObjectRef{Name: workerName},
+				WorkerNamespace: "worker-ns",
+				WorkerPool:      "pool",
+				WorkerPod:       "pod-1",
+				WorkerPodUid:    workerName,
+			},
+			AssignedNode:                "node-1",
+			InProgressLocalSnapshotName: "local-snap-1",
+		},
+	})
+	if _, err := persistence.CreateWorker(ctx, &ateapipb.Worker{
+		Metadata:        &ateapipb.ResourceMetadata{Name: workerName},
+		WorkerNamespace: "worker-ns",
+		WorkerPool:      "pool",
+		WorkerPod:       "pod-1",
+		WorkerPodUid:    workerName,
+		Status:          &ateapipb.WorkerStatus{},
+	}); err != nil {
+		t.Fatalf("CreateWorker: %v", err)
+	}
+	seedAssignment(t, persistence, workerName, &ateapipb.ActorAssignment{
+		Actor:    &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
+		ActorUid: created.GetMetadata().GetUid(),
+	})
+
+	w := &ActorWorkflow{store: workerDeletedUnderReleaseStore{Interface: persistence, t: t}}
+	stored, err := w.ensurePausedFinalized(ctx, actorRef, &ateapipb.ActorTemplate{})
+	if err != nil {
+		t.Fatalf("ensurePausedFinalized: %v", err)
+	}
+
+	if got := stored.GetStatus().GetState(); got != ateapipb.ActorState_ACTOR_STATE_CRASHED {
+		t.Errorf("state = %v, want CRASHED", got)
+	}
+	if msg, want := stored.GetStatus().GetCrash().GetMessage(), "pause failed: "+crashMessageWorkerPodGone; msg != want {
+		t.Errorf("crash message = %q, want %q", msg, want)
+	}
+	if got := stored.GetStatus().GetLocalSnapshot(); got != nil {
+		t.Errorf("LocalSnapshot = %v, want none: the checkpoint died with the sandbox", got)
+	}
+	if stored.GetStatus().GetWorkerAssignment() != nil {
+		t.Errorf("WorkerAssignment = %v, want cleared", stored.GetStatus().GetWorkerAssignment())
+	}
+	if _, err := persistence.GetWorker(ctx, workerName); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetWorker = %v, want the worker deleted", err)
 	}
 }
 
