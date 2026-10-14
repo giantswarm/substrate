@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file: the branch [`upstream/sandbox-network-taken`](https://github.com/giantswarm/substrate/tree/upstream/sandbox-network-taken) (`3f05e24c`, on v0.5.0-alpha2) carries the ateom half; the transient cause is the line's own, beside its other transient crash causes
-- **Our commit:** the pull request adding this file: a `cherry-pick -x` of the upstream-ready commit and the line's transient cause
+- **Our commit:** [#417](https://github.com/giantswarm/substrate/pull/417): a `cherry-pick -x` of the upstream-ready commit and the line's transient cause
 
 ## Change
 
