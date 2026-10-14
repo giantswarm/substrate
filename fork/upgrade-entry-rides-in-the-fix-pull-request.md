@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not ours: the check names `docs/upgrade.md` and the line's release tooling, files of this line
-- **Our commit:** [#PR](https://github.com/giantswarm/substrate/pull/PR)
+- **Our commit:** [#404](https://github.com/giantswarm/substrate/pull/404)
 
 ## Change
 
