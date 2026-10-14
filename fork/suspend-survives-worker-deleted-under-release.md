@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** none opened
-- **Our commit:** the fork's own commit, from the pull request that fixes [#402](https://github.com/giantswarm/substrate/issues/402)
+- **Our commit:** [#405](https://github.com/giantswarm/substrate/pull/405): the fork's own commit
 
 ## Change
 
