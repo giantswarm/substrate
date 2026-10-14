@@ -66,7 +66,7 @@ tests:
       path: spec.template.spec.containers[0].image
       value: gsoci.azurecr.io/giantswarm/aws-cli:2.17.0@sha256:643507c10ada7964ca6157b3d799f030b90577643da9955d319a77399ed80d73
 
-# A release of the agentgateway line, or its dev build between a re-pin and the
+# A release or release candidate of the agentgateway line, or its dev build between a re-pin and the
 # release that follows it (FORK.md, "Re-pin"): the two deployments name the same
 # build.
 - it: runs the atenet router's agentgateway from a build of the agentgateway line on gsoci
@@ -80,7 +80,7 @@ tests:
       value: agentgateway
   - matchRegex:
       path: spec.template.spec.containers[1].image
-      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway-upstream/agentgateway:[0-9]+\.[0-9]+\.[0-9]+(-dev\.giantswarm\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2}-[0-9]{2}-[0-9]{2}\.h[0-9a-f]+)?$
+      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway-upstream/agentgateway:[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+|-dev\.giantswarm\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2}-[0-9]{2}-[0-9]{2}\.h[0-9a-f]+)?$
 
 - it: runs the atenet egress's agentgateway from the same build
   template: atenet-egress.yaml
@@ -93,7 +93,7 @@ tests:
       value: agentgateway
   - matchRegex:
       path: spec.template.spec.containers[0].image
-      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway-upstream/agentgateway:[0-9]+\.[0-9]+\.[0-9]+(-dev\.giantswarm\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2}-[0-9]{2}-[0-9]{2}\.h[0-9a-f]+)?$
+      pattern: ^gsoci\.azurecr\.io/giantswarm/agentgateway-upstream/agentgateway:[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+|-dev\.giantswarm\.[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2}-[0-9]{2}-[0-9]{2}\.h[0-9a-f]+)?$
 
 - it: names a registry on every third-party default
   template: rustfs.yaml
