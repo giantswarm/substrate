@@ -443,6 +443,14 @@ func releaseWorker(ctx context.Context, st releaseWorkerStore, actor *ateapipb.A
 	// and they are unaffected by this one crashing. A worker that is no longer
 	// hosting it has already been released.
 	released, err := st.ReleaseActorFromWorker(ctx, workerName, actor.GetMetadata().GetUid())
+	if errors.Is(err, store.ErrNotFound) {
+		// The worker was deleted after the read above: its pod went away
+		// (a worker's graceful termination ends here), and the delete took
+		// the assignment with it. Nothing is left to release; the error must
+		// not reach a caller, which would read it as its actor being gone.
+		slog.WarnContext(ctx, "Worker deleted while releasing actor, skipping release", slog.String("worker", workerName))
+		return sandboxClass, nil, nil
+	}
 	if err != nil {
 		return sandboxClass, nil, fmt.Errorf("while releasing worker: %w", err)
 	}

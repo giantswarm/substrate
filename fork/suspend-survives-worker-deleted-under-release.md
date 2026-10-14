@@ -1,0 +1,13 @@
+# A suspend survives its worker's record being deleted under the release
+
+- **Status:** carried
+- **Upstream:** none opened
+- **Our commit:** the fork's own commit, from the pull request that fixes [#402](https://github.com/giantswarm/substrate/issues/402)
+
+## Change
+
+`releaseWorker` treats a worker that is gone by the time `ReleaseActorFromWorker` locks it the same way as a worker its read already found gone: nothing is left to release (the worker's delete cascades its assignments), and the release succeeds. Before, the store's `ErrNotFound` reached the caller wrapped, and `SuspendActor` (likewise `PauseActor`, `ResumeActor`) maps any `ErrNotFound` to `NotFound "Actor … not found"`. `FinalizeSuspended` now commits the checkpoint it took and answers with the `SUSPENDED` actor. Crash, delete and revert share the release and gain the same.
+
+## Reason
+
+On a micro-VM worker the checkpoint stops the sandbox, so a pod deleted during a suspend goes away as soon as the checkpoint returns. The worker's delete (ate-controller's `DeleteWorker`) then lands between `FinalizeSuspended`'s read of the worker and its release, and a suspend of a `RUNNING` actor answered that the actor does not exist (`TestGracefulWorkerTerminationSuspend`, helm-e2e micro-VM lane, [#402](https://github.com/giantswarm/substrate/issues/402)). `TestEnsureSuspendedFinalized_WorkerDeletedUnderRelease` runs the real `DeleteWorker` workflow in that window.
