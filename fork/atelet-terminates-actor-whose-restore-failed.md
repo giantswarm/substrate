@@ -1,8 +1,8 @@
 # atelet terminates an actor whose restore failed
 
 - **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/terminate-after-failed-restore`, on the mirror `main` at the pin (v0.5.0-alpha2)
-- **Our commit:** [#436](https://github.com/giantswarm/substrate/pull/436): the fork's own commit, a `git cherry-pick -x` of the upstream-ready one (`bcb17f9b`)
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/terminate-after-failed-restore` (`8e130f56`, mirror `main` @ `5cf1c245` + the change, DCO-signed; `main` names the target `WorkerPodUid` and the snapshot `Fidelity`)
+- **Our commit:** [#436](https://github.com/giantswarm/substrate/pull/436): the fork's own commit, a `git cherry-pick -x` of the same change on the pin
 
 ## Change
 
