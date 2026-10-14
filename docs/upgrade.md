@@ -908,6 +908,34 @@ patch entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.10 to 1.11 step
+
+1.11.0 stays on upstream v0.5.0-alpha2 and injects actor JWTs on egress.
+Step to it from 1.10.2 with the numbered steps above; the step needs no
+migration, no snapshot reset and no manual step, and conversations and
+durable volumes survive it. A step from 1.10.0 or 1.10.1 is the 1.10
+patch entries and this one in one roll.
+
+- **Persisted format:** unchanged. No CRD, no Postgres schema and no
+  snapshot layout differs from 1.10.2. In the protos,
+  `MintActorJWTRequest.audience` is named `audiences`, the same field
+  number; a stored egress policy reads back as written.
+- **Egress contract:** unchanged, `v0.4.0-alpha1+path-prefix`.
+- **Actor JWT injection:** an egress rule whose `replace_headers` entry
+  has an `actor_jwt` source is now served on both dataplanes. For a
+  request that carries the entry's header, the gateway writes the entry's
+  prefix plus a JWT minted through `Control.MintActorJWT` for the actor,
+  with the entry's audiences and lifetime (subject
+  `actor/<atespace>/<actor>`). Before, the Envoy gateway denied such a
+  request with `501` and the agentgateway dataplane with `403 invalid
+  credential URI: `. A failed mint denies the request: `403` when the
+  actor is gone, `503` when ate-api is unavailable or the mint timed out,
+  `500` otherwise. No credential provider is needed.
+- **Chart:** `images.agentgateway` is the agentgateway line's
+  `2.4.0-rc.1` (2.3.6 + the actor JWT injection).
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
