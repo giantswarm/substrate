@@ -1,8 +1,8 @@
 # ateom reports the sandbox exit of a running actor
 
 - **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/sandbox-exit-report`
-- **Our commit:** the fork's own commit, a `git cherry-pick -x` of the same change on the pin
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/sandbox-exit-report` (`1a8c98f7`, mirror `main` @ `5cf1c245` + the change, DCO-signed; `main`'s `crashActor` only frees the worker, so the upstream commit does not tear the sandbox down)
+- **Our commit:** the fork's own commit of the same change on the pin, whose crash also terminates the sandbox on the worker
 
 ## Change
 
