@@ -52,23 +52,8 @@ func (s *Server) RequestActorSuspend(ctx context.Context, req *ateapipb.RequestA
 	workerName := req.GetWorker().GetName()
 	actorRef := resources.ActorRefFromObjectRef(req.GetActor())
 
-	// Use authoritative state to authorize the request, never the request
-	// itself: the caller proves which node it is on, and nothing else.
-	worker, err := s.store.GetWorker(ctx, workerName)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, apierror.NotFound("Worker %s not found", workerName)
-		}
-		return nil, fmt.Errorf("while fetching worker %s: %w", workerName, err)
-	}
-	if worker.GetNodeName() != caller.NodeName {
-		// Do not disclose Workers on other nodes.
-		slog.WarnContext(ctx, "Refusing a suspend request for a worker on another node",
-			slog.String("worker", workerName),
-			slog.String("worker_node", worker.GetNodeName()),
-			slog.String("caller_node", caller.NodeName),
-			slog.String("caller_pod", caller.PodName))
-		return nil, apierror.NotFound("Worker %s not found", workerName)
+	if err := s.authorizeWorker(ctx, caller, workerName, "suspend request"); err != nil {
+		return nil, err
 	}
 
 	actor, err := s.store.GetActor(ctx, actorRef)
@@ -92,7 +77,7 @@ func (s *Server) RequestActorSuspend(ctx context.Context, req *ateapipb.RequestA
 	// the workflow to acquire the lease, the Actor can be resumed onto another
 	// Worker, or deleted and recreated under the same name, and the workflow
 	// suspends whatever the reference resolves to by then. See #1773.
-	resp, err := s.suspender.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: req.GetActor()})
+	resp, err := s.actors.SuspendActor(ctx, &ateapipb.SuspendActorRequest{Actor: req.GetActor()})
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +116,30 @@ func checkActorHostedBy(ctx context.Context, actor *ateapipb.Actor, workerName, 
 			slog.String("actor", actorRef.String()),
 			slog.String("assigned_worker", assigned))
 		return apierror.NotFound("Actor %s not found", actorRef)
+	}
+	return nil
+}
+
+// authorizeWorker reports whether caller, an authenticated atelet, may speak
+// for the Worker workerName, from authoritative state, never the request
+// itself: the caller proves which node it is on, and nothing else. A Worker on
+// another node is NotFound, so its existence is not disclosed. request names
+// the refused request in the log.
+func (s *Server) authorizeWorker(ctx context.Context, caller *ateletauth.Caller, workerName, request string) error {
+	worker, err := s.store.GetWorker(ctx, workerName)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return apierror.NotFound("Worker %s not found", workerName)
+		}
+		return fmt.Errorf("while fetching worker %s: %w", workerName, err)
+	}
+	if worker.GetNodeName() != caller.NodeName {
+		slog.WarnContext(ctx, "Refusing a "+request+" for a worker on another node",
+			slog.String("worker", workerName),
+			slog.String("worker_node", worker.GetNodeName()),
+			slog.String("caller_node", caller.NodeName),
+			slog.String("caller_pod", caller.PodName))
+		return apierror.NotFound("Worker %s not found", workerName)
 	}
 	return nil
 }

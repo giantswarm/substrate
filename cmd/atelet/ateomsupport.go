@@ -210,3 +210,38 @@ func (s *ateomSupportServer) RequestActorSuspend(ctx context.Context, req *atele
 		slog.String("actor_uid", req.GetActorUid()))
 	return &ateletpb.RequestActorSuspendResponse{}, nil
 }
+
+// ReportActorExit forwards a worker's report that the sandbox of an actor it
+// hosts exited to the control plane, which records the actor as crashed.
+//
+// As for RequestActorSuspend, the control plane's error is returned unwrapped,
+// so the worker can tell a refusal from a transport failure it should retry.
+func (s *ateomSupportServer) ReportActorExit(ctx context.Context, req *ateletpb.ReportActorExitRequest) (*ateletpb.ReportActorExitResponse, error) {
+	// Identity comes only from the mTLS certificate, never from the request.
+	workerIdentity, err := authenticatedWorkerIdentity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if errs := apivalidation.ValidateReportActorExitRequest(ctx, req); len(errs) > 0 {
+		return nil, resources.ToGRPCStatusError(errs)
+	}
+	if _, err := s.workers.ReportActorExit(ctx, &ateapipb.ReportActorExitRequest{
+		// Workers are global-scoped and named by their pod UID.
+		Worker: &ateapipb.ObjectRef{Name: workerIdentity.PodUID},
+		Actor: &ateapipb.ObjectRef{
+			Atespace: req.GetActorAtespace(),
+			Name:     req.GetActorName(),
+		},
+		ActorUid: req.GetActorUid(),
+		Reason:   req.GetReason(),
+	}); err != nil {
+		return nil, err
+	}
+	slog.InfoContext(ctx, "Forwarded an actor exit report",
+		slog.String("pod_uid", workerIdentity.PodUID),
+		slog.String("actor_atespace", req.GetActorAtespace()),
+		slog.String("actor_name", req.GetActorName()),
+		slog.String("actor_uid", req.GetActorUid()),
+		slog.String("reason", req.GetReason()))
+	return &ateletpb.ReportActorExitResponse{}, nil
+}

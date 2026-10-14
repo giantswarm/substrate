@@ -37,8 +37,10 @@ import (
 	"github.com/agent-substrate/substrate/internal/actorlog"
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ateinterceptors"
+	"github.com/agent-substrate/substrate/internal/ateletdial"
 	"github.com/agent-substrate/substrate/internal/ateom"
 	"github.com/agent-substrate/substrate/internal/ateomcgroup"
+	"github.com/agent-substrate/substrate/internal/ateomexit"
 	"github.com/agent-substrate/substrate/internal/ateomnet"
 	"github.com/agent-substrate/substrate/internal/ateomstats"
 	"github.com/agent-substrate/substrate/internal/ateomtunnel"
@@ -273,6 +275,14 @@ func do(ctx context.Context) error {
 		}
 	}()
 
+	// Report a sandbox that exits under a running actor, which the control
+	// plane cannot observe and would otherwise keep RUNNING.
+	exitTLS, err := ateletdial.TLSConfig(tunnelConfig.CredentialBundle, tunnelConfig.TrustBundle, tunnelConfig.BrokerIdentity)
+	if err != nil {
+		return fmt.Errorf("sandbox exit reporter: %w", err)
+	}
+	go ateomService.watchSandboxes(ctx, ateomexit.NewReporter(nodepath.AteomSupportSocket, exitTLS))
+
 	go serverboot.StartReadinessServer(ctx, *readinessListenAddress, readiness)
 
 	if err := svr.Serve(lis); err != nil {
@@ -294,6 +304,20 @@ const (
 type workloadSession struct {
 	rcmd       *runsc
 	containers []string
+	// sandbox is the sandbox process watchSandboxes checks for an exit; nil
+	// when it is not watched. exitSeen records that a sweep found it exited.
+	// Both are guarded by AteomService.actorsMu.
+	sandbox  *sandboxProcess
+	exitSeen bool
+}
+
+// closeSandbox releases the session's watch on its sandbox. Safe on a nil
+// session; callers hold AteomService.actorsMu.
+func (w *workloadSession) closeSandbox() {
+	if w != nil && w.sandbox != nil {
+		w.sandbox.close()
+		w.sandbox = nil
+	}
 }
 
 // AteomService is a service for shepherding single microvm.
@@ -332,6 +356,10 @@ type AteomService struct {
 	// stats handlers' lock-free read, the way containerStatsReader does for the
 	// micro-VM runtime. nil means the real read.
 	readSandboxCgroup func(dir string) (cgroupstats.Sample, error)
+
+	// deactivateActor overrides tunnel.Deactivate when set, for the sandbox
+	// watch's tests. nil means the tunnel.
+	deactivateActor func(ctx context.Context, attribution resources.ActorAttribution) error
 }
 
 var _ ateompb.AteomServer = (*AteomService)(nil)
@@ -679,8 +707,12 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 		return nil, err
 	}
 
+	sandbox, err := watchSandbox(ctx, pidFilePath(req.GetActorDirs(), ocispec.PauseContainer))
+	if err != nil {
+		return nil, err
+	}
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor started", attribution)
-	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers())})
+	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox})
 	s.recordInitial(ctx, hosted)
 
 	return &ateompb.RunWorkloadResponse{}, nil
@@ -1032,8 +1064,12 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		return nil, err
 	}
 
+	sandbox, err := watchSandbox(ctx, pidFilePath(req.GetActorDirs(), ocispec.PauseContainer))
+	if err != nil {
+		return nil, err
+	}
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor restored", attribution)
-	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers())})
+	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox})
 	s.recordInitial(ctx, hosted)
 
 	return &ateompb.RestoreWorkloadResponse{}, nil
