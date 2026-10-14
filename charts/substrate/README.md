@@ -65,6 +65,8 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderConfigYAML` | `""` | Credential provider config as text, rendered into a ConfigMap, for nodes where that file cannot be authored or must differ from the kubelet's; mutually exclusive with the host path |
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
+| `ateController.busyWorker.annotations` | `{}` | Annotations set on a worker pod while it hosts at least one Actor and removed once it hosts none (`--busy-worker-annotations`), with the label `ate.dev/busy=true`; `{karpenter.sh/do-not-disrupt: "true"}` keeps Karpenter off a busy worker's node and leaves idle workers consolidatable. Empty disables the marking |
+| `ateController.busyWorker.syncPeriod` | `5s` | How often the marking follows the registry (`--busy-worker-sync-period`): the longest an Actor runs on an unmarked worker |
 | `ateApi.actorJWTIssuer` | `https://idp.<namespace>.svc` | Issuer placed in actor JWTs; set a stable URL reachable by relying parties |
 | `snapshotPlugin.extraEnv` | `[]` | Object storage credentials/settings shared by both snapshot plugins and atelet |
 | `snapshotPlugin.control.resources` / `snapshotPlugin.node.resources` | see `values.yaml` | Resources for the API and node snapshot sidecars |

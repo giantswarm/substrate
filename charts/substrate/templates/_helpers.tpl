@@ -254,3 +254,15 @@ definition so the fallback cannot drift between pods.
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+
+{{/*
+The busy-worker annotations as the key=value list --busy-worker-annotations
+takes, keys sorted so the render is stable.
+*/}}
+{{- define "substrate.busyWorkerAnnotations" -}}
+{{- $pairs := list -}}
+{{- range $k := keys . | sortAlpha -}}
+{{- $pairs = append $pairs (printf "%s=%s" $k (toString (get $ $k))) -}}
+{{- end -}}
+{{- join "," $pairs -}}
+{{- end -}}
