@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** prepared on `upstream/paused-clears-crash`; the line's test of the written row is its own, since upstream has no read migration that hides the record
-- **Our commit:** #PR: a `cherry-pick -x` of the upstream-ready commit and the line's write test
+- **Our commit:** [#416](https://github.com/giantswarm/substrate/pull/416): a `cherry-pick -x` of the upstream-ready commit and the line's write test
 
 ## Change
 
