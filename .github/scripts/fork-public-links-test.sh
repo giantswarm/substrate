@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 # Fork (giantswarm/substrate): fixture runs of fork-public-links.sh against a
 # stand-in gh that knows two public repositories.
 
