@@ -86,6 +86,14 @@ and by meta chart 4.0; the `WorkerPool` the platform's Harnesses run on comes wi
 (`kagent.substrateWorkerPool`); feature gates, Kyverno exceptions and network policies are cluster
 configuration.
 
+Dropped on 2026-10-15 by [#455](https://github.com/giantswarm/substrate/pull/455), between re-pins, because the deviation moved out of
+Substrate: the Google access-token provider (`981f2d4f`, #250, `google-access-token.k8s.io` as a second name of the bundled Kubernetes
+credential provider) is a plugin of its own in upstream's shape, [giantswarm/substrate-credential-providers](https://github.com/giantswarm/substrate-credential-providers)
+(`google-access-token`), routed through `credentialProvider.additionalProviders`; the bundled provider serves `k8s.io` alone again, as
+upstream's does, and `ate-setup` renders one provider name. An installation keeps the plugin deployed and routed before it takes the
+release that drops the name (agent-platform routes it with the floor bump); kagent-dev/substrate#47 closed unreviewed on 2026-10-12 and
+the exit upstream is the routing of several provider classes in the chart and kustomize, nothing cloud-specific.
+
 Dropped at the 2026-10-12 re-pin onto v0.5.0-alpha2 because upstream carries them: the cherry-picks of agent-substrate/substrate#2110
 (one rootfs-upper tar per container, `893b1edb`) and #2111 (device nodes and xattrs on extract, `8da76493`), the atelet refusal of a
 trust-bundle projection with no names (upstream `601c03ba`, #2049), the identity e2e suite's egress trust-bundle rotation (upstream's
@@ -97,8 +105,7 @@ refusal, the transient-crash recovery, the golden re-take and the actor-transiti
 `assigned_node`, so its tests seed the node and the recovery of a transient crash clears it for a SUSPENDED actor and points it at the
 local snapshot's node for a PAUSED one; the durable pause records the snapshot's node in `LocalSnapshot.node_name` (field 5) beside
 upstream's `assigned_node`, which a resume elsewhere moves; atelet's `ExternalVolumeSource.access_mode` and `read_only` are fields 10001
-and 10002 (upstream's `publish_context` is field 4), carried on upstream's `MountVolumeRequest`; the Google access-token provider is the
-second name the bundled provider gets in `ate-setup`'s rendered egress policies; the fencing token is listed as no secret for the
+and 10002 (upstream's `publish_context` is field 4), carried on upstream's `MountVolumeRequest`; the fencing token is listed as no secret for the
 redaction check; generated code regenerated with `hack/update/codegen.sh`.
 
 Pull requests merged into `giantswarm` whose change the line no longer carries as a patch of its own (the line check names every merged
