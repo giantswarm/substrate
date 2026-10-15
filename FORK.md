@@ -494,7 +494,7 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
 - **Public only.** This repository is public: a ledger row, a commit message and this file cite public issues and pull
   requests only, and where the reasoning lives in a private tracker it is written out in a sentence here instead. The
   `fork-ledger` check fails a pull request whose added ledger lines cite a giantswarm repository that is not public
-  (`.github/scripts/fork-public-links.sh`).
+  or a row of a private list (`.github/scripts/fork-public-links.sh`).
 - **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
   A cherry-pick of an upstream commit is rebase-merged (see "Branches").
 - **The ledger**: a pull request against a line that changes more than this file names its own number as `#n` in a

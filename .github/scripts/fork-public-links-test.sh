@@ -54,6 +54,10 @@ case_ "the internal repository" 1 "queued on [giantswarm/giantswarm#1](https://g
 case_ "a private repository as #n" 1 "see giantswarm/secret-repo#3" "giantswarm/secret-repo (not found):"
 case_ "a private repository's file" 1 "https://github.com/giantswarm/secret-repo/blob/main/x.md." "giantswarm/secret-repo (not found)"
 case_ "names every line" 1 "$(printf '%s\n' 'giantswarm/substrate#1' 'giantswarm/a#2' 'giantswarm/b#3')" "2 citation(s)"
+case_ "a list row as #n row m" 1 "falls away at the re-pin (#123 row 45)" "a row of a private list"
+case_ "a list row in prose" 1 "queued as review-list row 208" "a row of a private list"
+case_ "a bare row" 1 "once the team has reviewed it (Row 96)" "a row of a private list"
+case_ "a word ending in row is no row" 0 "borrow 3 bytes, narrow 4 lanes, rows of the table"
 case_ "empty input" 0 ""
 
 if [[ "${failures}" -gt 0 ]]; then

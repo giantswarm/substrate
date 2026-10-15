@@ -25,7 +25,8 @@
 # A citation is a github.com/giantswarm/<repo> URL or a giantswarm/<repo>#<n>
 # reference. giantswarm/giantswarm is internal; every other cited repository
 # is looked up once with `gh api`, and one that is not public, or not found
-# (a private repository is not found with the workflow's token), fails.
+# (a private repository is not found with the workflow's token), fails. So
+# does a row of a private list, cited as "row <n>" in any wording.
 
 set -o errexit -o nounset -o pipefail
 
@@ -33,6 +34,10 @@ declare -A visibility=([giantswarm]=internal)
 failures=0
 
 while IFS= read -r line; do
+  if [[ "${line,,}" =~ (^|[^a-z])row\ [0-9]+ ]]; then
+    echo "::error::the ledger cites a row of a private list: this repository is public, so write the reason out in a sentence (FORK.md, Contributing): ${line}"
+    failures=$((failures + 1))
+  fi
   repos="$(grep -oE 'github\.com/giantswarm/[A-Za-z0-9_.-]+|giantswarm/[A-Za-z0-9_.-]+#[0-9]+' <<<"${line}" |
     sed -E 's#^(github\.com/)?giantswarm/##; s/#[0-9]+$//; s/\.git$//; s/\.+$//' | sort -u || true)"
   for repo in ${repos}; do
@@ -47,7 +52,7 @@ while IFS= read -r line; do
 done
 
 if [[ "${failures}" -gt 0 ]]; then
-  echo "${failures} citation(s) of a repository that is not public"
+  echo "${failures} citation(s) that are not public"
   exit 1
 fi
 echo "every cited giantswarm repository is public"
