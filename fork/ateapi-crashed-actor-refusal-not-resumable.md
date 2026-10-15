@@ -1,7 +1,7 @@
 # A crashed actor's resume refusal is marked not resumable
 
 - **Status:** carried
-- **Upstream:** not opened yet, row 193 of the upstream queue ([giantswarm/giantswarm#38476](https://github.com/giantswarm/giantswarm/issues/38476)): the upstream-ready commit is on the branch `upstream/ateapi-crashed-actor-not-resumable` (`4f3cb20d1`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/ateapi-crashed-actor-not-resumable` (`4f3cb20d1`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
 - **Our commit:** [#445](https://github.com/giantswarm/substrate/pull/445): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form
 
 ## Change
