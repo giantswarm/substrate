@@ -36,7 +36,7 @@ while IFS= read -r line; do
     sed -E 's#^(github\.com/)?giantswarm/##; s/#[0-9]+$//; s/\.git$//; s/\.+$//' | sort -u || true)"
   for repo in ${repos}; do
     if [[ -z "${visibility[${repo}]:-}" ]]; then
-      visibility[${repo}]="$(gh api "repos/giantswarm/${repo}" --jq .visibility 2>/dev/null || echo "not found")"
+      visibility[${repo}]="$(gh api "repos/giantswarm/${repo}" --jq .visibility 2>/dev/null)" || visibility[${repo}]="not found"
     fi
     if [[ "${visibility[${repo}]}" != public ]]; then
       echo "::error::the ledger cites giantswarm/${repo} (${visibility[${repo}]}): this repository is public, so write the reason out in a sentence or cite a public issue (FORK.md, Contributing): ${line}"

@@ -11,5 +11,3 @@ A signal without an OTLP endpoint exports nothing (`substrate.otel.env` sets `OT
 ## Reason
 
 the signals are enabled by default with no endpoint, so the chart rendered no `OTEL_*` variable and every Go component's SDK exported traces and metrics to the default `localhost:4317`: on a cluster without a collector the credential provider and the egress ext-proc logged a refused export once a minute ([#123](https://github.com/giantswarm/substrate/issues/123)). The committed manifests render with an endpoint and stay unchanged; a release with the default values rolls its Go components once
-
-Throwaway proof line: see https://github.com/giantswarm/giantswarm/issues/1 and giantswarm/github#1.
