@@ -225,6 +225,14 @@ kubectl -n ate-system edit configmap k8s-credential-provider-namespace-policy
       - ns1
 ```
 
+A policy with an `ownNamespaceSelector` in place of `atespace` and
+`allowedNamespaces` lets each namespace the label selector matches be read by
+the atespace of the same name only, and an `allowedNamespaceSelector` beside
+`atespace` grants that atespace every namespace the selector matches; see
+[the Kubernetes credential provider](kubernetes-credential-provider.md). Its
+namespaces are matched by their labels on each request, and the provider then
+needs list and watch on namespaces.
+
 The provider loads the policy **once at startup** and does not yet reload it,
 so after editing, restart the provider:
 
