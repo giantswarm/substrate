@@ -985,20 +985,30 @@ entries in one roll.
   revert and resume take it from there. Before, such an actor stayed
   `RUNNING` with nothing behind it, and every turn sent to it waited out
   the client's deadline.
-- **A request to a crashed actor:** ate-api-server's refusal to resume an
-  actor in `CRASHED` (`FailedPrecondition`, its message unchanged) now
-  carries an AIP-193 `ErrorInfo` in the `substrate.dev` domain, reason
-  `ACTOR_CRASHED`, metadata `resumable: "false"`. atenet-router's
-  agentgateway and its Go resumer answer such a refusal at once instead of
-  retrying it for the whole park budget (30 s, 37 calls), so the client's
-  revert of the actor starts right away. A gRPC caller gets the refusal's
-  code and details; an HTTP caller `400` from agentgateway. Until
-  ate-api-server runs 1.11.2 the refusal carries no directive and the
-  router keeps the old wait.
 - **During the roll:** a report that reaches an atelet or ate-api-server
   still on 1.11.1 is answered `Unimplemented` and logged by ateom; the
   actor stays as it was, as on 1.11.1. Reports land once the worker, its
   node's atelet and ate-api-server all run 1.11.2.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.11.2 to 1.11.3
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs between the two
+  tags.
+- **Chart:** unchanged.
+- **A request to a crashed actor:** ate-api-server's refusal to resume an
+  actor in `CRASHED` (`FailedPrecondition`, its message unchanged) carries
+  an AIP-193 `ErrorInfo` in the `substrate.dev` domain, reason
+  `ACTOR_CRASHED`, metadata `resumable: "false"`. atenet-router's
+  agentgateway and its Go resumer answer such a refusal at once instead of
+  retrying it for the whole park budget (30 s, 36 calls in the lab), so
+  the client's revert of the actor starts right away. A gRPC caller gets
+  the refusal's code and details; an HTTP caller `400` from agentgateway.
+- **During the roll:** an ate-api-server still on 1.11.2 sends the refusal
+  without the directive, and the router keeps the old wait for it.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
