@@ -1,7 +1,7 @@
 # The egress gateway trusts extra CAs on the actors' upstream HTTPS
 
 - **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/atenet-egress-upstream-trust`](https://github.com/giantswarm/substrate/tree/upstream/atenet-egress-upstream-trust) here (`175664c9`, on the mirror `main` @ `bf51a996`; its message is the pull-request text). A team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it (row 96)
+- **Upstream:** to file — prepared in the fork: branch [`upstream/atenet-egress-upstream-trust`](https://github.com/giantswarm/substrate/tree/upstream/atenet-egress-upstream-trust) here (`175664c9`, on the mirror `main` @ `bf51a996`; its message is the pull-request text). A team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it
 - **Our commit:** [#92](https://github.com/giantswarm/substrate/pull/92)
 
 ## Change
