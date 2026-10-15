@@ -1,7 +1,7 @@
 # `resources.DeepEqual`, the unchanged-value check of the generated declarative validation, compares …
 
 - **Status:** carried
-- **Upstream:** none: upstream `main` has the same `DeepEqual`; to file, queued in the upstream engagement list
+- **Upstream:** to file: upstream `main` has the same `DeepEqual`
 - **Our commit:** [#234](https://github.com/giantswarm/substrate/pull/234) (`fix(resources): compare repeated message fields with proto.Equal`)
 
 ## Change

@@ -1,7 +1,7 @@
 # A sandbox's `/etc/hosts` names its own hostname
 
 - **Status:** carried
-- **Upstream:** to file: agent-substrate/substrate `main` (`fd7a9cde`, 2026-10-10) writes no `/etc/hosts` into the sandbox; queued in the upstream engagement list
+- **Upstream:** to file: agent-substrate/substrate `main` (`fd7a9cde`, 2026-10-10) writes no `/etc/hosts` into the sandbox
 - **Our commit:** `giantswarm`: [#243](https://github.com/giantswarm/substrate/pull/243)
 
 ## Change

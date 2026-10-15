@@ -1,7 +1,7 @@
 # atunnel ends a CONNECT tunnel when the actor closes its connection
 
 - **Status:** carried
-- **Upstream:** the relay change of upstream's own commit `da35a983` ([agent-substrate/substrate#2531](https://github.com/agent-substrate/substrate/pull/2531), merged), in every upstream release since v0.5.0-alpha4; a backport of that change alone, nothing to queue upstream, which leaves the line at the first re-pin onto v0.5.0-alpha4 or later
+- **Upstream:** the relay change of upstream's own commit `da35a983` ([agent-substrate/substrate#2531](https://github.com/agent-substrate/substrate/pull/2531), merged), in every upstream release since v0.5.0-alpha4; a backport of that change alone, nothing to file upstream, which leaves the line at the first re-pin onto v0.5.0-alpha4 or later
 - **Our commit:** [#451](https://github.com/giantswarm/substrate/pull/451)
 
 ## Change

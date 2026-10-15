@@ -1,7 +1,7 @@
 # The egress gateway's ext-proc takes the chart's `otel` settings like every other Go component
 
 - **Status:** carried
-- **Upstream:** upstream-ready for [kagent-dev/substrate](https://github.com/kagent-dev/substrate), which ships the chart (its `charts/substrate/templates/atenet-egress.yaml` has the same gap); waits for a free slot there, with kagent-dev/substrate#46 and #48 open; queued for review before it goes upstream
+- **Upstream:** upstream-ready for [kagent-dev/substrate](https://github.com/kagent-dev/substrate), which ships the chart (its `charts/substrate/templates/atenet-egress.yaml` has the same gap); waits for a free slot there, with kagent-dev/substrate#46 and #48 open
 - **Our commit:** `126a8682` ([#106](https://github.com/giantswarm/substrate/pull/106))
 
 ## Change

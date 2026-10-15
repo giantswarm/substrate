@@ -1,7 +1,7 @@
 # A suspended actor may be repointed at a template that adds, removes or changes `system_info` …
 
 - **Status:** carried
-- **Upstream:** to file: upstream's check (agent-substrate/substrate `cmd/ateapi/internal/controlapi/actor.go`) predates `system_info` volumes; upstream-shaped branch `upstream/repoint-systeminfo-volumes` on the mirror `main`, queued for review before it goes upstream
+- **Upstream:** to file — prepared in the fork: branch `upstream/repoint-systeminfo-volumes` on the mirror `main`: upstream's check (agent-substrate/substrate `cmd/ateapi/internal/controlapi/actor.go`) predates `system_info` volumes
 - **Our commit:** [#148](https://github.com/giantswarm/substrate/pull/148); on `release-1.3` [#149](https://github.com/giantswarm/substrate/pull/149) (1.3.3)
 
 ## Change

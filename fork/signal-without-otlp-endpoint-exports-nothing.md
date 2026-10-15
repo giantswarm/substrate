@@ -1,7 +1,7 @@
 # A signal without an OTLP endpoint exports nothing
 
 - **Status:** carried
-- **Upstream:** upstream-ready (upstream `main`'s `_helpers.tpl` turns off only a disabled signal); queued for review before it goes upstream
+- **Upstream:** upstream-ready (upstream `main`'s `_helpers.tpl` turns off only a disabled signal); to file
 - **Our commit:** [#136](https://github.com/giantswarm/substrate/pull/136)
 
 ## Change

@@ -1,7 +1,7 @@
 # The e2e credential fixture adds its grants to the provider policy instead of swapping it
 
 - **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch [`upstream/e2e-credprovider-additive`](https://github.com/giantswarm/substrate/tree/upstream/e2e-credprovider-additive) on the mirror `main` @ `5cf1c245` (kagent-dev/substrate, where `suites/credentials` and the helm-e2e lane come from; agent-substrate/substrate has neither), queued in the team's upstream review list
+- **Upstream:** to file — prepared in the fork: branch [`upstream/e2e-credprovider-additive`](https://github.com/giantswarm/substrate/tree/upstream/e2e-credprovider-additive) on the mirror `main` @ `5cf1c245` (kagent-dev/substrate, where `suites/credentials` and the helm-e2e lane come from; agent-substrate/substrate has neither)
 - **Our commit:** [#359](https://github.com/giantswarm/substrate/pull/359): the same commit as the prepared branch
 
 ## Change

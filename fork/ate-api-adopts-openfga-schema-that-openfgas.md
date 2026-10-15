@@ -1,7 +1,7 @@
 # ate-api adopts an OpenFGA schema that OpenFGA's own embedded migrations created
 
 - **Status:** carried
-- **Upstream:** to file: agent-substrate/substrate#1839 introduced migration 2 without adopting an existing schema, which breaks every upgrade from a release before it; upstream-shaped branch `upstream/openfga-schema-adopt` on the mirror `main`, to be queued for review before it goes upstream
+- **Upstream:** to file — prepared in the fork: branch `upstream/openfga-schema-adopt` on the mirror `main`: agent-substrate/substrate#1839 introduced migration 2 without adopting an existing schema, which breaks every upgrade from a release before it
 - **Our commit:** [#138](https://github.com/giantswarm/substrate/pull/138)
 
 ## Change
