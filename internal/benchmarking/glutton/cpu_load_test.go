@@ -190,9 +190,10 @@ func TestUseCPURejectsInvalidArgs(t *testing.T) {
 }
 
 // TestUseCPUBurnsCPUTime verifies that the worker actually consumes CPU
-// (not just wall time). At 100% duty for a short window, the process's
-// user CPU time should advance by roughly the wall time on an unloaded
-// system.
+// (not just wall time). A reference goroutine spins on its own OS thread
+// for the same window, so it receives whatever share of a core the
+// scheduler grants a 100%-duty thread right now. At 100% duty the worker
+// must receive a comparable share, on an idle machine and on a loaded one.
 func TestUseCPUBurnsCPUTime(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping CPU burn timing test in short mode")
@@ -205,6 +206,26 @@ func TestUseCPUBurnsCPUTime(t *testing.T) {
 
 	ctx := context.Background()
 	startUser := processUserCPUTime(t)
+	stopRef := make(chan struct{})
+	refCPU := make(chan time.Duration)
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		start := threadCPUTime()
+		var x uint64 = 1
+		for {
+			select {
+			case <-stopRef:
+				cpuBurnSink.Store(x)
+				refCPU <- threadCPUTime() - start
+				return
+			default:
+			}
+			for i := 0; i < 4096; i++ {
+				x = x*1103515245 + 12345
+			}
+		}
+	}()
 	if _, err := svc.UseCPU(ctx, &gluttonpb.UseCPURequest{
 		NumCores:      1,
 		DutyCycle:     1.0,
@@ -219,14 +240,16 @@ func TestUseCPUBurnsCPUTime(t *testing.T) {
 	if _, err := svc.UseCPU(ctx, &gluttonpb.UseCPURequest{}); err != nil {
 		t.Fatalf("UseCPU stop: %v", err)
 	}
-	delta := processUserCPUTime(t) - startUser
+	close(stopRef)
+	ref := <-refCPU
+	worker := processUserCPUTime(t) - startUser - ref
 
-	// Comfortable lower bound (~50% of the window) to keep this from
-	// flaking under a loaded CI runner; the goal is to prove the worker
-	// is burning CPU, not to certify accuracy.
-	minWant := window / 2
-	if delta < minWant {
-		t.Errorf("user CPU time delta = %v, want >= %v over %v of 100%%-duty load", delta, minWant, window)
+	// Comfortable lower bound (~50% of the reference's share); the goal
+	// is to prove the worker is burning CPU rather than sleeping, not to
+	// certify accuracy.
+	minWant := ref / 2
+	if worker < minWant {
+		t.Errorf("worker user CPU time = %v, want >= %v (half of the %v a spinning thread got) over %v of 100%%-duty load", worker, minWant, ref, window)
 	}
 }
 
