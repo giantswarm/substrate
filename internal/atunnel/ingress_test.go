@@ -33,6 +33,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -189,6 +190,75 @@ func TestRelayIngressWithHalfClose(t *testing.T) {
 	}
 	if got := clientOutput.String(); got != "response" {
 		t.Errorf("client received %q, want response", got)
+	}
+}
+
+// TestRelayIngressEndsWhenActorCloses covers an actor that ends its connection
+// while the router still holds the tunnel's request stream open: an HTTP/1.1
+// actor answering a gRPC client's HTTP/2 preface does exactly that. The tunnel
+// must end with the actor's connection, or the router waits on it until its
+// own timeout.
+func TestRelayIngressEndsWhenActorCloses(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		reset bool
+	}{
+		{name: "actor closes after answering"},
+		{name: "actor resets the connection", reset: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			accepted := make(chan net.Conn, 1)
+			go func() {
+				conn, err := listener.Accept()
+				if err == nil {
+					accepted <- conn
+				}
+			}()
+			actor, err := net.Dial("tcp", listener.Addr().String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer actor.Close()
+			upstream := receiveWithin(t, accepted, "accepted connection")
+			defer upstream.Close()
+
+			// The router's request stream stays open for the whole test.
+			downstreamReader, downstreamInput := io.Pipe()
+			defer downstreamInput.Close()
+			var downstreamOutput bytes.Buffer
+			done := make(chan struct{})
+			go func() {
+				relayIngressWithHalfClose(context.Background(), upstream, downstreamReader, &downstreamOutput, downstreamReader)
+				close(done)
+			}()
+
+			if !tt.reset {
+				if _, err := io.WriteString(actor, "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n"); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := actor.(*net.TCPConn).SetLinger(0); err != nil {
+				t.Fatal(err)
+			}
+			if err := actor.Close(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("relay kept the tunnel open after the actor's connection ended")
+			}
+			if _, err := io.WriteString(downstreamInput, "more"); err == nil {
+				t.Error("router's request stream remained open after the actor's connection ended")
+			}
+			if !tt.reset && !strings.HasPrefix(downstreamOutput.String(), "HTTP/1.1 400") {
+				t.Errorf("router received %q, want the actor's answer", downstreamOutput.String())
+			}
+		})
 	}
 }
 
