@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file — prepared in the fork: branch `upstream/credential-provider-namespace-selector`
-- **Our commit:** [#PR](https://github.com/giantswarm/substrate/pull/PR): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's
+- **Our commit:** [#456](https://github.com/giantswarm/substrate/pull/456): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's
 
 ## Change
 
