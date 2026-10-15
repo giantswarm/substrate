@@ -461,12 +461,8 @@ func environ() map[string]string {
 // the Service in
 // manifests/egress-credential-injection/k8s-credential-provider.yaml.
 const (
-	K8sCredentialProviderName = "k8s.io"
-	// GoogleAccessTokenProviderName is the second name the bundled provider
-	// serves: a Google access token minted from the service account key a
-	// Secret holds.
-	GoogleAccessTokenProviderName = "google-access-token.k8s.io"
-	K8sCredentialProviderAddress  = "k8s-credential-provider." + installdefaults.SystemNamespace + ".svc:50051"
+	K8sCredentialProviderName    = "k8s.io"
+	K8sCredentialProviderAddress = "k8s-credential-provider." + installdefaults.SystemNamespace + ".svc:50051"
 )
 
 // credentialProviderKey is the setting the provider JSON arrives on.
