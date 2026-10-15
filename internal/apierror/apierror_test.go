@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"testing"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -207,5 +208,47 @@ func TestNotAGRPCStatus(t *testing.T) {
 	err := fmt.Errorf("while reading tier 1: %w", NotFound("tier 1 not found"))
 	if s, ok := status.FromError(err); ok || s.Code() != codes.Unknown {
 		t.Errorf("status.FromError() = %v, %v, want Unknown, false", s.Code(), ok)
+	}
+}
+
+func TestNotResumable(t *testing.T) {
+	err := fmt.Errorf("while resuming: %w", NotResumable("ACTOR_CRASHED", "actor %s crashed", "a1"))
+	st, ok := FromError(err)
+	if !ok {
+		t.Fatalf("FromError(%v) ok = false, want true", err)
+	}
+	if st.Code() != codes.FailedPrecondition || st.Message() != "actor a1 crashed" {
+		t.Errorf("FromError = %v %q, want FailedPrecondition %q", st.Code(), st.Message(), "actor a1 crashed")
+	}
+	var info *errdetails.ErrorInfo
+	for _, d := range st.Details() {
+		if i, ok := d.(*errdetails.ErrorInfo); ok {
+			info = i
+		}
+	}
+	if info.GetDomain() != ErrorDomain || info.GetReason() != "ACTOR_CRASHED" || info.GetMetadata()[MetadataKeyResumable] != "false" {
+		t.Errorf("ErrorInfo = %v, want domain %q, reason ACTOR_CRASHED, %s=false", info, ErrorDomain, MetadataKeyResumable)
+	}
+	if !IsNotResumable(st.Err()) {
+		t.Error("IsNotResumable(the received status) = false, want true")
+	}
+}
+
+func TestIsNotResumable(t *testing.T) {
+	otherDomain, err := status.New(codes.FailedPrecondition, "x").WithDetails(&errdetails.ErrorInfo{
+		Domain: "example.com", Metadata: map[string]string{MetadataKeyResumable: "false"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, err := range map[string]error{
+		"plain FailedPrecondition": status.Error(codes.FailedPrecondition, "actor is suspending"),
+		"another domain":           otherDomain.Err(),
+		"not a status":             errors.New("boom"),
+		"nil":                      nil,
+	} {
+		if IsNotResumable(err) {
+			t.Errorf("%s: IsNotResumable = true, want false", name)
+		}
 	}
 }

@@ -455,3 +455,25 @@ func TestServerUnaryInterceptorLogsNilResponseOnHandlerError(t *testing.T) {
 		t.Errorf("nil response should log as null: %s", log.String())
 	}
 }
+
+// TestServerInterceptorsKeepNotResumable verifies a refusal marked not
+// resumable reaches the caller with its ErrorInfo, so a router can act on it.
+func TestServerInterceptorsKeepNotResumable(t *testing.T) {
+	for name, interceptor := range map[string]grpc.UnaryServerInterceptor{
+		"ServerUnaryInterceptor":         ServerUnaryInterceptor,
+		"InternalServerUnaryInterceptor": InternalServerUnaryInterceptor,
+	} {
+		t.Run(name, func(t *testing.T) {
+			handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+				return nil, fmt.Errorf("while resuming: %w", apierror.NotResumable("ACTOR_CRASHED", "actor crashed"))
+			}
+			_, err := interceptor(context.Background(), "request", &grpc.UnaryServerInfo{FullMethod: "/test.Service/Method"}, handler)
+			if got := status.Code(err); got != codes.FailedPrecondition {
+				t.Errorf("code = %v, want FailedPrecondition", got)
+			}
+			if !apierror.IsNotResumable(err) {
+				t.Errorf("IsNotResumable(%v) = false, want true", err)
+			}
+		})
+	}
+}

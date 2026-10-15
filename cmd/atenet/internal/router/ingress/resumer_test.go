@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atenet/internal/router/extproc"
+	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -1128,4 +1129,58 @@ func TestActorResumer_TerminalDataLossIsNotParked(t *testing.T) {
 			t.Errorf("expected exactly 1 resume attempt, got %d", calls)
 		}
 	})
+}
+
+// TestActorResumer_NotResumableRefusalIsNotParked verifies a resume refusal
+// the control plane marks not resumable (a CRASHED actor) fails at once with
+// that refusal even while parking is enabled, instead of being retried until
+// the budget elapses, while an unmarked FailedPrecondition stays parked.
+func TestActorResumer_NotResumableRefusalIsNotParked(t *testing.T) {
+	crashed, ok := apierror.FromError(apierror.NotResumable("ACTOR_CRASHED",
+		"AssignWorker prerequisite not met for Actor: team-a/actor-a (got: ACTOR_STATE_CRASHED, want ACTOR_STATE_SUSPENDED or ACTOR_STATE_PAUSED)"))
+	if !ok {
+		t.Fatal("apierror.FromError: not an apierror")
+	}
+	tests := []struct {
+		name        string
+		refusal     error
+		wantCalls   int32
+		wantParked  bool
+		wantElapsed time.Duration
+	}{
+		{name: "marked not resumable", refusal: crashed.Err(), wantCalls: 1},
+		{name: "unmarked", refusal: status.Error(codes.FailedPrecondition, "actor is suspending"), wantCalls: 37, wantParked: true, wantElapsed: 30 * time.Second},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var calls atomic.Int32
+				mock := &resumerMockClient{
+					resumeFn: func(ctx context.Context, in *ateapipb.ResumeActorRequest, opts ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
+						calls.Add(1)
+						return nil, tc.refusal
+					},
+				}
+				resumer := NewActorResumer(mock, withParking(ParkedRequestConfig{Max: 1, Budget: 30 * time.Second}))
+				start := time.Now()
+				_, outcome, err := resumer.ResumeActor(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "actor-a"})
+				if got := status.Code(err); got != codes.FailedPrecondition {
+					t.Fatalf("expected FailedPrecondition, got %v (err=%v)", got, err)
+				}
+				var budget *budgetExhaustedError
+				if got := errors.As(err, &budget); got != tc.wantParked {
+					t.Errorf("reported as budget exhaustion = %v, want %v (err=%v)", got, tc.wantParked, err)
+				}
+				if outcome != ResumeOutcomeUnknown {
+					t.Errorf("outcome = %q, want %q on a failed resume", outcome, ResumeOutcomeUnknown)
+				}
+				if elapsed := time.Since(start); elapsed != tc.wantElapsed {
+					t.Errorf("the resume took %v, want %v", elapsed, tc.wantElapsed)
+				}
+				if got := calls.Load(); got != tc.wantCalls {
+					t.Errorf("resume attempts = %d, want %d", got, tc.wantCalls)
+				}
+			})
+		})
+	}
 }
