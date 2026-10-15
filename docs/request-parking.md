@@ -122,10 +122,18 @@ waiting are returned immediately (fail fast):
 | `Aborted` (concurrent resume)          | Retry (always)                    |
 | `ResourceExhausted` (no room)          | **Park & retry** (when enabled)   |
 | `FailedPrecondition` (transient state) | **Park & retry** (when enabled)   |
+| `FailedPrecondition`, not resumable    | Fail fast → `503`                 |
 | `Unavailable` (control-plane blip)     | **Park & retry** (when enabled)   |
 | `NotFound`                             | Fail fast → `404`                 |
 | `DeadlineExceeded`                     | Fail fast → `504`                 |
 | `PermissionDenied` / `Unauthenticated` | Fail fast → `403` / `401`         |
+
+A `FailedPrecondition` whose AIP-193 `ErrorInfo` (domain `substrate.dev`)
+carries the metadata `resumable: "false"` is never parked: ate-api-server
+marks a refusal so when only an explicit operation on the actor changes its
+state, such as an actor in `CRASHED`, which leaves it only through
+`RevertActor` or `DeleteActor`. The caller gets the refusal at once and
+decides how to recover.
 
 When parking is **disabled** (`--parked-request-max=0`), the router fails fast:
 `FailedPrecondition` and `Unavailable` are returned immediately, there is no

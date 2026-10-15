@@ -687,6 +687,12 @@ func TestEnsureWorkerAssigned_RejectsNonResumableStates(t *testing.T) {
 		actor := &ateapipb.Actor{Status: &ateapipb.ActorStatus{State: st}, Metadata: &ateapipb.ResourceMetadata{Name: "id1", Uid: "actor-uid-1"}}
 		_, _, err := w.ensureWorkerAssigned(ctx, resources.ActorRef{Name: "id1"}, actor, &ateapipb.ActorTemplate{})
 		assertPrerequisiteResult(t, st, err, false)
+		// Only a CRASHED actor's refusal is marked not resumable: every other
+		// state is one a concurrent operation moves the actor out of.
+		received, _ := apierror.FromError(err)
+		if got, want := apierror.IsNotResumable(received.Err()), st == ateapipb.ActorState_ACTOR_STATE_CRASHED; got != want {
+			t.Errorf("state %v: refusal marked not resumable = %v, want %v", st, got, want)
+		}
 	}
 }
 
