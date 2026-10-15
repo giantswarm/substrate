@@ -37,10 +37,19 @@ func TestProviderManifests(t *testing.T) {
 		name, tool, namespace, prefix string
 		image                         string
 		args                          []string
+		selectsNamespaces             bool
 	}{
 		{name: "default", tool: "helm", namespace: "ate-system", args: []string{"template", "substrate", "../../../charts/substrate", "-n", "ate-system"}},
 		{name: "custom release", tool: "helm", namespace: "custom", prefix: "test-",
 			args: []string{"template", "test", "../../../charts/substrate", "-n", "custom", "--set", "credentialProvider.namespacePolicies[0].atespace=team-a", "--set", "credentialProvider.namespacePolicies[0].allowedNamespaces[0]=ns1"}},
+		{name: "namespace selector", tool: "helm", namespace: "ate-system",
+			args: []string{"template", "substrate", "../../../charts/substrate", "-n", "ate-system",
+				"--set-json", `credentialProvider.namespacePolicies=[{"ownNamespaceSelector":{"matchExpressions":[{"key":"example.com/tenant","operator":"Exists"}]}}]`},
+			selectsNamespaces: true},
+		{name: "allowed namespace selector", tool: "helm", namespace: "ate-system",
+			args: []string{"template", "substrate", "../../../charts/substrate", "-n", "ate-system",
+				"--set-json", `credentialProvider.namespacePolicies=[{"atespace":"ate-golden","allowedNamespaceSelector":{"matchExpressions":[{"key":"example.com/tenant","operator":"Exists"}]}}]`},
+			selectsNamespaces: true},
 		{name: "kustomize", tool: "kubectl", namespace: "ate-system",
 			args: []string{"kustomize", "../../../manifests/egress-credential-injection"}},
 		{name: "CI images", tool: "helm", namespace: "ate-system",
@@ -63,6 +72,7 @@ func TestProviderManifests(t *testing.T) {
 			decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
 			var providerFound, portFound, policyFound, accountFound bool
 			var roleFound, bindingFound, networkPolicyFound bool
+			var namespaceRoleFound, namespaceBindingFound bool
 			for {
 				var doc struct {
 					Kind     string
@@ -203,6 +213,14 @@ func TestProviderManifests(t *testing.T) {
 						t.Fatal("unexpected namespace policy")
 					}
 				case "ClusterRole":
+					if doc.Metadata.Name == tc.prefix+"k8s-credential-provider-namespace-reader" {
+						namespaceRoleFound = true
+						want := []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"list", "watch"}}}
+						if !reflect.DeepEqual(doc.Rules, want) {
+							t.Fatalf("namespace reader rules = %#v, want list/watch on namespaces", doc.Rules)
+						}
+						continue
+					}
 					if doc.Metadata.Name != tc.prefix+"k8s-credential-provider-secret-reader" {
 						continue
 					}
@@ -212,6 +230,15 @@ func TestProviderManifests(t *testing.T) {
 						t.Fatalf("provider rules = %#v, want get-only Secret access", doc.Rules)
 					}
 				case "ClusterRoleBinding":
+					if doc.Metadata.Name == tc.prefix+"k8s-credential-provider-namespace-reader" {
+						namespaceBindingFound = true
+						wantRef := rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: tc.prefix + "k8s-credential-provider-namespace-reader"}
+						wantSubjects := []rbacv1.Subject{{Kind: "ServiceAccount", Name: tc.prefix + "k8s-credential-provider", Namespace: tc.namespace}}
+						if doc.RoleRef != wantRef || !reflect.DeepEqual(doc.Subjects, wantSubjects) {
+							t.Fatalf("unexpected namespace reader binding: roleRef=%+v subjects=%+v", doc.RoleRef, doc.Subjects)
+						}
+						continue
+					}
 					if doc.Metadata.Name != tc.prefix+"k8s-credential-provider-secret-reader" {
 						continue
 					}
@@ -231,6 +258,10 @@ func TestProviderManifests(t *testing.T) {
 			}
 			if !roleFound || !bindingFound {
 				t.Fatalf("role=%v binding=%v", roleFound, bindingFound)
+			}
+			// Namespace access is granted only to a policy that selects namespaces.
+			if namespaceRoleFound != tc.selectsNamespaces || namespaceBindingFound != tc.selectsNamespaces {
+				t.Fatalf("namespace reader role=%v binding=%v, want %v", namespaceRoleFound, namespaceBindingFound, tc.selectsNamespaces)
 			}
 		})
 	}

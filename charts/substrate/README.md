@@ -64,7 +64,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderConfig` | `""` | Host path to the kubelet credential provider config; set together with the bin directory |
 | `atelet.imageCredentialProviderConfigYAML` | `""` | Credential provider config as text, rendered into a ConfigMap, for nodes where that file cannot be authored or must differ from the kubelet's; mutually exclusive with the host path |
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
-| `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
+| `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider. A policy with an `ownNamespaceSelector` (a label selector) in place of `atespace` and `allowedNamespaces` lets each namespace it matches be read by the atespace of the same name only, matched by the namespace's current labels; an `allowedNamespaceSelector` beside `atespace` grants that atespace every namespace it matches (an explicit opt-in, the only way `ate-golden` reads a namespace by label); with either, the chart adds list/watch RBAC on namespaces |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics, the actor lifecycle events and the router access log |
 | `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
