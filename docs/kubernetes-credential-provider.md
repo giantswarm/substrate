@@ -50,6 +50,59 @@ credentialProvider:
     allowedNamespaces: [team-a-secrets]
 ```
 
+A policy can select namespaces by label instead of listing them. With an
+`ownNamespaceSelector` (a Kubernetes label selector, `matchLabels` and
+`matchExpressions`) in place of `atespace` and `allowedNamespaces`, each
+namespace the selector matches may be read by the atespace of the same name,
+and by no other atespace:
+
+```yaml
+credentialProvider:
+  namespacePolicies:
+  - ownNamespaceSelector:
+      matchExpressions:
+      - {key: example.com/tenant, operator: Exists}
+```
+
+The provider watches namespaces and matches each request against the
+namespace's labels at that moment, so a namespace created, labeled or unlabeled
+after startup is granted or refused without a restart; while the provider
+cannot watch namespaces (an API server outage, RBAC removed) it keeps the
+labels it saw last. The reserved `ate-golden` atespace is never granted a
+namespace this way. A `secretSelector` on
+the policy narrows it as it narrows a listed grant. The selector must name at
+least one requirement.
+
+An atespace that serves the actors of many namespaces opts in to them with an
+`allowedNamespaceSelector` beside `atespace` (and any `allowedNamespaces`): it
+may read every namespace the selector matches, matched the same way. This is
+how the golden actors, which every template boots in `ate-golden`, read the
+credentials of their templates in tenant namespaces:
+
+```yaml
+credentialProvider:
+  namespacePolicies:
+  - atespace: ate-golden
+    allowedNamespaces: [kagent]
+    allowedNamespaceSelector:
+      matchExpressions:
+      - {key: example.com/tenant, operator: Exists}
+```
+
+The provider sees only the atespace `ate-golden` and the golden actor's name,
+not the template it boots, so this grant lets every golden actor read every
+matched namespace. A golden actor fetches only the credentials its template's
+egress policy names, and kagent writes that policy when it translates the
+template: it resolves the template's model, MCP servers, skills and shared
+templates in the template's own namespace, so every credential the policy
+names is a Secret of that namespace. kagent's translation of the template is
+therefore the guard against a cross-tenant read by a golden actor; any other
+writer of templates or egress policies in `ate-golden` must keep the same
+rule.
+
+The chart adds list/watch RBAC on namespaces only when a policy has an
+`ownNamespaceSelector` or an `allowedNamespaceSelector`.
+
 The Helm chart always deploys the provider and configures AGW's HTTP route and
 HTTPS interception route. Namespace grants default to an empty list.
 Policy changes roll the provider's Pods. Resource names and the injector identity

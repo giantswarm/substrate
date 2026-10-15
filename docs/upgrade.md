@@ -1030,6 +1030,32 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.11 to 1.12 step
+
+1.12.0 stays on upstream v0.5.0-alpha2. Step to it from the latest 1.11
+patch with the numbered steps above; the step needs no migration, no
+snapshot reset and no manual step, and conversations and durable volumes
+survive it.
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs from 1.11.
+- **Credential provider namespace selector:** a namespace policy of the
+  Kubernetes credential provider can carry an `ownNamespaceSelector` (a
+  label selector) in place of `atespace` and `allowedNamespaces`: each
+  namespace it matches may be read by the atespace of the same name and
+  by no other, matched by the namespace's labels on each request, so a
+  namespace created, labeled or unlabeled later needs no chart change and
+  no restart. An `allowedNamespaceSelector` beside `atespace` grants that
+  atespace every namespace it matches, the explicit opt-in by which
+  `ate-golden` reads tenant namespaces. A policy file without either field
+  reads and grants as before.
+- **Chart:** with an `ownNamespaceSelector` or an `allowedNamespaceSelector`
+  in `credentialProvider.namespacePolicies`, the chart adds the ClusterRole
+  and ClusterRoleBinding `<release>-k8s-credential-provider-namespace-reader`
+  (list and watch on namespaces); without one it renders as before.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
