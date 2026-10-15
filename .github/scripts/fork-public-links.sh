@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 # Fork (giantswarm/substrate): the ledger cites public repositories only. This
 # repository is public, so FORK.md and fork/ link no issue, pull request or
 # file of a private repository: a reason that lives there is written out in a
