@@ -31,13 +31,26 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// ErrorDomain is the AIP-193 ErrorInfo domain of the reasons a substrate server
+// gives.
+const ErrorDomain = "substrate.dev"
+
+// MetadataKeyResumable is the ErrorInfo metadata key that marks a resume
+// refusal not resumable (value "false"): no retry outlives it, so a router
+// parking the request answers it at once. A refusal without it, such as one
+// for an actor in transition, may be outlived by waiting.
+const MetadataKeyResumable = "resumable"
+
 type apiError struct {
 	code codes.Code
 	err  error
+	// info is the AIP-193 ErrorInfo the status carries, if any.
+	info *errdetails.ErrorInfo
 }
 
 func (e *apiError) Error() string { return e.err.Error() }
@@ -68,6 +81,38 @@ func AlreadyExists(format string, args ...any) error {
 // requires. Retrying is pointless until that state changes.
 func FailedPrecondition(format string, args ...any) error {
 	return newf(codes.FailedPrecondition, format, args...)
+}
+
+// NotResumable reports a resume refused for a state only an explicit
+// operation on the actor changes: FailedPrecondition whose ErrorInfo names
+// reason in ErrorDomain and marks the refusal not resumable
+// (MetadataKeyResumable).
+func NotResumable(reason, format string, args ...any) error {
+	return &apiError{
+		code: codes.FailedPrecondition,
+		err:  fmt.Errorf(format, args...),
+		info: &errdetails.ErrorInfo{
+			Domain:   ErrorDomain,
+			Reason:   reason,
+			Metadata: map[string]string{MetadataKeyResumable: "false"},
+		},
+	}
+}
+
+// IsNotResumable reports whether err, a status received from a substrate
+// server, is a resume refusal marked not resumable (see NotResumable).
+func IsNotResumable(err error) bool {
+	st, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok && info.GetDomain() == ErrorDomain &&
+			info.GetMetadata()[MetadataKeyResumable] == "false" {
+			return true
+		}
+	}
+	return false
 }
 
 // Aborted reports a request that lost a concurrency conflict, such as a
@@ -134,7 +179,13 @@ func FromError(err error) (s *status.Status, ok bool) {
 	}
 	var apiErr *apiError
 	if errors.As(err, &apiErr) {
-		return status.New(apiErr.code, apiErr.Error()), true
+		st := status.New(apiErr.code, apiErr.Error())
+		if apiErr.info != nil {
+			if withInfo, err := st.WithDetails(apiErr.info); err == nil {
+				st = withInfo
+			}
+		}
+		return st, true
 	}
 	if s := status.FromContextError(err); s.Code() != codes.Unknown {
 		return s, true

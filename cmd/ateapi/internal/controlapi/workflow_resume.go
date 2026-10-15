@@ -232,6 +232,10 @@ func (w *ActorWorkflow) ensureVolumesCreated(ctx context.Context, actorRef resou
 	return storedActor, nil
 }
 
+// reasonActorCrashed is the ErrorInfo reason of a resume refused because the
+// actor is CRASHED.
+const reasonActorCrashed = "ACTOR_CRASHED"
+
 // ensureWorkerAssigned leaves the actor RESUMING with a validated, live,
 // owned, and eligible worker.
 //
@@ -256,6 +260,10 @@ func (w *ActorWorkflow) ensureWorkerAssigned(ctx context.Context, actorRef resou
 		markSkipped(ctx, "actor already RESUMING with a valid worker assignment")
 		return actor, worker, nil
 	case ateapipb.ActorState_ACTOR_STATE_SUSPENDED, ateapipb.ActorState_ACTOR_STATE_PAUSED:
+	case ateapipb.ActorState_ACTOR_STATE_CRASHED:
+		// Only an explicit RevertActor or DeleteActor takes the actor out of
+		// CRASHED, so no retry of the resume outlives the refusal.
+		return nil, nil, apierror.NotResumable(reasonActorCrashed, "AssignWorker prerequisite not met for Actor: %s (got: %v, want %s or %s)", actorRef, actor.GetStatus().GetState(), ateapipb.ActorState_ACTOR_STATE_SUSPENDED, ateapipb.ActorState_ACTOR_STATE_PAUSED)
 	default:
 		return nil, nil, apierror.FailedPrecondition("AssignWorker prerequisite not met for Actor: %s (got: %v, want %s or %s)", actorRef, actor.GetStatus().GetState(), ateapipb.ActorState_ACTOR_STATE_SUSPENDED, ateapipb.ActorState_ACTOR_STATE_PAUSED)
 	}
