@@ -1,7 +1,7 @@
 # `DeleteActorTemplate` deletes the template row first, under the caller's preconditions checked in …
 
 - **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/template-delete-row-first`](https://github.com/giantswarm/substrate/tree/upstream/template-delete-row-first) (`064172d0`, the patch `fcce668c` and a lint fix on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text), queued for review before it goes upstream
+- **Upstream:** to file — prepared in the fork: branch [`upstream/template-delete-row-first`](https://github.com/giantswarm/substrate/tree/upstream/template-delete-row-first) (`064172d0`, the patch `fcce668c` and a lint fix on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text)
 - **Our commit:** `giantswarm`: [#168](https://github.com/giantswarm/substrate/pull/168); `release-1.3`: [#169](https://github.com/giantswarm/substrate/pull/169) (that line has no delete preconditions)
 
 ## Change

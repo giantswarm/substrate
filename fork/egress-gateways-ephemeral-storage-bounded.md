@@ -1,7 +1,7 @@
 # The egress gateway's ephemeral storage is bounded
 
 - **Status:** carried
-- **Upstream:** to file: upstream's `atenet-egress.yaml` renders the same unbounded shape and no upstream issue covers it; queued in the upstream engagement list
+- **Upstream:** to file: upstream's `atenet-egress.yaml` renders the same unbounded shape and no upstream issue covers it
 - **Our commit:** `9246909a` ([#255](https://github.com/giantswarm/substrate/pull/255), rebase-merged 2026-10-10; first release 1.8.0-rc.4)
 
 ## Change

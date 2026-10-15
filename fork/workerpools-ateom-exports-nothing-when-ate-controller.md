@@ -1,7 +1,7 @@
 # A WorkerPool's ateom exports nothing when ate-controller has no OTLP endpoint
 
 - **Status:** carried
-- **Upstream:** [agent-substrate/substrate#2189](https://github.com/agent-substrate/substrate/pull/2189) (draft, with the row above), carried until it merges; queued for review before it goes upstream
+- **Upstream:** [agent-substrate/substrate#2189](https://github.com/agent-substrate/substrate/pull/2189) (draft, with the row above), carried until it merges
 - **Our commit:** `fb79b373` ([#108](https://github.com/giantswarm/substrate/pull/108))
 
 ## Change

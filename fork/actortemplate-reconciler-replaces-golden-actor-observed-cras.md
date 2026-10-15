@@ -1,7 +1,7 @@
 # The ActorTemplate reconciler replaces a golden actor observed `CRASHED` before its snapshot instead …
 
 - **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/golden-actor-crash-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-actor-crash-bound) (`0955e7d1` on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text; `golden_actor_crashes` is field 4 there, upstream's next free number of `GoldenSnapshotStatus`, 5 on the line behind the fork-only `workload_boot_failures`, whose bound the patch leaves out; the reconciler tests green on the mirror), queued for review before it goes upstream
+- **Upstream:** to file — prepared in the fork: branch [`upstream/golden-actor-crash-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-actor-crash-bound) (`0955e7d1` on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text; `golden_actor_crashes` is field 4 there, upstream's next free number of `GoldenSnapshotStatus`, 5 on the line behind the fork-only `workload_boot_failures`, whose bound the patch leaves out; the reconciler tests green on the mirror)
 - **Our commit:** `release-1.3` only: `9d9895e9` ([#131](https://github.com/giantswarm/substrate/pull/131), first release 1.3.1); the 1.4 line records the crash on the actor and gets its own patch, [#132](https://github.com/giantswarm/substrate/issues/132)
 
 ## Change

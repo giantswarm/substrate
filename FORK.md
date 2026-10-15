@@ -148,8 +148,7 @@ The fork commits above are the replayed SHAs.
 
 Items the platform needs from Substrate whose fix is not yet written. The text below is the upstream-facing
 proposal (upstream has issues disabled, so it becomes a kagent-dev/substrate pull request when the patch
-exists, or a kagent-dev/kagent issue); it is queued as a row on [giantswarm/giantswarm#37742](https://github.com/giantswarm/giantswarm/issues/37742)
-and a human decides whether and when it goes upstream.
+exists, or a kagent-dev/kagent issue); a human decides whether and when it goes upstream.
 
 ### Place an actor's restore only on a worker whose CPU covers the snapshot's feature set
 
@@ -241,7 +240,7 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
      would open, the candidates it would prune and, for `land`, the checks and the push it would make.
 3. In a pull request: this file (the pin), the ledger files of `fork/` (the carried patches), the pin annotation of the six push jobs in
    `.circleci/config.yml` (`index:io.giantswarm.upstream.version=<tag>` — every image carries the pin from there),
-   and the upstream review list's Substrate rows.
+   and the `Upstream` field of every ledger file the new pin changes.
 4. Move the consumers to the new dev version (see "Consumers"), prove it in agentlab, then let the meta chart's
    pin and kagent-upstream follow.
 
@@ -487,12 +486,15 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
   ([agent-substrate/substrate](https://github.com/agent-substrate/substrate); issues are disabled there) and is one
   upstream-ready commit, DCO-signed (`git commit -s`), with no fork references. The commit goes onto the fork with its
   ledger row in `fork/`, and is pushed as an `upstream/<slug>` branch on this repository, based on the mirror's `main`
-  at the pin. It is queued as a row on [giantswarm/giantswarm#37742](https://github.com/giantswarm/giantswarm/issues/37742). A human decides what goes upstream and
-  opens it; an agent never opens, comments on, reviews or closes a pull request or issue on the upstream repository.
+  at the pin. Its ledger row reads "to file — prepared in the fork: branch `upstream/<slug>`" until it is opened, and
+  links the upstream pull request from then on. A human reviews the prepared branches in batches, decides what goes
+  upstream and opens it; an agent never opens, comments on, reviews or closes a pull request or issue on the upstream repository.
   The line carries the same change as a `git cherry-pick -x` of the upstream-ready commit until an upstream release
   contains it, with its ledger row.
 - **Public only.** This repository is public: a ledger row, a commit message and this file cite public issues and pull
-  requests only, and where the reasoning lives in a private tracker it is written out in a sentence here instead.
+  requests only, and where the reasoning lives in a private tracker it is written out in a sentence here instead. The
+  `fork-ledger` check fails a pull request whose added ledger lines cite a giantswarm repository that is not public
+  (`.github/scripts/fork-public-links.sh`).
 - **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
   A cherry-pick of an upstream commit is rebase-merged (see "Branches").
 - **The ledger**: a pull request against a line that changes more than this file names its own number as `#n` in a
