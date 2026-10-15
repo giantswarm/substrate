@@ -386,29 +386,26 @@ func (s *Server) serveH2Connect(w http.ResponseWriter, r *http.Request, upstream
 	relayIngressWithHalfClose(ctx, upstream, r.Body, flushingWriter{ResponseWriter: w}, r.Body)
 }
 
-// relayIngressWithHalfClose copies a CONNECT stream. When the client request
-// stream ends, it half-closes the actor connection and continues forwarding
-// actor output until that stream ends too.
-func relayIngressWithHalfClose(ctx context.Context, upstream net.Conn, clientReader io.Reader, clientWriter io.Writer, clientCloser io.Closer) {
-	done := make(chan struct{}, 2)
+// relayIngressWithHalfClose copies a CONNECT stream between the router
+// (downstream) and the actor (upstream). It half-closes the actor connection
+// when the router stops sending, and closes the downstream when the actor
+// does, so the router never waits on a tunnel whose actor side is gone.
+func relayIngressWithHalfClose(ctx context.Context, upstream net.Conn, downstreamReader io.Reader, downstreamWriter io.Writer, downstreamCloser io.Closer) {
 	go func() {
-		_, _ = io.Copy(upstream, clientReader)
+		_, _ = io.Copy(upstream, downstreamReader)
 		closeWrite(upstream)
-		done <- struct{}{}
 	}()
+	actorDone := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(clientWriter, upstream)
-		done <- struct{}{}
+		_, _ = io.Copy(downstreamWriter, upstream)
+		close(actorDone)
 	}()
-	for range 2 {
-		select {
-		case <-ctx.Done():
-			_ = upstream.Close()
-			_ = clientCloser.Close()
-			return
-		case <-done:
-		}
+	select {
+	case <-ctx.Done():
+		_ = upstream.Close()
+	case <-actorDone:
 	}
+	_ = downstreamCloser.Close()
 }
 
 type flushingWriter struct {
