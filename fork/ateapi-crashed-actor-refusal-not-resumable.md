@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/ateapi-crashed-actor-not-resumable` (`4f3cb20d1`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
-- **Our commit:** the PR adding this file: a `git cherry-pick -x` of the upstream-ready commit
+- **Our commit:** [#444](https://github.com/giantswarm/substrate/pull/444): a `git cherry-pick -x` of the upstream-ready commit
 
 ## Change
 
