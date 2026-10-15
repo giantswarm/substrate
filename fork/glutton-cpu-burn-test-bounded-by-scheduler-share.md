@@ -1,7 +1,7 @@
 # The glutton CPU burn test is bounded by the scheduler's share
 
 - **Status:** carried
-- **Upstream:** not opened yet, row 195 of the upstream queue ([giantswarm/giantswarm#38476](https://github.com/giantswarm/giantswarm/issues/38476)): the upstream-ready commit is on the branch `upstream/glutton-cpu-time-scheduler-share` (`7c724a01`, mirror `main` @ `5cf1c245` + the change, DCO-signed)
+- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/glutton-cpu-time-scheduler-share` (`7c724a01`, mirror `main` @ `5cf1c245` + the change, DCO-signed)
 - **Our commit:** [#449](https://github.com/giantswarm/substrate/pull/449): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form
 
 ## Change

@@ -1013,6 +1013,23 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.11.3 to 1.11.4
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs between the two
+  tags.
+- **Chart:** unchanged.
+- **A CONNECT tunnel to an actor:** atunnel ends the tunnel as soon as the
+  actor closes its connection, instead of once the router also stops
+  sending. A call the actor answers and closes, such as a gRPC call to an
+  HTTP/1.1-only actor, now fails at once instead of waiting for its
+  client's timeout.
+- **During the roll:** the relay runs in the worker's ateom, so an actor
+  on a worker still on 1.11.3 keeps the old relay until its pool rolls.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
