@@ -245,7 +245,7 @@ merged falls away by itself (`git rebase` drops already-applied patches). It is 
    pin and kagent-upstream follow.
 
 The 2026-09-22 re-pin (v0.0.29 → v0.2.0-beta4) by hand, in a scratch clone: `git rebase --onto v0.2.0-beta4 v0.0.29`
-replayed 63 of the 64 carried commits (the runsc-terminate patch dropped, above), with hand resolutions in the egress
+replayed the carried patches (the runsc-terminate patch dropped, above), with hand resolutions in the egress
 gateway, the worker syncer, ateapi's `main.go` and functional tests, `workflow_suspend.go` and the template reconciler
 (upstream's constructor, listers, URI model and golden tags moved under the patches), and a regeneration of the generated
 code; the chart image patches conflicted only on the `images.agentgateway` line, resolved to the patch's own value each
@@ -255,7 +255,7 @@ from `0.0.0` again until the next release tag (the line's stable tags point at t
 no longer reaches), so a consumer pins the full dev version.
 
 The 2026-09-24 re-pin (v0.2.0-beta4 → v0.2.0-beta5) by hand, in a scratch worktree: `git rebase --onto v0.2.0-beta5
-v0.2.0-beta4` replayed all 84 carried commits (nothing dropped, above), with hand resolutions in the chart README rows,
+v0.2.0-beta4` replayed every carried patch (nothing dropped, above), with hand resolutions in the chart README rows,
 the functional tests' placement and fake atelet, the generated protobuf code and the kubectl-ate admin file upstream
 consolidated. `go build ./... && go vet ./... && go test ./cmd/... ./internal/...`, `helm unittest charts/substrate` and
 `hack/verify-all.sh` locally (`internal/childreap`'s p90 timing test failed once under a loaded workstation and passed
@@ -266,10 +266,10 @@ The dev builds start from `0.0.0` again, so the consumers pin the full dev versi
 
 The 2026-10-05 re-pin (v0.2.0-beta5 → v0.3.0-alpha3) by hand, in a scratch worktree, from the 2026-09-29 probe candidate
 (`sync/20260929-v0.3.0-alpha1`, the carried stack already replayed onto v0.3.0-alpha1): `git rebase --onto v0.3.0-alpha3 v0.3.0-alpha1`
-of its 103 commits, then the 34 commits `giantswarm` gained since 2026-09-29 cherry-picked in order; the hand resolutions and the one
-drop are listed under "Carried patches". The 54 `docs(fork)` ledger commits of the beta5 line (every FORK.md edit since the bootstrap,
-23 of them release-table rows) are folded into this ledger commit: the replayed stack is 83 commits, 60 code patches and 23 of the
-fork's own CI, publish and alignment changes. The pin annotation moved to v0.3.0-alpha3 (`0cfdba6c`) and the data plane to the agentgateway
+of its commits, then the commits `giantswarm` gained since 2026-09-29 cherry-picked in order; the hand resolutions and the one
+drop are listed under "Carried patches". The `docs(fork)` ledger commits of the beta5 line (every FORK.md edit since the bootstrap, the release-table rows
+among them) are folded into this ledger commit: the replayed stack is the code patches and the fork's own CI, publish and
+alignment changes. The pin annotation moved to v0.3.0-alpha3 (`0cfdba6c`) and the data plane to the agentgateway
 line's 2.3.0 (`a07cc154`) in the same branch, as the chart's egress config and the `ateom-for-actor` identity of alpha3 require. `go build ./... &&
 go vet ./... && go test ./cmd/... ./internal/...`, `helm unittest` on both charts and `hack/verify-all.sh` locally (`hack/verify/metrics.sh`
 needs `--security-opt label=disable` on an SELinux-enforcing workstation, `DOCKER=` a wrapper); the suites in CI on the
@@ -281,7 +281,7 @@ would have no stable release. The force-push by a repository admin with the `dev
 to `always` and restored to `pull_request` right after.
 
 The 2026-10-08 re-pin (v0.3.0-alpha3 → v0.4.0-alpha1) by hand, in a scratch worktree: `git rebase --onto v0.4.0-alpha1 v0.3.0-alpha3`
-of the 130 commits of `giantswarm` at `47c6868e`. One applied upstream on its own (`git cherry`); three are dropped because upstream carries
+of the commits of `giantswarm` at `47c6868e`. One applied upstream on its own (`git cherry`); these are dropped because upstream carries
 them: the `OTEL_METRICS_EXPORTER=none` patch (#82, agent-substrate/substrate#1878 `1e991977`), the redaction of the PostgreSQL connection
 string at startup (agent-substrate/substrate#1833 `38b9522f`), and the `GOLDEN_SNAPSHOT_UNAVAILABLE` refusal (#80), whose only site, the
 `onResume.fromData` golden resolution, upstream removed (agent-substrate/substrate#2105); the agentgateway and kagent readers of its
@@ -300,12 +300,15 @@ requires of a policy. `go build ./... && go vet ./... && go test ./...`, `helm u
 pin annotation moves to v0.4.0-alpha1 in `.circleci/config.yml`, the egress-policy contract to `v0.4.0-alpha1` (`CredentialHeader.actor_jwt`). The data plane stays on the agentgateway line's 2.3.0: v0.4.0-alpha1 needs only agentgateway#3689, which 2.3.0 already carries.
 
 The 2026-10-12 re-pin (v0.4.0-alpha1 → v0.5.0-alpha2) by hand, in a scratch worktree: `git rebase --onto v0.5.0-alpha2 v0.4.0-alpha1`
-of the 234 commits of `giantswarm` at `fe803596`, the 71 ledger-only commits dropped and folded into this ledger commit; the drops and
+of the commits of `giantswarm` at `fe803596`, the ledger-only commits dropped and folded into this ledger commit; the drops and
 hand resolutions are listed under "Carried patches". The chart is rebuilt by a three-way merge of the line's chart with upstream's
 v0.4.0-alpha1 → v0.5.0-alpha2 chart change, every PostgreSQL and certificate-controller conflict to the line's side (see its ledger file).
 `go build ./... && go vet ./... && go test ./...` and `helm unittest charts/substrate` (100/100) locally; the suites in CI on the
 `sync/20261012-v0.5.0-alpha2` push. The pin annotation moves to v0.5.0-alpha2 in `.circleci/config.yml`; the egress-policy contract stays `v0.4.0-alpha1`
 (`EgressPolicy` and `EgressRule` are unchanged); the data plane stays on the agentgateway line's 2.3.0.
+
+These entries carry no commit counts: the rebase rewrites the history they would count, and the ledger rows of `fork/` and
+"Carried patches" at the commit the entry names are the record of what was carried and dropped.
 
 The weekly run (Mondays 05:23 UTC) does not re-pin: it mirrors `main` and **probes** whether the carried patches
 still rebase onto upstream `main`, naming the first patch that would conflict in the run summary, so the next
