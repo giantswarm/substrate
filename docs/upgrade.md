@@ -1056,6 +1056,36 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.12 to 1.13 step
+
+1.13.0 stays on upstream v0.5.0-alpha2 and serves `k8s.io` alone from the
+bundled Kubernetes credential provider. Step to it from the latest 1.12
+patch with the numbered steps above; the step needs no migration, no
+snapshot reset and no manual step, and conversations and durable volumes
+survive it. One thing has to be in place before the roll.
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs from 1.12.
+- **Egress contract:** unchanged, `v0.4.0-alpha1+path-prefix`.
+- **Google access tokens:** the bundled provider no longer serves
+  `google-access-token.k8s.io` (the minting carried since 1.8.0). The
+  class is a credential provider plugin of its own,
+  giantswarm/substrate-credential-providers (`google-access-token`),
+  deployed beside Substrate and named in
+  `credentialProvider.additionalProviders`
+  (`uriAuthority: google-access-token.k8s.io`, `host:
+  google-access-token-credential-provider.ate-system.svc:50051`), an
+  entry 1.12 and before refuse while the name is bundled. **Before the roll:** the
+  plugin is deployed and Ready; the `additionalProviders` entry goes into
+  the same chart upgrade as the version step. A Vertex AI actor whose
+  fetch lands between the egress ConfigMap reload and the plugin's first
+  answer is denied with `403` once and retries.
+- **Chart:** `substrate.egressCredentialProviders` bundles one name;
+  `images.agentgateway` unchanged.
+- **ate-setup:** renders one provider name in the egress policies.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
