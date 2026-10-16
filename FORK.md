@@ -395,6 +395,10 @@ version is built from is documented here ("Pin") and carried by every image as t
   re-pin restarts at) and `semverFilter: "^.*-r588f3d76t[0-9]{14}h[0-9a-f]{7}$"`, which no superseded build matches; exact
   pins name the full string.
 - Image tags carry no `v`, as every Giant Swarm image tag does.
+- One commit releases one version: a candidate and its stable share a commit, two versions never do. A release tag
+  whose commit already carries the release tag of another version publishes nothing: the pipeline's first job,
+  `release-tag` (`.github/scripts/release-tag.sh`), fails naming both tags before any push, and its fixture runs
+  (`release-tag-test.sh`) run on every pull request branch. Such a change is released from a commit of its own.
 
 **Signatures.** Every index and chart is signed keyless with cosign under the pipeline's CircleCI OIDC identity
 (issuer `https://oidc.circleci.com`, subject `https://circleci.com/api/v2/projects/<project>/pipeline-definitions/<definition>`)

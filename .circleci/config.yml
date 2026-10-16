@@ -26,9 +26,11 @@
 # and substrate with their image defaults stamped to this registry, including
 # the agentgateway image atenet-router and atenet-egress run, which comes from
 # the Giant Swarm line of agentgateway (pinned below) instead of upstream's
-# build. Every pull request branch builds the six images without pushing,
-# so a Dockerfile regression surfaces on the pull request; a maintenance
-# branch (release-X.Y) is built by its tag pipeline alone. Hand-written: the
+# build. A release tag on a commit that already carries another version's
+# release tag publishes nothing (release-tag). Every pull request branch
+# builds the six images without pushing, so a Dockerfile regression surfaces
+# on the pull request; a maintenance branch (release-X.Y) is built by its tag
+# pipeline alone. Hand-written: the
 # repository carries upstream's workflows and its own, nothing
 # devctl-generated.
 version: 2.1
@@ -48,6 +50,29 @@ parameters:
     default: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.4.0
 
 jobs:
+  release-tag:
+    executor: architect/architect
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Fixture runs of the check
+          command: .github/scripts/release-tag-test.sh
+      - run:
+          name: One version per commit
+          # A release tag's pipeline publishes nothing when its commit already
+          # carries the release tag of another version: two tags on one commit
+          # give two answers to "which version is this" (FORK.md, "Versions").
+          # A candidate and its stable share the commit by design. A branch
+          # build has no tag to check.
+          command: |
+            if [ -z "${CIRCLE_TAG:-}" ]; then
+              echo "release-tag: a branch build, no release tag to check"
+              exit 0
+            fi
+            git fetch --quiet --force --tags origin
+            .github/scripts/release-tag.sh "${CIRCLE_TAG}"
+
   scan:
     executor: architect/architect
     resource_class: small
@@ -189,14 +214,22 @@ jobs:
           path: chart-refs.txt
 
 workflows:
-  # The line's branch and its release tags: build, push, scan, then the charts.
-  # Exactly one push job persists the version to the workspace (CircleCI refuses
-  # to attach a path two concurrent jobs persisted); the other five run with
-  # persist-build-version false.
+  # The line's branch and its release tags: the release-tag check, then build,
+  # push, scan and the charts. Exactly one push job persists the version to the
+  # workspace (CircleCI refuses to attach a path two concurrent jobs
+  # persisted); the other five run with persist-build-version false.
   publish:
     jobs:
+      - release-tag:
+          filters: &publish-filters
+            branches:
+              only: giantswarm
+            tags:
+              only: /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
       - architect/push-to-registries: &publish-push
           name: push-ateapi
+          requires:
+            - release-tag
           context: architect
           image: giantswarm/substrate/ateapi
           build-args: COMPONENT=ateapi
@@ -207,11 +240,7 @@ workflows:
           registries-data: public gsoci.azurecr.io ACR_GSOCI_USERNAME ACR_GSOCI_PASSWORD true
           # The upstream release this line is built from (FORK.md, "Pin"); moved with the pin.
           annotations: index:io.giantswarm.upstream.version=v0.5.0-alpha2
-          filters: &publish-filters
-            branches:
-              only: giantswarm
-            tags:
-              only: /^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+          filters: *publish-filters
       - architect/push-to-registries:
           <<: *publish-push
           name: push-atecontroller
@@ -270,11 +299,12 @@ workflows:
           filters: *publish-filters
 
   # Every pull request branch: the same six builds for both platforms, nothing
-  # pushed. The line's branch and its maintenance branches (release-X.Y) are
-  # left out: the auto-release workflow tags their pushed head at once and the
-  # tag's own pipeline builds it, while a branch build of a tagged head stops
-  # on architect's release-version guard, whose failure would stand on the
-  # candidate's commit and refuse its promotion.
+  # pushed, and the release-tag check's fixture runs. The line's branch and its
+  # maintenance branches (release-X.Y) are left out: the auto-release workflow
+  # tags their pushed head at once and the tag's own pipeline builds it, while
+  # a branch build of a tagged head stops on architect's release-version guard,
+  # whose failure would stand on the candidate's commit and refuse its
+  # promotion.
   validate:
     jobs:
       - architect/push-to-registries: &validate-push
@@ -328,3 +358,5 @@ workflows:
             COMPONENT=kubernetes-secrets
             COMPONENT_PATH=credential-provider/kubernetes-secrets
           persist-build-version: false
+      - release-tag:
+          filters: *validate-filters
