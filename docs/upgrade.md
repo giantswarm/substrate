@@ -1056,6 +1056,36 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.12
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.11 straight to a 1.12 patch is the 1.11 to 1.12 step and the patch
+entries in one roll.
+
+#### 1.12.0 to 1.12.1
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs between the two
+  tags.
+- **Chart:** unchanged.
+- **Application container exit of a running actor:** ateom waits on every
+  application container of an actor it hosts and reports one that exits
+  while its sandbox keeps running, as it reports a sandbox exit;
+  ate-api-server crashes the actor with `sandbox exited while the actor
+  was running: container "<name>" exited with status <n> while the
+  sandbox kept running` (or `was killed by signal <n> (<SIG>)`), and its
+  client's revert and resume take it from there. Before, the pause
+  container kept such a sandbox running, the actor stayed `RUNNING` with
+  no process left to answer, and every turn sent to it waited out the
+  client's deadline. Each hosted application container holds one idle
+  `runsc wait` process in the worker while it runs.
+- **During the roll:** the watch runs in the worker's ateom, so an actor
+  on a worker still on 1.12.0 is not watched until its pool rolls.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
