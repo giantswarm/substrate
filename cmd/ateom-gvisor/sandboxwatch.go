@@ -109,16 +109,18 @@ type sandboxExitReporter interface {
 	ReportExit(ctx context.Context, actor ateomexit.Actor, reason string) error
 }
 
-// sandboxExit is a hosted sandbox found exited. pid is read under actorsMu
-// with it: the session's watch is closed when the actor is unhosted.
+// sandboxExit is a hosted workload found exited: its sandbox, or an
+// application container while the sandbox kept running. reason is read under
+// actorsMu with it: the session's watch is closed when the actor is unhosted.
 type sandboxExit struct {
 	attribution resources.ActorAttribution
 	session     *workloadSession
-	pid         int
+	reason      string
 }
 
 // watchSandboxes reports every hosted sandbox that exits while no lifecycle
-// RPC stops it, until ctx ends. Without it, an actor whose sandbox died stays
+// RPC stops it, and every application container watchContainers found exited,
+// until ctx ends. Without it, an actor whose sandbox died stays
 // RUNNING in the control plane, and every request routed to it waits out its
 // caller's deadline.
 func (s *AteomService) watchSandboxes(ctx context.Context, reporter sandboxExitReporter) {
@@ -136,7 +138,7 @@ func (s *AteomService) watchSandboxes(ctx context.Context, reporter sandboxExitR
 	}
 }
 
-// exitedSandboxes returns the hosted sandboxes found exited, each once. None
+// exitedSandboxes returns the hosted workloads found exited, each once. None
 // during shutdown, which stops them itself.
 func (s *AteomService) exitedSandboxes(ctx context.Context) []sandboxExit {
 	if s.shuttingDown.Load() {
@@ -147,17 +149,23 @@ func (s *AteomService) exitedSandboxes(ctx context.Context) []sandboxExit {
 	var out []sandboxExit
 	for _, hosted := range s.actors {
 		session := hosted.session
-		if session == nil || session.sandbox == nil || session.exitSeen {
+		if session == nil || session.exitSeen {
 			continue
 		}
-		exited, err := session.sandbox.exited()
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to check the sandbox for an exit", slog.String("actorUID", hosted.attribution.UID), slog.Any("err", err))
-			continue
+		reason := session.containerExit
+		if reason == "" && session.sandbox != nil {
+			exited, err := session.sandbox.exited()
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to check the sandbox for an exit", slog.String("actorUID", hosted.attribution.UID), slog.Any("err", err))
+				continue
+			}
+			if exited {
+				reason = fmt.Sprintf("sandbox process %d exited", session.sandbox.pid)
+			}
 		}
-		if exited {
+		if reason != "" {
 			session.exitSeen = true
-			out = append(out, sandboxExit{attribution: hosted.attribution, session: session, pid: session.sandbox.pid})
+			out = append(out, sandboxExit{attribution: hosted.attribution, session: session, reason: reason})
 		}
 	}
 	return out
@@ -186,8 +194,8 @@ func (s *AteomService) handleSandboxExit(ctx context.Context, exit sandboxExit, 
 		return
 	}
 
-	reason := fmt.Sprintf("sandbox process %d exited", exit.pid)
-	slog.ErrorContext(ctx, "Actor's sandbox exited while it was running; reporting it",
+	reason := exit.reason
+	slog.ErrorContext(ctx, "Actor's workload exited while it was running; reporting it",
 		slog.String("actor", exit.attribution.Ref.String()), slog.String("actorUID", uid), slog.String("reason", reason))
 	if s.actorLogger != nil {
 		s.actorLogger.EmitLifecycleLog(ctx, "Actor sandbox exited", exit.attribution)
