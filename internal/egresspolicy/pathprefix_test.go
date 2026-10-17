@@ -103,3 +103,50 @@ func TestReplaceHeadersFor(t *testing.T) {
 		t.Errorf("ReplaceHeadersFor(nil) = %v, want none", got)
 	}
 }
+
+// The request path is compared as written, so every form an origin could
+// resolve outside a prefix it starts with matches no prefix: dot segments,
+// percent-encoded dots, slashes and backslashes in either case, empty
+// segments, path parameters and backslashes. Such a request gets the
+// host-wide entry, none without one.
+func TestReplaceHeadersForEscapes(t *testing.T) {
+	codex := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Bearer ", CredentialUri: "ate-secret://p/codex", PathPrefix: "/backend-api/codex/"}
+	host := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Basic ", CredentialUri: "ate-secret://p/host"}
+	scoped := &ateapipb.HttpRuleEffects{ReplaceHeaders: []*ateapipb.CredentialHeader{codex}}
+	withHost := &ateapipb.HttpRuleEffects{ReplaceHeaders: []*ateapipb.CredentialHeader{codex, host}}
+
+	// The prefix itself still applies under it.
+	if got := ReplaceHeadersFor(withHost, "/backend-api/codex/responses?stream=1"); len(got) != 1 || got[0] != codex {
+		t.Fatalf("ReplaceHeadersFor under the prefix = %v, want the scoped entry", got)
+	}
+
+	for _, target := range []string{
+		"/backend-api/codex/../../other",
+		"/backend-api/codex/..",
+		"/backend-api/codex/./../other",
+		"/backend-api/codex/%2e%2e/%2e%2e/other",
+		"/backend-api/codex/%2E%2E/%2E%2E/other",
+		"/backend-api/codex/%2e%2E/other",
+		"/backend-api/codex/.%2e/other",
+		"/backend-api/codex/%2e./other",
+		"/backend-api/codex/..%2fother",
+		"/backend-api/codex/..%2Fother",
+		"/backend-api/codex/%2fother",
+		"/backend-api/codex%2f..%2f..%2fother",
+		"/backend-api/codex//../../other",
+		"/backend-api/codex//other",
+		"/backend-api/codex/..;/..;/other",
+		"/backend-api/codex/..;x=1/other",
+		`/backend-api/codex/..\..\other`,
+		"/backend-api/codex/..%5c..%5cother",
+		"/backend-api/codex/..%5C..%5Cother",
+		"/backend-api/codex/../../other?q=/backend-api/codex/",
+	} {
+		if got := ReplaceHeadersFor(scoped, target); len(got) != 0 {
+			t.Errorf("ReplaceHeadersFor(scoped, %q) = %v, want none", target, got)
+		}
+		if got := ReplaceHeadersFor(withHost, target); len(got) != 1 || got[0] != host {
+			t.Errorf("ReplaceHeadersFor(withHost, %q) = %v, want the host-wide entry", target, got)
+		}
+	}
+}

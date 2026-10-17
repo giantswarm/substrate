@@ -275,6 +275,76 @@ func TestInjectionSkippedOutsidePathPrefixes(t *testing.T) {
 	}
 }
 
+// A request path that starts with a credential's prefix but that an origin
+// could resolve outside it never receives the scoped credential: with a
+// host-wide entry the request gets that one, without one it is forwarded
+// unchanged, and the scoped credential is never fetched.
+func TestInjectionScopedCredentialDoesNotEscapeItsPrefix(t *testing.T) {
+	const (
+		hostURI  = "ate-secret://k8s/default/host-wide"
+		codexURI = "ate-secret://k8s/default/codex"
+	)
+	codex := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Bearer ", CredentialUri: codexURI, PathPrefix: "/backend-api/codex/"}
+	host := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Basic ", CredentialUri: hostURI}
+	for _, path := range []string{
+		"/backend-api/codex/../../other",
+		"/backend-api/codex/./../other",
+		"/backend-api/codex/%2e%2e/%2e%2e/other",
+		"/backend-api/codex/%2E%2E/%2E%2E/other",
+		"/backend-api/codex/.%2e/other",
+		"/backend-api/codex/..%2fother",
+		"/backend-api/codex/..%2Fother",
+		"/backend-api/codex/%2fother",
+		"/backend-api/codex//../../other",
+		"/backend-api/codex/..;/..;/other",
+		`/backend-api/codex/..\..\other`,
+		"/backend-api/codex/..%5c..%5cother",
+	} {
+		for _, tc := range []struct {
+			name    string
+			entries []*ateapipb.CredentialHeader
+			want    string
+		}{
+			{name: "host-wide", entries: []*ateapipb.CredentialHeader{host, codex}, want: "Basic " + hostURI},
+			{name: "scoped-only", entries: []*ateapipb.CredentialHeader{codex}},
+		} {
+			t.Run(tc.name+path, func(t *testing.T) {
+				policy := &ateapipb.EgressPolicy{Rules: []*ateapipb.EgressRule{{Https: &ateapipb.HTTPSRule{
+					Hostnames: []string{"api.example.com"},
+					Effects:   &ateapipb.HttpRuleEffects{ReplaceHeaders: tc.entries},
+				}}}}
+				provider := &recordingProvider{}
+				h := injectionHandlerFor(policy, provider, injectionProviderName)
+				md := withAuthorization(innerMetadata(extproc.EgressTLSMITMFilterChainName, "GET", "api.example.com", nil))
+				md.Path = path
+
+				res, err := h.HandleRequestHeaders(context.Background(), md)
+				if err != nil {
+					t.Fatalf("HandleRequestHeaders: %v", err)
+				}
+				for _, uri := range provider.uris {
+					if uri == codexURI {
+						t.Errorf("fetched the scoped credential %s", codexURI)
+					}
+				}
+				setHeaders := res.Response.GetResponse().GetHeaderMutation().GetSetHeaders()
+				if tc.want == "" {
+					if len(setHeaders) != 0 {
+						t.Errorf("got header mutations %v, want none", setHeaders)
+					}
+					return
+				}
+				if len(setHeaders) != 1 {
+					t.Fatalf("got %d header mutations, want 1", len(setHeaders))
+				}
+				if got := string(setHeaders[0].GetHeader().GetRawValue()); got != tc.want {
+					t.Errorf("authorization = %q, want %q", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
 // A failure to produce the promised credential denies the
 // request rather than forwarding it without the credential.
 func TestInjectionDenials(t *testing.T) {
