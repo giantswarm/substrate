@@ -309,14 +309,30 @@ type workloadSession struct {
 	// Both are guarded by AteomService.actorsMu.
 	sandbox  *sandboxProcess
 	exitSeen bool
+	// containerExit is the exit of an application container watchContainers
+	// found while the sandbox kept running; empty while none exited.
+	// stopContainerWatch ends those waits, and closed records that the
+	// session's watch is released. All three are guarded by
+	// AteomService.actorsMu.
+	containerExit      string
+	stopContainerWatch context.CancelFunc
+	closed             bool
 }
 
-// closeSandbox releases the session's watch on its sandbox. Safe on a nil
-// session; callers hold AteomService.actorsMu.
+// closeSandbox releases the session's watch on its sandbox and its
+// containers. Safe on a nil session; callers hold AteomService.actorsMu.
 func (w *workloadSession) closeSandbox() {
-	if w != nil && w.sandbox != nil {
+	if w == nil {
+		return
+	}
+	w.closed = true
+	if w.sandbox != nil {
 		w.sandbox.close()
 		w.sandbox = nil
+	}
+	if w.stopContainerWatch != nil {
+		w.stopContainerWatch()
+		w.stopContainerWatch = nil
 	}
 }
 
@@ -712,7 +728,9 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 		return nil, err
 	}
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor started", attribution)
-	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox})
+	session := &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox}
+	s.setSession(req.GetActorUid(), session)
+	s.watchContainers(session, rcmd)
 	s.recordInitial(ctx, hosted)
 
 	return &ateompb.RunWorkloadResponse{}, nil
@@ -1069,7 +1087,9 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		return nil, err
 	}
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor restored", attribution)
-	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox})
+	session := &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers()), sandbox: sandbox}
+	s.setSession(req.GetActorUid(), session)
+	s.watchContainers(session, rcmd)
 	s.recordInitial(ctx, hosted)
 
 	return &ateompb.RestoreWorkloadResponse{}, nil
