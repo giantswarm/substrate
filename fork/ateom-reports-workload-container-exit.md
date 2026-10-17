@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file — prepared in the fork: branch `upstream/container-exit-report`, on top of `upstream/sandbox-exit-report`, which it extends
-- **Our commit:** the commit on `giantswarm` of the pull request that adds this file
+- **Our commit:** [#463](https://github.com/giantswarm/substrate/pull/463)
 
 ## Change
 
