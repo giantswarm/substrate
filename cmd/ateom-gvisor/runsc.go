@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -442,4 +443,32 @@ func (r *runsc) cmdWait(ctx context.Context, containerName string) error {
 		return fmt.Errorf("while running `runsc wait`: %w", err)
 	}
 	return nil
+}
+
+// cmdWaitExit blocks until the given container's process exits and returns
+// the exit status `runsc wait` prints. Outside the reaper for the reason
+// cmdWait is; a run the reaper collected first still printed its result.
+func (r *runsc) cmdWaitExit(ctx context.Context, containerName string) (int, error) {
+	cmd := exec.CommandContext(ctx, r.path, r.waitArgs(containerName)...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil && !errors.Is(err, syscall.ECHILD) {
+		return 0, fmt.Errorf("while running `runsc wait`: %w", err)
+	}
+	return parseWaitResult(out.Bytes())
+}
+
+// parseWaitResult reads the exit status from `runsc wait`'s JSON result.
+func parseWaitResult(out []byte) (int, error) {
+	var result struct {
+		ExitStatus *int `json:"exitStatus"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, fmt.Errorf("while parsing the `runsc wait` result %q: %w", out, err)
+	}
+	if result.ExitStatus == nil {
+		return 0, fmt.Errorf("the `runsc wait` result %q has no exit status", out)
+	}
+	return *result.ExitStatus, nil
 }
