@@ -1,7 +1,7 @@
 # ateom reports an application container that exits under a running sandbox
 
 - **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch `upstream/container-exit-report`, on top of `upstream/sandbox-exit-report`, which it extends
+- **Upstream:** to file — prepared in the fork: branch `upstream/container-exit`, on top of `upstream/sandbox-exit-report`, which it extends
 - **Our commit:** [#464](https://github.com/giantswarm/substrate/pull/464)
 
 ## Change
