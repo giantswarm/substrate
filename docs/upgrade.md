@@ -1146,6 +1146,25 @@ survive it. One thing has to be in place before the roll.
   `images.agentgateway` unchanged.
 - **ate-setup:** renders one provider name in the egress policies.
 
+### The 1.14 to 1.15 step
+
+1.15.0 stays on upstream v0.5.0-alpha2 and counts each actor's DNS
+queries. Step to it from the latest 1.14 patch with the numbered steps
+above; the step needs no migration, no snapshot reset and no manual
+step, and conversations and durable volumes survive it.
+
+- **Persisted format:** unchanged. `WorkloadStatsSample` gains
+  `dns_queries` (field 14) on the stats RPC between atelet and the
+  worker, which nothing stores; no CRD, no Postgres schema and no
+  snapshot layout differs from 1.14.
+- **New metric:** atelet exports `ate_actor_stats_dns_queries_total`
+  per template and worker pool; the per-actor usage record carries
+  `dns_queries`.
+- **During the roll:** a 1.14 worker reports no count, so its actors add
+  nothing to the counter until their pool has rolled.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
