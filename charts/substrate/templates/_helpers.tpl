@@ -328,3 +328,12 @@ takes, keys sorted so the render is stable.
 {{- end -}}
 {{- join "," $pairs -}}
 {{- end -}}
+
+{{/*
+The actor-JWT issuer: ate-api-server places it in every actor JWT and
+ate-idp-server serves its discovery document. The default is the in-cluster
+URL of the chart's idp Service, whose name the servicedns certificate carries.
+*/}}
+{{- define "substrate.actorJWTIssuer" -}}
+{{- .Values.ateApi.actorJWTIssuer | default (printf "https://%s.%s.svc" (include "substrate.fullname" (list "idp" .)) .Release.Namespace) -}}
+{{- end -}}

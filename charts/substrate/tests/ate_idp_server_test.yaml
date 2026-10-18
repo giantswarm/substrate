@@ -1,0 +1,149 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: ate-idp-server serves the actor-JWT issuer
+templates:
+- ate-idp-server.yaml
+- ate-api-server.yaml
+release:
+  name: substrate
+  namespace: ate-system
+tests:
+- it: names the Service idp, the host of the default issuer
+  template: ate-idp-server.yaml
+  documentSelector:
+    path: kind
+    value: Service
+  asserts:
+  - equal:
+      path: metadata.name
+      value: idp
+  - equal:
+      path: metadata.namespace
+      value: ate-system
+  - equal:
+      path: spec.ports[0].port
+      value: 443
+  - equal:
+      path: spec.ports[0].targetPort
+      value: https
+  - equal:
+      path: spec.selector.app
+      value: ate-idp-server
+
+- it: serves the issuer ate-api-server signs with by default
+  template: ate-idp-server.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --issuer=https://idp.ate-system.svc
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem
+
+- it: passes the same default issuer to ate-api-server
+  template: ate-api-server.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --actor-jwt-issuer=https://idp.ate-system.svc
+
+- it: gives both servers a configured issuer
+  set:
+    ateApi:
+      actorJWTIssuer: https://idp.example.com
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --issuer=https://idp.example.com
+    template: ate-idp-server.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --actor-jwt-issuer=https://idp.example.com
+    template: ate-api-server.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+
+- it: prefixes the Service and the issuer with another release name
+  release:
+    name: other
+  template: ate-idp-server.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].args
+      content: --issuer=https://other-idp.ate-system.svc
+
+- it: mounts the key pool without subPath, so a rotation reaches the key set
+  template: ate-idp-server.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[0].volumeMounts
+      content:
+        name: actor-id-jwt-pool
+        mountPath: /run/actor-id-jwt-pool
+        readOnly: true
+  - equal:
+      path: spec.template.spec.volumes[1].projected.sources[0].secret.name
+      value: actor-id-jwt-pool
+  - equal:
+      path: spec.template.spec.volumes[0].projected.sources[0].podCertificate.signerName
+      value: servicedns.podcert.ate.dev/identity
+
+- it: runs restricted
+  template: ate-idp-server.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.securityContext.runAsNonRoot
+      value: true
+  - equal:
+      path: spec.template.spec.securityContext.seccompProfile.type
+      value: RuntimeDefault
+  - equal:
+      path: spec.template.spec.containers[0].securityContext
+      value:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+
+- it: renders nothing when disabled
+  template: ate-idp-server.yaml
+  set:
+    idpServer:
+      enabled: false
+  asserts:
+  - hasDocuments:
+      count: 0
