@@ -2,7 +2,7 @@
 
 - **Status:** carried
 - **Upstream:** to file — prepared in the fork: branch `upstream/actor-dns-query-counter`
-- **Our commit:** the commit of this file's pull request, `feat(ateom,atelet): count each sandbox's DNS queries`
+- **Our commit:** [#475](https://github.com/giantswarm/substrate/pull/475): the upstream-ready commit, rebase-merged
 
 ## Change
 
