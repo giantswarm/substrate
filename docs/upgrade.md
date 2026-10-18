@@ -1138,9 +1138,10 @@ survive it. One thing has to be in place before the roll.
   google-access-token-credential-provider.ate-system.svc:50051`), an
   entry 1.13 and before refuse while the name is bundled. **Before the roll:** the
   plugin is deployed and Ready; the `additionalProviders` entry goes into
-  the same chart upgrade as the version step. A Vertex AI actor whose
-  fetch lands between the egress ConfigMap reload and the plugin's first
-  answer is denied with `403` once and retries.
+  the same chart upgrade as the version step. While the roll is under
+  way, a Google access-token fetch the egress gateway still sends to the
+  bundled provider is refused: the gateway routes the class to the plugin
+  only once it has loaded the new configuration.
 - **Chart:** `substrate.egressCredentialProviders` bundles one name;
   `images.agentgateway` unchanged.
 - **ate-setup:** renders one provider name in the egress policies.
