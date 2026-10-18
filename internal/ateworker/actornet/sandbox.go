@@ -455,6 +455,20 @@ func ServeSandbox(ctx context.Context, cfg SandboxNetworkConfig, egress egressSe
 	return session, nil
 }
 
+// DNSQueries returns how many DNS queries the sandbox has sent to its relay;
+// zero when the session serves no DNS or is closed.
+func (s *SandboxSession) DNSQueries() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dns == nil {
+		return 0
+	}
+	return s.dns.Queries()
+}
+
 // Close cancels the work in flight, closes the sockets, waits for the serving
 // goroutines, then removes the namespaces. ctx bounds only the wait; the
 // namespaces go either way, since leaving them wedges the next activation.

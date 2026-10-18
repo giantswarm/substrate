@@ -19,6 +19,7 @@ import (
 	"encoding/binary"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"go.ate.dev/substrate/internal/atunnel/dns/protocol"
@@ -61,6 +62,9 @@ type dnsHandler struct {
 	pending *pendingRequests
 	limiter *limiter
 	allow   queryPolicy
+
+	// queries counts every query the sandbox sent, whatever became of it.
+	queries atomic.Uint64
 }
 
 func newDNSHandler(pending *pendingRequests, lim *limiter, allow queryPolicy) *dnsHandler {
@@ -139,6 +143,7 @@ func (h *dnsHandler) onRequestCommon(raw []byte) (dnsmessage.Header, dnsmessage.
 // returns whether to drop it, reply immediately with a synthesized error, or
 // record and forward it to an upstream resolver.
 func (h *dnsHandler) onUDPRequest(raw []byte, clientAddr net.Addr, upstreams []string) action {
+	h.queries.Add(1)
 	if !h.limiter.inFlight.tryAcquire() {
 		slog.Debug("dns relay dropped query; too many in flight")
 		return action{kind: actionDrop}
@@ -234,6 +239,7 @@ func (h *dnsHandler) onUDPResponse(raw []byte, from net.Addr) action {
 // returns whether to drop it, reply immediately with a synthesized error, or
 // forward it unmodified on the connection's dedicated upstream stream.
 func (h *dnsHandler) onTCPRequest(raw []byte) action {
+	h.queries.Add(1)
 	_, _, act := h.onRequestCommon(raw)
 	return act
 }

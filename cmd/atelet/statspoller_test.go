@@ -901,3 +901,68 @@ func TestAddSat(t *testing.T) {
 		})
 	}
 }
+
+// dnsResponse is a measured sample carrying only a DNS count and its epoch.
+func dnsResponse(actorUID string, epoch int64, queries uint64) *ateworkerpb.GetActiveWorkloadStatsResponse {
+	resp := cpuResponse(actorUID, 0)
+	resp.Samples[0].EpochUnixNano = epoch
+	resp.Samples[0].DnsQueries = queries
+	return resp
+}
+
+// TestStatsPollerDNSDeltas pins the DNS increase, which follows the CPU rule:
+// an activation from before atelet started only sets its baseline, a later
+// sweep charges the increase, and an activation that began after atelet
+// started counts in full.
+func TestStatsPollerDNSDeltas(t *testing.T) {
+	key := templateKey{templateNamespace: "ns-a", templateName: "tmpl-a", sandboxClass: "gvisor", source: "cgroup"}
+	fake := &fakeStatsWorker{resp: dnsResponse("uid-a", testStartedAt-1, 40)}
+	p, _ := newPollerFixture(t, map[string]*fakeStatsWorker{"uid-1": fake})
+
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 0 {
+		t.Errorf("first sweep delta = %d, want 0 (baseline only)", got)
+	}
+	fake.resp = dnsResponse("uid-a", testStartedAt-1, 100)
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 60 {
+		t.Errorf("second sweep delta = %d, want 60 (the increase)", got)
+	}
+	fake.resp = dnsResponse("uid-a", testStartedAt+1, 130)
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 130 {
+		t.Errorf("new activation delta = %d, want 130 (its whole count)", got)
+	}
+}
+
+func TestStatsInstrumentsCountDNSQueries(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer mp.Shutdown(context.Background())
+
+	inst, err := newStatsInstruments(mp.Meter("test"))
+	if err != nil {
+		t.Fatalf("newStatsInstruments() error = %v", err)
+	}
+	key := templateKey{templateNamespace: "ns-a", templateName: "tmpl-a", sandboxClass: "gvisor", source: "cgroup"}
+	inst.addCounters(context.Background(), map[templateKey]*templateAggregate{key: {dnsQueriesDelta: 7}})
+	inst.addCounters(context.Background(), map[templateKey]*templateAggregate{key: {dnsQueriesDelta: 5}})
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != dnsQueriesMetric {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok || !sum.IsMonotonic || len(sum.DataPoints) != 1 {
+				t.Fatalf("%s = %+v, want one monotonic int64 sum", dnsQueriesMetric, m.Data)
+			}
+			if got := sum.DataPoints[0].Value; got != 12 {
+				t.Errorf("%s = %d, want 12", dnsQueriesMetric, got)
+			}
+			return
+		}
+	}
+	t.Fatalf("%s was not exported", dnsQueriesMetric)
+}

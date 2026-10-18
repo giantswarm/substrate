@@ -375,9 +375,19 @@ func (s *AteWorkerService) sampleGuest(ctx context.Context, h *hostedActor) (*at
 		MemoryPeakBytes:       sample.MemoryPeakBytes,
 		MemoryWorkingSetBytes: sample.MemoryWorkingSetBytes,
 		CpuUsageUsec:          sample.CPUUsageUsec,
+		DnsQueries:            s.dnsQueries(h),
 
 		ObservedAtUnixNano: observedAt.UnixNano(),
 	}, cpuByContainer, nil
+}
+
+// dnsQueries reads how many DNS queries h's sandbox has sent in this
+// activation.
+func (s *AteWorkerService) dnsQueries(h *hostedActor) uint64 {
+	s.actorsMu.RLock()
+	network := h.network
+	s.actorsMu.RUnlock()
+	return network.DNSQueries()
 }
 
 // sumContainerStats reads every container of the actor and adds them up. It

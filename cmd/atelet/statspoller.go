@@ -154,10 +154,12 @@ type cpuKey struct {
 	epoch    int64
 }
 
-// cpuBaseline is an activation's last CPU reading and the worker that sent it.
+// cpuBaseline is an activation's last CPU reading, its DNS query count, and
+// the worker that sent them.
 type cpuBaseline struct {
-	usec   uint64
-	podUID string
+	usec       uint64
+	dnsQueries uint64
+	podUID     string
 }
 
 // templateAggregate is one tick's sums for one templateKey group: the
@@ -177,6 +179,7 @@ type templateAggregate struct {
 	memoryCurrentBytes    int64
 	memoryWorkingSetBytes int64
 	cpuDeltaUsec          int64
+	dnsQueriesDelta       int64
 }
 
 // workerPoolRef names one WorkerPool: the pod's namespace and the
@@ -232,12 +235,12 @@ func (p *statsPoller) run(ctx context.Context) {
 	}
 }
 
-// tick sweeps every worker on the node once, adds the sweep's CPU increases
-// onto the counters, and publishes the aggregates for the next metric
+// tick sweeps every worker on the node once, adds the sweep's CPU and DNS
+// increases onto the counters, and publishes the aggregates for the next metric
 // collection to observe.
 func (p *statsPoller) tick(ctx context.Context) {
 	aggs := p.collect(ctx)
-	p.inst.addCPU(ctx, aggs)
+	p.inst.addCounters(ctx, aggs)
 	p.inst.publish(aggs)
 }
 
@@ -346,14 +349,19 @@ func (p *statsPoller) collect(ctx context.Context) map[templateKey]*templateAggr
 				// that began earlier may have been charged by the atelet before
 				// this one, so it only sets the baseline. Both times come from
 				// this node's clock: atelet reads only the workers on its node.
-				cpu := sample.GetCpuUsageUsec()
-				seenCPU[cpuAt] = cpuBaseline{usec: cpu, podUID: podUID}
+				// The DNS query count follows the same rule.
+				cpu, dns := sample.GetCpuUsageUsec(), sample.GetDnsQueries()
+				seenCPU[cpuAt] = cpuBaseline{usec: cpu, dnsQueries: dns, podUID: podUID}
 				if last, ok := p.lastCPU[cpuAt]; ok {
 					if cpu > last.usec {
 						agg.cpuDeltaUsec = addSat(agg.cpuDeltaUsec, cpu-last.usec)
 					}
+					if dns > last.dnsQueries {
+						agg.dnsQueriesDelta = addSat(agg.dnsQueriesDelta, dns-last.dnsQueries)
+					}
 				} else if cpuAt.epoch > p.startedAt {
 					agg.cpuDeltaUsec = addSat(agg.cpuDeltaUsec, cpu)
+					agg.dnsQueriesDelta = addSat(agg.dnsQueriesDelta, dns)
 				}
 				mu.Unlock()
 			}
@@ -473,6 +481,7 @@ const (
 	memoryCurrentMetric = "ate.actor.stats.memory.usage"
 	workingSetMetric    = "ate.actor.stats.memory.working_set"
 	cpuUsageMetric      = "ate.actor.stats.cpu.time"
+	dnsQueriesMetric    = "ate.actor.stats.dns.queries"
 )
 
 // statsInstruments exposes the latest sweep's aggregates as observable
@@ -492,6 +501,9 @@ type statsInstruments struct {
 	// including a vanished template's series holding its final value rather
 	// than disappearing -- are exactly what rate() consumers expect.
 	cpuUsage metric.Float64Counter
+
+	// dnsQueries is a synchronous counter for the same reason as cpuUsage.
+	dnsQueries metric.Int64Counter
 }
 
 func newStatsInstruments(meter metric.Meter) (*statsInstruments, error) {
@@ -506,6 +518,16 @@ func newStatsInstruments(meter metric.Meter) (*statsInstruments, error) {
 		return nil, fmt.Errorf("create %s counter: %w", cpuUsageMetric, err)
 	}
 	i.cpuUsage = cpuUsage
+
+	dnsQueries, err := meter.Int64Counter(
+		dnsQueriesMetric,
+		metric.WithUnit("{query}"),
+		metric.WithDescription("Cumulative DNS queries sent by running actors to their sandbox's resolver."),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create %s counter: %w", dnsQueriesMetric, err)
+	}
+	i.dnsQueries = dnsQueries
 
 	sampledActors, err := meter.Int64ObservableGauge(
 		sampledActorsMetric,
@@ -561,13 +583,14 @@ func (i *statsInstruments) publish(aggs map[templateKey]*templateAggregate) {
 	i.latest.Store(&aggs)
 }
 
-// addCPU adds one sweep's CPU increases onto the counters. A nil receiver is
-// a valid no-op, like Instruments.
-func (i *statsInstruments) addCPU(ctx context.Context, aggs map[templateKey]*templateAggregate) {
+// addCounters adds one sweep's CPU and DNS increases onto the counters. A nil
+// receiver is a valid no-op, like Instruments.
+func (i *statsInstruments) addCounters(ctx context.Context, aggs map[templateKey]*templateAggregate) {
 	if i == nil {
 		return
 	}
 	for key, agg := range aggs {
+		i.dnsQueries.Add(ctx, agg.dnsQueriesDelta, key.attrs())
 		// The wire carries microseconds; the metric is seconds -- the base
 		// unit CPU time is exported in everywhere else (cAdvisor's
 		// container_cpu_usage_seconds_total, OTel's *.cpu.time) -- so the

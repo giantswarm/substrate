@@ -254,9 +254,22 @@ func (s *AteWorkerService) measure(ctx context.Context, h *hostedActor) (*atewor
 	sample, err := h.usage.Measure(ctx, func() (*ateworkerpb.WorkloadStatsSample, map[string]uint64, error) {
 		sample, r, err := s.sampleSandbox(&h.attribution)
 		raw = r
-		return sample, nil, err
+		if err != nil {
+			return nil, nil, err
+		}
+		sample.DnsQueries = s.dnsQueries(h)
+		return sample, nil, nil
 	})
 	return sample, raw, err
+}
+
+// dnsQueries reads how many DNS queries h's sandbox has sent in this
+// activation.
+func (s *AteWorkerService) dnsQueries(h *hostedActor) uint64 {
+	s.actorsMu.RLock()
+	network := h.network
+	s.actorsMu.RUnlock()
+	return network.DNSQueries()
 }
 
 // sampleSandbox reads the sandbox cgroup and builds the sample attributed to

@@ -109,6 +109,13 @@ func newServer(
 	return s, nil
 }
 
+// Queries returns how many DNS queries the sandbox has sent to the relay since
+// it began serving: every UDP datagram and every message of a TCP stream,
+// including the ones the relay refused, dropped or could not resolve.
+func (s *Server) Queries() uint64 {
+	return s.dns.queries.Load()
+}
+
 // Stop cancels in-flight queries and connections, closes the sockets, and
 // waits for the serving goroutines to exit or ctx to expire.
 func (s *Server) Stop(ctx context.Context) error {

@@ -1211,6 +1211,30 @@ groups:
         requirement_level:
           conditionally_required: The pool of the worker is known.
 
+  - id: metric.ate.actor.stats.dns.queries
+    type: metric
+    metric_name: ate.actor.stats.dns.queries
+    instrument: counter
+    unit: "{query}"
+    stability: development
+    brief: The DNS queries that the actors in operation send to their sandbox's resolver.
+    note: >
+      Each sandbox's DNS relay counts every query it receives, whatever
+      becomes of it: forwarded, refused by the egress policy, or dropped. A UDP
+      datagram is one query, and so is one message of a TCP stream. atelet
+      adds the increase of each actor to this counter, like the CPU counter;
+      a new activation counts from zero. The actor is not a label. A high
+      rate for one template, set against its actor count, means that its
+      actors look up many names: a crawl, or data sent out in the names they
+      look up within what the policy allows.
+    annotations:
+      substrate:
+        emitted_by: [atelet]
+        golden_signals: [traffic]
+        code_anchor: cmd/atelet/statspoller.go
+        cuj: Which template's actors send unusually many DNS queries?
+    attributes: *actor_stats_attributes
+
   - id: metric.ate.actor.stats.memory.usage
     type: metric
     metric_name: ate.actor.stats.memory.usage
