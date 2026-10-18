@@ -45,6 +45,12 @@ PRESERVED_FILES=(
   sandboxconfig-validation.yaml
 )
 
+# Templates only the chart deploys: the kustomize installers do not install
+# them yet, so they are neither written here nor compared.
+CHART_ONLY_FILES=(
+  ate-idp-server.yaml
+)
+
 if [ "${1:-}" = "--check" ]; then
   CHECK_MODE="true"
 fi
@@ -114,6 +120,10 @@ for src, docs in docs_by_source.items():
         out.write("\n---\n".join(docs))
         out.write("\n")
 PY
+
+for file in "${CHART_ONLY_FILES[@]}"; do
+  rm -f "${TMP_DIR}/out/${file}"
+done
 
 if [ "${CHECK_MODE}" = "true" ]; then
   # Only compare top-level files; subdirs like generated/ and kind/ are not
