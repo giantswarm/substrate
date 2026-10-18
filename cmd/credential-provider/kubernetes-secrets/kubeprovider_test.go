@@ -52,6 +52,8 @@ func TestParseURI(t *testing.T) {
 		{name: "key required", uri: "ate-secret://k8s.io/default/ns1/example-api", wantErr: true},
 		{name: "wrong scheme", uri: "https://k8s.io/default/ns1/example-api/token", wantErr: true},
 		{name: "wrong provider", uri: "ate-secret://vault.io/default/ns1/example-api/token", wantErr: true},
+		{name: "unknown k8s.io subdomain", uri: "ate-secret://vault.k8s.io/default/ns1/example-api/token", wantErr: true},
+		{name: "google access-token class is a plugin's", uri: "ate-secret://google-access-token.k8s.io/default/ns1/vertex/credentials.json", wantErr: true},
 		{name: "missing locator", uri: "ate-secret://k8s.io/ns1/example-api/token", wantErr: true},
 		{name: "remote form not yet supported", uri: "ate-secret://k8s.io/cluster/remote-east/ns1/example-api/token", wantErr: true},
 		{name: "too few segments", uri: "ate-secret://k8s.io/default/ns1", wantErr: true},
