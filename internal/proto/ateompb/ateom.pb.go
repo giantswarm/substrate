@@ -1651,6 +1651,10 @@ type WorkloadStatsSample struct {
 	// The activation this sample belongs to, as the unix-nano time it began. A
 	// Run or Restore starts one. Zero from an ateom that does not set it.
 	EpochUnixNano int64 `protobuf:"varint,13,opt,name=epoch_unix_nano,json=epochUnixNano,proto3" json:"epoch_unix_nano,omitempty"`
+	// DNS queries the sandbox sent to its gateway's relay since the activation
+	// began, answered or not: every UDP datagram and every message of a TCP
+	// stream. Counted for every source. Restarts at zero with each activation.
+	DnsQueries    uint64 `protobuf:"varint,14,opt,name=dns_queries,json=dnsQueries,proto3" json:"dns_queries,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1772,6 +1776,13 @@ func (x *WorkloadStatsSample) GetObservedAtUnixNano() int64 {
 func (x *WorkloadStatsSample) GetEpochUnixNano() int64 {
 	if x != nil {
 		return x.EpochUnixNano
+	}
+	return 0
+}
+
+func (x *WorkloadStatsSample) GetDnsQueries() uint64 {
+	if x != nil {
+		return x.DnsQueries
 	}
 	return 0
 }
@@ -2047,7 +2058,7 @@ const file_ateom_proto_rawDesc = "" +
 	"\x0f_egress_gateway\"\x19\n" +
 	"\x17RestoreWorkloadResponse\"6\n" +
 	"\x17GetWorkloadStatsRequest\x12\x1b\n" +
-	"\tactor_uid\x18\x01 \x01(\tR\bactorUid\"\xd3\x04\n" +
+	"\tactor_uid\x18\x01 \x01(\tR\bactorUid\"\xf4\x04\n" +
 	"\x13WorkloadStatsSample\x12\x1a\n" +
 	"\batespace\x18\x01 \x01(\tR\batespace\x12\x1d\n" +
 	"\n" +
@@ -2063,7 +2074,9 @@ const file_ateom_proto_rawDesc = "" +
 	" \x01(\x04R\x15memoryWorkingSetBytes\x12$\n" +
 	"\x0ecpu_usage_usec\x18\v \x01(\x04R\fcpuUsageUsec\x121\n" +
 	"\x15observed_at_unix_nano\x18\f \x01(\x03R\x12observedAtUnixNano\x12&\n" +
-	"\x0fepoch_unix_nano\x18\r \x01(\x03R\repochUnixNano\"N\n" +
+	"\x0fepoch_unix_nano\x18\r \x01(\x03R\repochUnixNano\x12\x1f\n" +
+	"\vdns_queries\x18\x0e \x01(\x04R\n" +
+	"dnsQueries\"N\n" +
 	"\x18GetWorkloadStatsResponse\x122\n" +
 	"\x06sample\x18\x01 \x01(\v2\x1a.ateom.WorkloadStatsSampleR\x06sample\"\x1f\n" +
 	"\x1dGetActiveWorkloadStatsRequest\"V\n" +

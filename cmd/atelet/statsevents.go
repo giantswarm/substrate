@@ -179,6 +179,7 @@ func (e *statsEventEmitter) emit(ctx context.Context, kind string, s *ateompb.Wo
 		slog.Uint64("memory_peak_bytes", s.GetMemoryPeakBytes()),
 		slog.Uint64("memory_working_set_bytes", s.GetMemoryWorkingSetBytes()),
 		slog.Uint64("cpu_usage_usec", s.GetCpuUsageUsec()),
+		slog.Uint64("dns_queries", s.GetDnsQueries()),
 		slog.Int64("observed_at_unix_nano", s.GetObservedAtUnixNano()),
 	)
 }

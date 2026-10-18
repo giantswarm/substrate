@@ -37,6 +37,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 )
 
@@ -948,4 +949,93 @@ func TestStatsPollerRestoreInFlightMeasuredWins(t *testing.T) {
 			}
 		})
 	}
+}
+
+// dnsResponse is a measured sample carrying only a DNS count and its epoch.
+func dnsResponse(actorUID string, epoch int64, queries uint64) *ateompb.GetActiveWorkloadStatsResponse {
+	resp := cpuResponse(actorUID, 0)
+	resp.Samples[0].EpochUnixNano = epoch
+	resp.Samples[0].DnsQueries = queries
+	return resp
+}
+
+// TestStatsPollerDNSDeltas pins the DNS increase across sweeps: first sight is
+// a baseline only, a later sweep charges the increase, a new activation counts
+// from zero so its whole count is charged, a pending sweep keeps the baseline,
+// and a departed actor's baseline is dropped.
+func TestStatsPollerDNSDeltas(t *testing.T) {
+	key := templateKey{templateNamespace: "ns-a", templateName: "tmpl-a", sandboxClass: "gvisor", source: "cgroup"}
+	fake := &fakeStatsAteom{resp: dnsResponse("uid-a", 1, 40)}
+	p, _ := newPollerFixture(t, map[string]*fakeStatsAteom{"uid-1": fake})
+
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 0 {
+		t.Errorf("first sweep delta = %d, want 0 (baseline only on first sight)", got)
+	}
+
+	fake.resp = dnsResponse("uid-a", 1, 100)
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 60 {
+		t.Errorf("second sweep delta = %d, want 60 (the increase)", got)
+	}
+
+	fake.resp = pendingResponse("uid-a")
+	p.collect(context.Background())
+	if got := p.lastDNS["uid-a"]; got != (dnsBaseline{epoch: 1, queries: 100}) {
+		t.Errorf("baseline after a pending sweep = %+v, want it kept", got)
+	}
+
+	// A resume starts a new activation whose count may already exceed the
+	// last one's: the epoch, not a decrease, marks the restart.
+	fake.resp = dnsResponse("uid-a", 2, 130)
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 130 {
+		t.Errorf("new activation delta = %d, want 130 (its whole count)", got)
+	}
+
+	fake.resp = dnsResponse("uid-a", 2, 120)
+	if got := p.collect(context.Background())[key].dnsQueriesDelta; got != 0 {
+		t.Errorf("decrease within an activation delta = %d, want 0", got)
+	}
+
+	fake.resp = availableResponse()
+	p.collect(context.Background())
+	if len(p.lastDNS) != 0 {
+		t.Errorf("baselines after empty sweep = %v, want pruned empty", p.lastDNS)
+	}
+}
+
+func TestStatsInstrumentsCountDNSQueries(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	defer mp.Shutdown(context.Background())
+
+	inst, err := newStatsInstruments(mp.Meter("test"))
+	if err != nil {
+		t.Fatalf("newStatsInstruments() error = %v", err)
+	}
+	key := templateKey{templateNamespace: "ns-a", templateName: "tmpl-a", sandboxClass: "gvisor", source: "cgroup"}
+	inst.addCounters(context.Background(), map[templateKey]*templateAggregate{key: {dnsQueriesDelta: 7}})
+	inst.addCounters(context.Background(), map[templateKey]*templateAggregate{key: {dnsQueriesDelta: 5}})
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect() error = %v", err)
+	}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			if m.Name != dnsQueriesMetric {
+				continue
+			}
+			sum, ok := m.Data.(metricdata.Sum[int64])
+			if !ok || !sum.IsMonotonic || len(sum.DataPoints) != 1 {
+				t.Fatalf("%s = %+v, want one monotonic int64 sum", dnsQueriesMetric, m.Data)
+			}
+			if got := sum.DataPoints[0].Value; got != 12 {
+				t.Errorf("%s = %d, want 12", dnsQueriesMetric, got)
+			}
+			if v, _ := sum.DataPoints[0].Attributes.Value(ateattr.TemplateNameKey); v.AsString() != "tmpl-a" {
+				t.Errorf("%s template label = %q, want tmpl-a", dnsQueriesMetric, v.AsString())
+			}
+			return
+		}
+	}
+	t.Fatalf("%s was not exported", dnsQueriesMetric)
 }

@@ -447,6 +447,11 @@ message WorkloadStatsSample {
   // The activation this sample belongs to, as the unix-nano time it began. A
   // Run or Restore starts one. Zero from an ateom that does not set it.
   int64 epoch_unix_nano = 13;
+
+  // DNS queries the sandbox sent to its gateway's relay since the activation
+  // began, answered or not: every UDP datagram and every message of a TCP
+  // stream. Counted for every source. Restarts at zero with each activation.
+  uint64 dns_queries = 14;
 }
 
 message GetWorkloadStatsResponse {

@@ -140,6 +140,32 @@ type statsPoller struct {
 	// for the next delta; read-only during a sweep and replaced whole at the
 	// end. Pending actors keep their entry, unseen actors are dropped.
 	lastCPU map[string]uint64
+
+	// lastDNS is the last dns_queries per actor uid with the activation it
+	// belongs to, kept like lastCPU.
+	lastDNS map[string]dnsBaseline
+}
+
+// dnsBaseline is one actor's DNS query count at its last measured sample.
+type dnsBaseline struct {
+	epoch   int64
+	queries uint64
+}
+
+// dnsDelta is the increase of an actor's DNS query count since base. The
+// count restarts with each activation, so a new epoch counts in full. A
+// sample with no baseline charges nothing, as for CPU.
+func dnsDelta(base dnsBaseline, seen bool, s *ateompb.WorkloadStatsSample) uint64 {
+	switch {
+	case !seen:
+		return 0
+	case base.epoch != s.GetEpochUnixNano():
+		return s.GetDnsQueries()
+	case base.queries <= s.GetDnsQueries():
+		return s.GetDnsQueries() - base.queries
+	default:
+		return 0
+	}
 }
 
 // templateAggregate is one tick's sums for one templateKey group: the
@@ -159,6 +185,7 @@ type templateAggregate struct {
 	memoryCurrentBytes    int64
 	memoryWorkingSetBytes int64
 	cpuDeltaUsec          int64
+	dnsQueriesDelta       int64
 }
 
 // workerPoolRef names one WorkerPool: the pod's namespace and the
@@ -214,12 +241,12 @@ func (p *statsPoller) run(ctx context.Context) {
 	}
 }
 
-// tick sweeps every ateom on the node once, adds the sweep's CPU increases
+// tick sweeps every ateom on the node once, adds the sweep's CPU and DNS increases
 // onto the counters, and publishes the aggregates for the next metric
 // collection to observe.
 func (p *statsPoller) tick(ctx context.Context) {
 	aggs := p.collect(ctx)
-	p.inst.addCPU(ctx, aggs)
+	p.inst.addCounters(ctx, aggs)
 	p.inst.publish(aggs)
 }
 
@@ -256,6 +283,7 @@ func (p *statsPoller) collect(ctx context.Context) map[templateKey]*templateAggr
 		mu      sync.Mutex
 		aggs    = make(map[templateKey]*templateAggregate)
 		seenCPU = make(map[string]uint64)
+		seenDNS = make(map[string]dnsBaseline)
 		g       errgroup.Group
 	)
 	g.SetLimit(statsSweepConcurrency)
@@ -289,13 +317,18 @@ func (p *statsPoller) collect(ctx context.Context) map[templateKey]*templateAggr
 					// Pending: hosted but not measured, so it adds nothing
 					// and its CPU baseline carries forward. A measured value
 					// from another worker this sweep (restore in flight) wins.
+					mu.Lock()
 					if last, ok := p.lastCPU[sample.GetActorUid()]; ok {
-						mu.Lock()
 						if _, measured := seenCPU[sample.GetActorUid()]; !measured {
 							seenCPU[sample.GetActorUid()] = last
 						}
-						mu.Unlock()
 					}
+					if last, ok := p.lastDNS[sample.GetActorUid()]; ok {
+						if _, measured := seenDNS[sample.GetActorUid()]; !measured {
+							seenDNS[sample.GetActorUid()] = last
+						}
+					}
+					mu.Unlock()
 					continue
 				}
 				p.eventEmitter.emit(ctx, eventKindPeriodic, sample, pools[podUID])
@@ -334,6 +367,10 @@ func (p *statsPoller) collect(ctx context.Context) map[templateKey]*templateAggr
 						agg.cpuDeltaUsec = addSat(agg.cpuDeltaUsec, cpu)
 					}
 				}
+
+				last, ok := p.lastDNS[sample.GetActorUid()]
+				agg.dnsQueriesDelta = addSat(agg.dnsQueriesDelta, dnsDelta(last, ok, sample))
+				seenDNS[sample.GetActorUid()] = dnsBaseline{epoch: sample.GetEpochUnixNano(), queries: sample.GetDnsQueries()}
 				mu.Unlock()
 			}
 			return nil
@@ -345,6 +382,7 @@ func (p *statsPoller) collect(ctx context.Context) map[templateKey]*templateAggr
 	// Replacing (not merging) the baselines drops actors this sweep did not
 	// see, so lastCPU cannot grow with actor churn.
 	p.lastCPU = seenCPU
+	p.lastDNS = seenDNS
 	return aggs
 }
 
@@ -470,6 +508,7 @@ const (
 	memoryCurrentMetric = "ate.actor.stats.memory.usage"
 	workingSetMetric    = "ate.actor.stats.memory.working_set"
 	cpuUsageMetric      = "ate.actor.stats.cpu.time"
+	dnsQueriesMetric    = "ate.actor.stats.dns.queries"
 )
 
 // statsInstruments exposes the latest sweep's aggregates as observable
@@ -489,6 +528,9 @@ type statsInstruments struct {
 	// including a vanished template's series holding its final value rather
 	// than disappearing -- are exactly what rate() consumers expect.
 	cpuUsage metric.Float64Counter
+
+	// dnsQueries is a synchronous counter for the same reason as cpuUsage.
+	dnsQueries metric.Int64Counter
 }
 
 func newStatsInstruments(meter metric.Meter) (*statsInstruments, error) {
@@ -503,6 +545,16 @@ func newStatsInstruments(meter metric.Meter) (*statsInstruments, error) {
 		return nil, fmt.Errorf("create %s counter: %w", cpuUsageMetric, err)
 	}
 	i.cpuUsage = cpuUsage
+
+	dnsQueries, err := meter.Int64Counter(
+		dnsQueriesMetric,
+		metric.WithUnit("{query}"),
+		metric.WithDescription("Cumulative DNS queries sent by running actors to their sandbox's resolver."),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create %s counter: %w", dnsQueriesMetric, err)
+	}
+	i.dnsQueries = dnsQueries
 
 	sampledActors, err := meter.Int64ObservableGauge(
 		sampledActorsMetric,
@@ -558,13 +610,14 @@ func (i *statsInstruments) publish(aggs map[templateKey]*templateAggregate) {
 	i.latest.Store(&aggs)
 }
 
-// addCPU adds one sweep's CPU increases onto the counters. A nil receiver is
-// a valid no-op, like Instruments.
-func (i *statsInstruments) addCPU(ctx context.Context, aggs map[templateKey]*templateAggregate) {
+// addCounters adds one sweep's CPU and DNS increases onto the counters. A nil
+// receiver is a valid no-op, like Instruments.
+func (i *statsInstruments) addCounters(ctx context.Context, aggs map[templateKey]*templateAggregate) {
 	if i == nil {
 		return
 	}
 	for key, agg := range aggs {
+		i.dnsQueries.Add(ctx, agg.dnsQueriesDelta, key.attrs())
 		// The wire carries microseconds; the metric is seconds -- the base
 		// unit CPU time is exported in everywhere else (cAdvisor's
 		// container_cpu_usage_seconds_total, OTel's *.cpu.time) -- so the
