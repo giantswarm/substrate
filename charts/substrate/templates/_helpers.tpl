@@ -254,3 +254,11 @@ definition so the fallback cannot drift between pods.
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+
+{{/*
+The actor JWT issuer: ate-api-server places it in every actor JWT and
+ate-idp-server serves its discovery document, so both read it from here.
+*/}}
+{{- define "substrate.actorJWTIssuer" -}}
+{{- .Values.ateApi.actorJWTIssuer | default (printf "https://idp.%s.svc" .Release.Namespace) -}}
+{{- end -}}

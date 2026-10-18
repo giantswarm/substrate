@@ -105,6 +105,20 @@ objectStorePlugin:
         cpu: 50m
         memory: 128Mi
 
+# ate-idp-server: the actor JWT issuer's OpenID discovery document and key set
+# (/.well-known/openid-configuration, /openid/v1/jwks), served over HTTPS behind
+# the `idp` Service from the actor-id-jwt-pool Secret ate-api-server signs with.
+idpServer:
+  enabled: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
 # Additional arguments appended to the ateapi defaults.
 ateApi:
   logLevel: info

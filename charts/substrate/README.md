@@ -67,6 +67,9 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider |
 | `ateApi.actorJWTIssuer` | `https://idp.<namespace>.svc` | Issuer placed in actor JWTs; set a stable URL reachable by relying parties |
+| `idpServer.enabled` | `true` | Deploy ate-idp-server, which serves the issuer's `/.well-known/openid-configuration` and `/openid/v1/jwks` over HTTPS behind the `idp` Service (port 443), on a servicedns certificate, from the `actor-id-jwt-pool` Secret ate-api-server signs with |
+| `idpServer.replicas` | `2` | ate-idp-server replicas |
+| `idpServer.resources` | requests `10m`/`32Mi`, limits `200m`/`128Mi` | ate-idp-server container resources |
 | `objectStorePlugin.extraEnv` | `[]` | Object storage credentials/settings shared by both object-store plugins |
 | `objectStorePlugin.control.resources` / `objectStorePlugin.node.resources` | see `values.yaml` | Resources for the API and node object-store sidecars |
 | `ateApi.logLevel` | `info` | API server log level in its mounted config; one of `debug`, `info`, `warn`, or `error` |
@@ -194,6 +197,7 @@ keeps its snapshot local. Ensure actor templates have a usable
 atelet, and workers together for the checkpoint validation and per-actor
 sandbox asset paths.
 
-The `ate-idp-server` binary serves actor JWT discovery and public signing keys
-over HTTPS. It is not deployed by this chart yet; upgrading the chart does not
-expose a discovery endpoint.
+The chart deploys `ate-idp-server`, which serves actor JWT discovery and public
+signing keys over HTTPS behind the `idp` Service, at the default issuer
+`https://idp.<namespace>.svc`. It reads the `actor-id-jwt-pool` Secret, so a
+key rotation in the Secret reaches the key set without a restart.

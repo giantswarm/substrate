@@ -1,0 +1,136 @@
+{{/*
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/}}
+
+{{/*
+ate-idp-server publishes the actor-JWT issuer: the OpenID discovery document
+and the key set relying parties verify actor JWTs with. It reads the same
+authority pool ate-api-server signs with, mounted without subPath so a key
+rotation in the Secret reaches the key set without a restart, and serves on a
+servicedns certificate, whose DNS name is the `idp` Service below: the host of
+the default issuer, https://idp.<namespace>.svc.
+*/}}
+{{- if .Values.idpServer.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+  namespace: {{ .Release.Namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.idpServer.replicas }}
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+    spec:
+      serviceAccountName: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+      automountServiceAccountToken: false
+      {{- with include "substrate.imagePullSecrets" . }}{{- . | nindent 6 }}{{- end }}
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: ate-idp-server
+        image: {{ include "substrate.componentImage" (list "ate-idp-server" .) }}
+        imagePullPolicy: {{ include "substrate.imagePullPolicy" . }}
+        resources:
+{{ toYaml .Values.idpServer.resources | indent 10 }}
+        args:
+        - "--issuer={{ include "substrate.actorJWTIssuer" . }}"
+        - "--actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json"
+        - "--server-cred-bundle=/run/servicedns.podcert.ate.dev/credential-bundle.pem"
+        - "--listen-address=:8443"
+        ports:
+        - name: https
+          containerPort: 8443
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - { name: servicedns,        mountPath: /run/servicedns.podcert.ate.dev, readOnly: true }
+        - { name: actor-id-jwt-pool, mountPath: /run/actor-id-jwt-pool, readOnly: true }
+      volumes:
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: actor-id-jwt-pool
+        projected:
+          sources:
+          - secret:
+              name: actor-id-jwt-pool
+              items:
+              - { key: pool, path: pool.json }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: idp
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: {{ include "substrate.fullname" (list "ate-idp-server" .) }}
+  ports:
+  - name: https
+    protocol: TCP
+    port: 443
+    targetPort: https
+{{- end }}
