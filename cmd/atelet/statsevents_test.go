@@ -42,6 +42,7 @@ func eventSample() *ateompb.WorkloadStatsSample {
 		MemoryPeakBytes:       2000,
 		MemoryWorkingSetBytes: 700,
 		CpuUsageUsec:          1234,
+		DnsQueries:            17,
 		ObservedAtUnixNano:    42,
 	}
 }
@@ -118,6 +119,7 @@ func TestStatsEventEmitterEmit(t *testing.T) {
 		"memory_peak_bytes":        2000,
 		"memory_working_set_bytes": 700,
 		"cpu_usage_usec":           1234,
+		"dns_queries":              17,
 		"observed_at_unix_nano":    42,
 	} {
 		if got := rec[key]; got != want {

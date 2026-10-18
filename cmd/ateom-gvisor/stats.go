@@ -243,8 +243,21 @@ func pendingSample(active *resources.ActorAttribution) *ateompb.WorkloadStatsSam
 func (s *AteomService) measure(ctx context.Context, h *hostedActor) (*ateompb.WorkloadStatsSample, error) {
 	return h.usage.Measure(ctx, func() (*ateompb.WorkloadStatsSample, map[string]uint64, error) {
 		sample, err := s.sampleSandbox(&h.attribution)
-		return sample, nil, err
+		if err != nil {
+			return nil, nil, err
+		}
+		sample.DnsQueries = s.dnsQueries(h)
+		return sample, nil, nil
 	})
+}
+
+// dnsQueries reads how many DNS queries h's sandbox has sent in this
+// activation.
+func (s *AteomService) dnsQueries(h *hostedActor) uint64 {
+	s.actorsMu.RLock()
+	network := h.network
+	s.actorsMu.RUnlock()
+	return network.DNSQueries()
 }
 
 // sampleSandbox reads the sandbox cgroup and builds the sample attributed to

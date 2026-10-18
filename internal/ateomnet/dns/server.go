@@ -16,12 +16,14 @@ package dns
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -41,6 +43,9 @@ type Server struct {
 
 	n       *netConn
 	limiter *limiter
+
+	// queries counts every query the sandbox sent, answered or not.
+	queries atomic.Uint64
 
 	stopServing context.CancelFunc
 	closeOnce   sync.Once
@@ -78,6 +83,13 @@ func newServer(
 	}()
 
 	return s
+}
+
+// Queries returns how many DNS queries the sandbox has sent to the relay since
+// it began serving: every UDP datagram and every message of a TCP stream,
+// including the ones the relay dropped or could not resolve.
+func (s *Server) Queries() uint64 {
+	return s.queries.Load()
 }
 
 // Stop cancels in-flight queries and connections, closes the sockets, and
@@ -120,6 +132,7 @@ func (s *Server) servePacket(ctx context.Context) error {
 			}
 			return fmt.Errorf("dns: reading actor DNS query: %w", err)
 		}
+		s.queries.Add(1)
 		// Copied: the buffer is reused by the next read.
 		query := make([]byte, n)
 		copy(query, buf[:n])
@@ -276,7 +289,7 @@ func (s *Server) relayTCP(ctx context.Context, downstream net.Conn) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(upstream, downstream)
+		_, _ = io.Copy(upstream, &tcpQueryCounter{r: downstream, queries: &s.queries})
 		if c, ok := upstream.(*net.TCPConn); ok {
 			_ = c.CloseWrite()
 		}
@@ -289,4 +302,38 @@ func (s *Server) relayTCP(ctx context.Context, downstream net.Conn) {
 		}
 	}()
 	wg.Wait()
+}
+
+// tcpQueryCounter counts the DNS messages read through it. A DNS stream frames
+// each message with a two-byte length (RFC 1035 4.2.2), so the counter follows
+// the framing and leaves the bytes unchanged.
+type tcpQueryCounter struct {
+	r       io.Reader
+	queries *atomic.Uint64
+
+	header    [2]byte
+	headerLen int
+	// remaining is the length of the current message still to be read.
+	remaining int
+}
+
+func (c *tcpQueryCounter) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	for b := p[:n]; len(b) > 0; {
+		if c.remaining > 0 {
+			skip := min(c.remaining, len(b))
+			c.remaining -= skip
+			b = b[skip:]
+			continue
+		}
+		c.header[c.headerLen] = b[0]
+		c.headerLen++
+		b = b[1:]
+		if c.headerLen == len(c.header) {
+			c.headerLen = 0
+			c.remaining = int(binary.BigEndian.Uint16(c.header[:]))
+			c.queries.Add(1)
+		}
+	}
+	return n, err
 }
