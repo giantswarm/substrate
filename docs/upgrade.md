@@ -1086,6 +1086,37 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.12 to 1.13 step
+
+1.13.0 stays on upstream v0.5.0-alpha2. Step to it from the latest 1.12
+patch with the numbered steps above; the step needs no migration, no
+snapshot reset and no manual step, and conversations and durable volumes
+survive it.
+
+- **Persisted format:** unchanged. No proto field of a stored record, no
+  CRD, no Postgres schema and no snapshot layout differs from 1.12.
+- **Actor-JWT issuer served:** the new `ate-idp-server` serves the
+  discovery document (`/.well-known/openid-configuration`) and the key
+  set (`/openid/v1/jwks`) of the issuer ate-api-server places in every
+  actor JWT, `https://idp.<namespace>.svc` by default, so a relying party
+  can verify an actor JWT. It reads the `actor-id-jwt-pool` Secret
+  ate-api-server signs with and rereads it at most once a minute, so a
+  key rotation in the Secret reaches the key set without a restart.
+- **Chart:** renders the Deployment, ServiceAccount and
+  PodDisruptionBudget `ate-idp-server` and the Service `idp` (port 443),
+  whose name its servicedns certificate carries; `idpServer.enabled:
+  false` leaves them out. ate-api-server is given the issuer explicitly,
+  `--actor-jwt-issuer` from `ateApi.actorJWTIssuer` or the `idp`
+  Service's URL: for a release named `substrate` that is the issuer it
+  used before; another release name prefixes the Service and the issuer
+  with it. An issuer set through `ateApi.extraArgs` moves to
+  `ateApi.actorJWTIssuer`, so both servers name the same one.
+- **During the roll:** the issuer's key set answers once an
+  `ate-idp-server` pod is ready; actor JWTs minted before keep verifying,
+  since the pool is the one they were signed with.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]

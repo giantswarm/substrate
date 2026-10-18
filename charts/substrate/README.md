@@ -61,7 +61,11 @@ See `values.yaml` for the full set; the important keys:
 | `ateController.busyWorker.syncPeriod` | `5s` | How often the marking follows the registry (`--busy-worker-sync-period`): the longest an Actor runs on an unmarked worker |
 | `images.pause` | `gsoci.azurecr.io/giantswarm/pause:3.10.2@sha256:f548e0e8…` (upstream's `registry.k8s.io` pin under its gsoci copy, the same digest) | The root container of every gVisor sandbox (`spec.pauseImage` of the SandboxConfig `gvisor-default`), by digest: a platform that ships its own pause image, or a cluster that pulls through a mirror, names it here |
 | `credentialProvider.additionalProviders` | `[]` | Further credential providers for the egress gateway, each `uriAuthority` (a lowercase DNS name) and `host` (`<service>.<namespace>.svc:<port>`); the gateway verifies the provider's `servicedns.podcert.ate.dev` serving certificate and presents its own pod identity, which the provider must require |
+| `ateApi.actorJWTIssuer` | `https://idp.<namespace>.svc` | Issuer placed in actor JWTs and served by ate-idp-server; the default is the chart's `idp` Service (prefixed with the release name unless it is `substrate`). Set it here, not through `ateApi.extraArgs`, so the two agree |
 | `ateApi.extraArgs` | `[]` | Additional command-line arguments appended to the ateapi defaults |
+| `idpServer.enabled` | `true` | Deploy ate-idp-server, which serves the issuer's `/.well-known/openid-configuration` and `/openid/v1/jwks` over HTTPS behind the `idp` Service (port 443), on a servicedns certificate, from the `actor-id-jwt-pool` Secret ate-api-server signs with; a key rotation in the Secret reaches the key set within a minute, without a restart |
+| `idpServer.replicas` | `2` | ate-idp-server replicas |
+| `idpServer.resources` | requests `10m`/`32Mi`, limits `200m`/`128Mi` | ate-idp-server container resources |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty = every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added to the `ate.dev/sandboxClass` toleration the chart always sets |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |

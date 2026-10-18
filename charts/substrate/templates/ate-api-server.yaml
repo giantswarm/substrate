@@ -109,6 +109,7 @@ spec:
         - "--postgres-owner-role=@env"
         - "--postgres-schema=@env"
         - "--actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json"
+        - "--actor-jwt-issuer={{ include "substrate.actorJWTIssuer" . }}"
         - "--actor-id-ca-pool=/run/actor-id-ca-pool/pool.json"
         - "--default-egress-gateway-address={{ include "substrate.fullname" (list "atenet-egress" .) }}.{{ .Release.Namespace }}.svc:443"
         - '--atelet-service-account={{ include "substrate.fullname" (list "atelet" .) }}'
