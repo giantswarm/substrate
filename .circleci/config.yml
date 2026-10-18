@@ -17,7 +17,7 @@
 # orb — every push to `giantswarm` as a dev build, every release tag `vX.Y.Z`
 # (or `-rc.N`) as the release `X.Y.Z` (FORK.md, "Publishing"). The six images
 # the agent platform runs (ateapi, atecontroller, atelet, atenet,
-# podcertcontroller, ateom-gvisor) are one architect/push-to-registries job
+# podcertcontroller, ateom-gvisor, kubernetes-secrets, ate-idp-server) are one architect/push-to-registries job
 # each: built from .circleci/Dockerfile for linux/amd64 and linux/arm64,
 # signed with the organisation's CircleCI identity, with provenance and an
 # SBOM, the index annotated with the upstream pin. The version is the orb's
@@ -28,7 +28,7 @@
 # the Giant Swarm line of agentgateway (pinned below) instead of upstream's
 # build. A release tag on a commit that already carries another version's
 # release tag publishes nothing (release-tag). Every pull request branch
-# builds the six images without pushing, so a Dockerfile regression surfaces
+# builds the images without pushing, so a Dockerfile regression surfaces
 # on the pull request; a maintenance branch (release-X.Y) is built by its tag
 # pipeline alone. Hand-written: the
 # repository carries upstream's workflows and its own, nothing
@@ -81,7 +81,7 @@ jobs:
     # (.build_version, from the workspace).
     environment: &publish-environment
       REGISTRY: gsoci.azurecr.io/giantswarm/substrate
-      COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor kubernetes-secrets
+      COMPONENTS: ateapi atecontroller atelet atenet podcertcontroller ateom-gvisor kubernetes-secrets ate-idp-server
       AGENTGATEWAY_IMAGE: << pipeline.parameters.agentgateway-image >>
       TRIVY_IMAGE: gsoci.azurecr.io/giantswarm/trivy:0.74.0
       # The trivy database mirrors, tried in order (ghcr rate-limits anonymous pulls).
@@ -217,7 +217,7 @@ workflows:
   # The line's branch and its release tags: the release-tag check, then build,
   # push, scan and the charts. Exactly one push job persists the version to the
   # workspace (CircleCI refuses to attach a path two concurrent jobs
-  # persisted); the other five run with persist-build-version false.
+  # persisted); the others run with persist-build-version false.
   publish:
     jobs:
       - release-tag:
@@ -282,6 +282,13 @@ workflows:
             COMPONENT=kubernetes-secrets
             COMPONENT_PATH=credential-provider/kubernetes-secrets
           persist-build-version: false
+      - architect/push-to-registries:
+          <<: *publish-push
+          name: push-ate-idp-server
+          image: giantswarm/substrate/ate-idp-server
+          # Serves the actor-JWT issuer's discovery document and key set.
+          build-args: COMPONENT=ate-idp-server
+          persist-build-version: false
       - scan:
           requires:
             - push-ateapi
@@ -291,6 +298,7 @@ workflows:
             - push-podcertcontroller
             - push-ateom-gvisor
             - push-kubernetes-secrets
+            - push-ate-idp-server
           filters: *publish-filters
       - charts:
           context: architect
@@ -298,7 +306,7 @@ workflows:
             - scan
           filters: *publish-filters
 
-  # Every pull request branch: the same six builds for both platforms, nothing
+  # Every pull request branch: the same builds for both platforms, nothing
   # pushed, and the release-tag check's fixture runs. The line's branch and its
   # maintenance branches (release-X.Y) are left out: the auto-release workflow
   # tags their pushed head at once and the tag's own pipeline builds it, while
@@ -357,6 +365,12 @@ workflows:
           build-args: |
             COMPONENT=kubernetes-secrets
             COMPONENT_PATH=credential-provider/kubernetes-secrets
+          persist-build-version: false
+      - architect/push-to-registries:
+          <<: *validate-push
+          name: build-ate-idp-server
+          image: giantswarm/substrate/ate-idp-server
+          build-args: COMPONENT=ate-idp-server
           persist-build-version: false
       - release-tag:
           filters: *validate-filters
