@@ -22,7 +22,7 @@
 # .ko.yaml pins, /ko-app on PATH and the binary as the ENTRYPOINT. The builder
 # runs on the build host's own architecture and cross-compiles — nothing is
 # emulated; the runtime stage only copies. An ENTRYPOINT in exec form cannot
-# take a build argument, so the last FROM selects one of the six runtime
+# take a build argument, so the last FROM selects one of the runtime
 # stages by COMPONENT — which has no default on purpose: a build without it
 # fails instead of quietly producing some component (the directive on the
 # first line stops the linter from asking for one).
@@ -66,5 +66,8 @@ ENTRYPOINT ["/ko-app/ateom-gvisor"]
 
 FROM runtime AS kubernetes-secrets
 ENTRYPOINT ["/ko-app/kubernetes-secrets"]
+
+FROM runtime AS ate-idp-server
+ENTRYPOINT ["/ko-app/ate-idp-server"]
 
 FROM ${COMPONENT}
