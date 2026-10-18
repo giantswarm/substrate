@@ -1,7 +1,7 @@
 # ate-idp-server serves the actor-JWT issuer
 
 - **Status:** carried
-- **Upstream:** the server is upstream's `08779062` ([agent-substrate/substrate#2099](https://github.com/agent-substrate/substrate/pull/2099), merged on `main` after v0.5.0-alpha2) and leaves at the first re-pin that contains it; the chart's Deployment and `idp` Service: to file — prepared in the fork: branch `upstream/chart-ate-idp-server`
+- **Upstream:** the server is upstream's `08779062` ([agent-substrate/substrate#2099](https://github.com/agent-substrate/substrate/pull/2099), merged on `main` after v0.5.0-alpha2) and leaves at the first re-pin that contains it; the chart's Deployment and `idp` Service: to file — prepared in the fork: branch `upstream/helm-ate-idp-server`
 - **Our commit:** [#472](https://github.com/giantswarm/substrate/pull/472): `git cherry-pick -x` of `08779062` (the module path adapted, only its ate-idp-server entry of `docs/metrics/substrate.yaml`), the chart's `ate-idp-server` and the line's image of it
 
 ## Change
