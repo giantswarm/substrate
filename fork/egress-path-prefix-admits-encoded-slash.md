@@ -4,7 +4,8 @@ fork: substrate
 theme: credential-injection
 category: bugfix
 status: carried
-commits: []
+commits:
+  - "fix(egress): a path prefix applies to a path with an encoded slash"
 upstream:
   outcome: to-file
   refs: []
