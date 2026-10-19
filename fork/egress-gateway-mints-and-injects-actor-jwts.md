@@ -1,7 +1,7 @@
 # The egress gateway mints and injects actor JWTs
 
 - **Status:** carried
-- **Upstream:** merged on agent-substrate/substrate `main`: [agent-substrate/substrate#2135](https://github.com/agent-substrate/substrate/pull/2135) (`66f8a888`), [#2141](https://github.com/agent-substrate/substrate/pull/2141) (`d966c8e8`), [#2421](https://github.com/agent-substrate/substrate/pull/2421) (`55b6e00e`); in no release tag yet. Leaves at the first re-pin onto a tag that contains all three.
+- **Upstream:** merged on agent-substrate/substrate `main`: [agent-substrate/substrate#2135](https://github.com/agent-substrate/substrate/pull/2135) (`66f8a888`), [#2141](https://github.com/agent-substrate/substrate/pull/2141) (`d966c8e8`), [#2421](https://github.com/agent-substrate/substrate/pull/2421) (`55b6e00e`); all three in agent-substrate/substrate v0.5.0 (2026-10-14) and kagent-dev/substrate v0.5.0-alpha4 (2026-10-14), not in the v0.5.0-alpha2 pin. Leaves at the first re-pin onto a tag that contains them.
 - **Our commit:** [#421](https://github.com/giantswarm/substrate/pull/421): the `git cherry-pick -x` of the three upstream commits, with the agentgateway line's `2.4.0-rc.2` as the agentgateway dataplane; [#429](https://github.com/giantswarm/substrate/pull/429) moves the dataplane to the stable `2.4.0`
 
 ## Change

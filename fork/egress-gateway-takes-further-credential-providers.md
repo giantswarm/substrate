@@ -1,7 +1,7 @@
 # The egress gateway takes further credential providers
 
 - **Status:** carried
-- **Upstream:** to file for kagent-dev/substrate (chart only)
+- **Upstream:** [kagent-dev/substrate#90](https://github.com/kagent-dev/substrate/pull/90) (open, 2026-10-18, the chart); [agent-substrate/substrate#2829](https://github.com/agent-substrate/substrate/issues/2829) (open, 2026-10-18) and [#2830](https://github.com/agent-substrate/substrate/pull/2830) (draft, 2026-10-18) for ate-setup
 - **Our commit:** [#248](https://github.com/giantswarm/substrate/pull/248) (carries [#104](https://github.com/giantswarm/substrate/pull/104) onto the v0.4.0-alpha1 line)
 
 ## Change
