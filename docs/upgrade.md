@@ -1184,6 +1184,11 @@ conversations and durable volumes survive it.
   listener. The Envoy dataplane keeps closing such streams.
 - **During the roll:** a `tcp` rule takes effect once the egress gateway
   runs the new agentgateway; until then such a stream is closed as before.
+- **Credential path prefix:** a request path with a percent-encoded `/`
+  (GitLab's `/api/v4/projects/<group>%2F<project>`) gets the
+  `replace_headers` entry whose `path_prefix` it lies under, when reading
+  `%2F` as a separator yields no dot or empty segment; until atenet's
+  egress runs 1.16 it gets only the host-wide entry, as before.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
