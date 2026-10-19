@@ -8,7 +8,7 @@ upstream:
   outcome: to-file
   refs: [agent-substrate/substrate#2105]
   exit: line release after which no pre-golden-tag state exists; upstream AGENTS.md forbids fallbacks
-depends_on: []
+depends_on: [giantswarm/agentgateway-upstream:a-resume-refusal-marked-not-resumable-is-answered-at-once]
 commit: 78d4ad00
 verified: 2026-10-19
 ---
