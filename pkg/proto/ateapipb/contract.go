@@ -23,4 +23,7 @@ package ateapipb
 //
 // "+path-prefix": CredentialHeader.path_prefix. A server without it drops the
 // field and applies a prefixed credential to every path of the host.
-const EgressPolicyContractVersion = "v0.4.0-alpha1+path-prefix"
+//
+// "+tcp": EgressRule.tcp. A server without it stores the rule with no member,
+// which allows nothing.
+const EgressPolicyContractVersion = "v0.4.0-alpha1+path-prefix+tcp"
