@@ -1,3 +1,17 @@
+---
+id: atelet-restore-bounded-retried-actor-whose-restore
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1518, agent-substrate/substrate#1562, agent-substrate/substrate#1817, agent-substrate/substrate#1867]
+  exit: upstream PR
+depends_on: [lifecycle-workflow-outlives-callers-cancellation]
+commit: a3b292e4
+verified: 2026-10-19
+---
 # The atelet restore is bounded and retried, and an actor whose restore keeps exceeding its budget is …
 
 - **Status:** carried

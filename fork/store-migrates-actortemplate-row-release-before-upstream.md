@@ -1,3 +1,17 @@
+---
+id: store-migrates-actortemplate-row-release-before-upstream
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2482]
+  exit: as#2482 decision; pre-1.0 policy risk
+depends_on: []
+commit: giantswarm/substrate#318
+verified: 2026-10-19
+---
 # The store migrates an ActorTemplate row a release before upstream #2048 wrote when it decodes it, …
 
 - **Status:** carried

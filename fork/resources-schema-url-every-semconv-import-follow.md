@@ -1,3 +1,17 @@
+---
+id: resources-schema-url-every-semconv-import-follow
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: none
+  refs: []
+  exit: trivial upstream PR
+depends_on: []
+commit: 04c3342f
+verified: 2026-10-19
+---
 # The resource's schema URL and every `semconv` import follow the semantic conventions of the SDK's …
 
 - **Status:** carried

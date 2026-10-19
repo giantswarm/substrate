@@ -1,3 +1,17 @@
+---
+id: image-layer-files-keep-owner-their-layer
+fork: substrate
+theme: compat-migrations
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1918, agent-substrate/substrate#2036, agent-substrate/substrate#2392]
+  exit: as#2392 merged
+depends_on: [actors-run-as-their-images-user-workdir]
+commit: giantswarm/substrate#115
+verified: 2026-10-19
+---
 # Image-layer files keep the owner their layer tar gives them
 
 - **Status:** carried

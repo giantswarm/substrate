@@ -1,3 +1,17 @@
+---
+id: e2e-credential-fixture-adds-grants
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd PR
+depends_on: []
+commit: giantswarm/substrate#359
+verified: 2026-10-19
+---
 # The e2e credential fixture adds its grants to the provider policy instead of swapping it
 
 - **Status:** carried

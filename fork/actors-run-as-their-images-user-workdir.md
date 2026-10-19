@@ -1,7 +1,21 @@
+---
+id: actors-run-as-their-images-user-workdir
+fork: substrate
+theme: compat-migrations
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1906, agent-substrate/substrate#1910, agent-substrate/substrate#1918]
+  exit: re-pin onto a base containing as#1906 and as#1918
+depends_on: [giantswarm/kagent-upstream:harness-run-claude-code-as-the-images-unprivileged]
+commit: f55a4de4
+verified: 2026-10-19
+---
 # Actors run as their image's `USER` in its `WORKDIR`
 
 - **Status:** carried
-- **Upstream:** not ours: [agent-substrate/substrate#1918](https://github.com/agent-substrate/substrate/pull/1918) (author dims, open, five commits, rebased on 2026-10-01) and [#1906](https://github.com/agent-substrate/substrate/pull/1906) (open), which #1918 asks to merge first; #1910 is merged. All fall away at the re-pin onto the first release that carries #1918. **The upgrade onto this line breaks every gVisor snapshot**: `runsc restore` checks each container's `Process.User` and `Process.Cwd` against the checkpoint and the pause image sets `USER 65535`, so delete every gVisor actor before the roll and recreate every gVisor template after it (`docs/upgrade.md`, step 4); micro-VM snapshots resume as they were. The harness images must declare their identity (`USER 0:0`, `WORKDIR /`, kagent-upstream#125) before the roll, or the harness itself starts as 65532
+- **Upstream:** not ours: [agent-substrate/substrate#1918](https://github.com/agent-substrate/substrate/pull/1918) (author dims, open on 2026-10-19) and [#1906](https://github.com/agent-substrate/substrate/pull/1906) (merged 2026-10-16, `97de17b1`, in kagent-dev/substrate v0.6.0-alpha3, not in the v0.5.0-alpha2 pin), which #1918 asked to merge first; #1910 is merged. All fall away at the re-pin onto the first release that carries #1918. **The upgrade onto this line breaks every gVisor snapshot**: `runsc restore` checks each container's `Process.User` and `Process.Cwd` against the checkpoint and the pause image sets `USER 65535`, so delete every gVisor actor before the roll and recreate every gVisor template after it (`docs/upgrade.md`, step 4); micro-VM snapshots resume as they were. The harness images must declare their identity (`USER 0:0`, `WORKDIR /`, kagent-upstream#125) before the roll, or the harness itself starts as 65532
 - **Our commit:** `git cherry-pick -x` of the whole stack, in upstream's order: `f55a4de4` (upstream's `8f7eb07d`, rootfs root), with the fork-only test of a restored bundle `f4a98eb1`; `1f43f481` (`895ec3ce`, #1906); `12670632`, `3da2115b`, `136337e7`, `ab5c083e` (`1e0466df`, `fa8578de`, `5925173f`, `d41a2fc2`, #1918). `afb62e18` (agent-substrate/substrate#1910, the manifest's `CAP_DAC_OVERRIDE`) is in the pin. Adapted to the line: `ocispec.Options` keeps its `ActorUID`/`ContainerName` shape and gains only `User` and `Cwd`, paths stay in `ateompath`, and the fork's `TestPrepareOCIDirectory_RegistryRejectionIsTerminal` passes the bundle path; also [#103](https://github.com/giantswarm/substrate/pull/103) (`feat(atelet): carry the image USER and WORKDIR stack of agent-substrate/substrate#1918`), [#101](https://github.com/giantswarm/substrate/pull/101) (`fix(imagecache): carry the rootfs root fix of agent-substrate/substrate#1918`)
 
 ## Change

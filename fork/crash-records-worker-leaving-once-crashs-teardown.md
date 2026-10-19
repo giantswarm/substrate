@@ -1,3 +1,17 @@
+---
+id: crash-records-worker-leaving-once-crashs-teardown
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2479, agent-substrate/substrate#2480]
+  exit: as#2480 merged
+depends_on: [crashactor-terminates-sandbox-atelet-detaches-actors-volumes, resume-rolling-worker-pool-interrupts-retried]
+commit: giantswarm/substrate#306
+verified: 2026-10-19
+---
 # A crash records its worker leaving
 
 - **Status:** carried

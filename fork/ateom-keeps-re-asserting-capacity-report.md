@@ -1,3 +1,17 @@
+---
+id: ateom-keeps-re-asserting-capacity-report
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1473, giantswarm/substrate#20]
+  exit: as#1473 design or upstream PR
+depends_on: [re-register-worker-whose-pod-ip-changed]
+commit: 77953308
+verified: 2026-10-19
+---
 # ateom keeps re-asserting its capacity report
 
 - **Status:** carried

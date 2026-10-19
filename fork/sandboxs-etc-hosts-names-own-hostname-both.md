@@ -1,3 +1,17 @@
+---
+id: sandboxs-etc-hosts-names-own-hostname-both
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#243
+verified: 2026-10-19
+---
 # A sandbox's `/etc/hosts` names its own hostname
 
 - **Status:** carried

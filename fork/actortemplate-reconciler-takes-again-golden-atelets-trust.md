@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-takes-again-golden-atelets-trust
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: fork-only
+  refs: [giantswarm/substrate#317]
+  exit: line release after which no fork-era trust-bundle state exists
+depends_on: [giantswarm/substrate#317, store-migrates-actortemplate-row-release-before-upstream]
+commit: giantswarm/substrate#333
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler takes again a golden atelet's trust-bundle guard failed
 
 - **Status:** carried

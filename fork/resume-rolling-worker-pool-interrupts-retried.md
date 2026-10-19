@@ -1,3 +1,17 @@
+---
+id: resume-rolling-worker-pool-interrupts-retried
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2477, agent-substrate/substrate#2479]
+  exit: as#2479 merged
+depends_on: [actortemplate-reconciler-retries-golden-take-rolling-worker]
+commit: giantswarm/substrate#303
+verified: 2026-10-19
+---
 # A resume a rolling worker pool interrupts is retried
 
 - **Status:** carried

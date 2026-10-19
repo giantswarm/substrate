@@ -1,7 +1,21 @@
+---
+id: egress-gateway-tells-actor-why-credential-was
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2555, agentgateway/agentgateway#3875]
+  exit: as#2555 resolved upstream, then agentgateway#3875
+depends_on: [giantswarm/agentgateway-upstream:a-credential-providers-failure-is-answered-by-its-class]
+commit: giantswarm/substrate#112
+verified: 2026-10-19
+---
 # The egress gateway tells the actor why a credential was refused
 
 - **Status:** carried
-- **Upstream:** to file, with the agentgateway half: the 502 for unexpected answers needs upstream's agreement
+- **Upstream:** [agent-substrate/substrate#2555](https://github.com/agent-substrate/substrate/issues/2555) (open, 2026-10-13) asks upstream for the classes; ericcurtin took the Substrate side on 2026-10-15 (`credentials.go`, tests, doc table, the `FetchSecret` contract; the config-error row waits until 500 vs 502 is settled); the agentgateway half is agentgateway/agentgateway#3875 (draft)
 - **Our commit:** `feat/credential-provider-errors`; merged as [#112](https://github.com/giantswarm/substrate/pull/112) (`feat(atenet): tell the actor why a credential was refused`)
 
 ## Change

@@ -1,3 +1,17 @@
+---
+id: helm-e2e-dumps-restarted-containers-end
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd PR
+depends_on: []
+commit: giantswarm/substrate#362
+verified: 2026-10-19
+---
 # helm-e2e's failure dump names a restarted container's end
 
 - **Status:** carried

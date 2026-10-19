@@ -1,3 +1,17 @@
+---
+id: existing-volume-mounted-per-actor-at-sub
+fork: substrate
+theme: workspace-volumes
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1637, agent-substrate/substrate#1988, agent-substrate/substrate#1994]
+  exit: as#1988 merged (gated); drop the ungated fork API
+depends_on: [read-write-mounts-missing-sub-path-directory, resources-deepequal-unchanged-value-check-generated-declarat, giantswarm/kagent-upstream:session-the-sessions-actor-with-its-workspace-directory]
+commit: giantswarm/substrate#234
+verified: 2026-10-19
+---
 # An existing volume mounted per actor at a sub-path
 
 - **Status:** carried

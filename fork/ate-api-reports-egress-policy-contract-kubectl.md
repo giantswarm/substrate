@@ -1,3 +1,17 @@
+---
+id: ate-api-reports-egress-policy-contract-kubectl
+fork: substrate
+theme: egress-policies
+category: gs-specific
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: drops when path_prefix lands upstream or is dropped
+depends_on: [egress-scopes-credential-header-to-request-path-prefix]
+commit: giantswarm/substrate#160
+verified: 2026-10-19
+---
 # ate-api reports its egress-policy contract and `kubectl ate create` and `update egress-policy` …
 
 - **Status:** carried

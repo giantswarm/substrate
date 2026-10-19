@@ -1,3 +1,17 @@
+---
+id: credential-provider-grants-namespaces-selected-by-label
+fork: substrate
+theme: tenancy
+category: gs-specific
+status: carried
+upstream:
+  outcome: to-file
+  refs: [giantswarm/substrate-credential-providers#13]
+  exit: move into the plugin's config and drop the fork patch
+depends_on: []
+commit: giantswarm/substrate#456
+verified: 2026-10-19
+---
 # The Kubernetes credential provider grants namespaces selected by label
 
 - **Status:** carried

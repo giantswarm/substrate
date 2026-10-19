@@ -1,3 +1,17 @@
+---
+id: keep-podcertificate-controller-system-across-uninstall
+fork: substrate
+theme: chart-shape
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1166]
+  exit: chart-shape migration
+depends_on: [chart-keeps-lines-shape-on-v0-5-0-alpha2-base]
+commit: b73983ae
+verified: 2026-10-19
+---
 # Keep `podcertificate-controller-system` across an uninstall
 
 - **Status:** carried

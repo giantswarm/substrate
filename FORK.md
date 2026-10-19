@@ -6,7 +6,7 @@ Agent Platform's kagent (API v2) runs every agent as a Substrate actor; this for
 Substrate is pinned, built, scanned and published. It answers one question from one place: **which Substrate
 are we running, and why does it differ from upstream?**
 
-Tracking: both upstream repositories have issues disabled, so each carried patch is a ledger file in `fork/` that
+Tracking: each carried patch is a ledger file in `fork/` that
 names its pull request here and its upstream pull request or issue; the line's own work is tracked in this repository's
 public issues. The kagent line is built the same way ([giantswarm/kagent-upstream](https://github.com/giantswarm/kagent-upstream)).
 Giant Swarm's internal planning stays out of this public file: where a row once cited an internal issue, it states the
@@ -56,6 +56,8 @@ What the commit does.
 Why the line carries it.
 ```
 
+Every ledger file opens with a YAML front-matter that a generator reads (the prose below it is for people): `id` (the file name), `fork` (`substrate`), `theme` (one of the shared theme slugs, `session-lifecycle` to `never-filed`), `category` (`pin`, `infra`, `bugfix`, `feature`, `gs-specific`, `compat` or `test`), `status`, `upstream.outcome` (`merged`, `open`, `declined`, `superseded`, `to-file`, `fork-only`, `drops-at-repin` or `none`), `upstream.refs` (every upstream and fork item as `owner/repo#N`), `upstream.exit` (what makes the change leave the fork), `depends_on` (ledger files of this or another line, `owner/repo:<slug>` for another line, or an `owner/repo#N` item), `commit` (the commit on `giantswarm`, or the fork pull request as `giantswarm/substrate#N` where the file names no commit) and `verified` (the date the upstream state was last checked). `.github/scripts/ledger-header.sh substrate fork` checks every header and runs in the `fork-ledger` workflow of every pull request (the same rules as `fork-ledger validate`); `fork-ledger header` seeds one from the prose. Proposal and vocabulary: giantswarm/kagent-upstream#719.
+
 A change adds or edits only its own file, in its own pull request; the file's name is the change's key. A re-pin
 that makes a change redundant deletes its file (the paragraphs below name what each re-pin dropped). The
 fork-infrastructure file (CI, publishing, sync, the ledger check) covers the changes to files that are not
@@ -78,8 +80,8 @@ a workload that exits at start-up is re-booted forever and its cause never repor
 the egress MITM CA cannot be rotated without failing actor TLS, and the image-layer owners, without which
 an actor run as its image's `USER` cannot write what its image gave it, and the migration of the golden snapshot status a release before golden tags recorded, without which
 every template created on 1.0.x refuses its actors as not resumable after the upgrade, and the egress-policy contract check, without which a `kubectl-ate` of another line stores a policy with another meaning, and the template delete that takes the row first, without which a refused delete leaves a template whose golden is gone, and the fencing token on Pause, Suspend and Resume, without which a lease holder frozen past its lease pauses an actor its successor left running, and the lease-free durable-pause commit with the holder-naming lease, without which a client's pause or suspend right after a resume is Aborted by background work on a loaded database, and the denial's own gRPC code for a denied gRPC call, without which a gRPC caller of a held actor reads Unavailable and cannot tell it from an unavailable control plane, and the re-take of a golden written in an older snapshot layout, without which every new conversation on every agent fails after a release that changes the layout until the goldens are reset by hand; all twenty-four are written for upstream and leave at the first release that carries them. Two more are the line's own and stay: the read of a 1.8 actor's local-snapshot node and assigned node, without which a paused 1.8 actor cannot resume on v0.5.0-alpha2 and a running one crashes on its first pause, and the chart's own shape on the v0.5.0-alpha2 base, without which an upgrade loses the bundled database and the certificate controller. The image-identity patches are upstream's open
-agent-substrate/substrate#1918 and #1906 with the merged #1910. The Postgres Secret patch is upstream's own pull
-request, a draft since 2026-09-29. Everything else is what upstream has already merged; the `x/net` v0.61.0 requirement changes versions only and leaves when upstream requires it (see its row). Giant Swarm specific wiring
+agent-substrate/substrate#1918 with the merged #1906 (2026-10-16) and #1910. The Postgres Secret patch is upstream's own pull
+request, merged 2026-10-08 and in the v0.5.0-alpha2 pin, beside which the line keeps its own value key. Everything else is what upstream has already merged; the `x/net` v0.61.0 requirement changes versions only and leaves when upstream requires it (see its row). Giant Swarm specific wiring
 lives elsewhere: the CA/JWT pool bootstrap (`kubectl-ate admin make-ca-pool`/`make-jwt-pool`
 and the `ate-api-authentication` ConfigMap) is created by [agentlab](https://github.com/giantswarm/agentlab)
 and by meta chart 4.0; the `WorkerPool` the platform's Harnesses run on comes with the kagent chart
@@ -155,7 +157,7 @@ The fork commits above are the replayed SHAs.
 ## Upstream items prepared without a carried patch
 
 Items the platform needs from Substrate whose fix is not yet written. The text below is the upstream-facing
-proposal (upstream has issues disabled, so it becomes a kagent-dev/substrate pull request when the patch
+proposal (it becomes an agent-substrate/substrate issue, a kagent-dev/substrate pull request when the patch
 exists, or a kagent-dev/kagent issue); a human decides whether and when it goes upstream.
 
 ### Place an actor's restore only on a worker whose CPU covers the snapshot's feature set

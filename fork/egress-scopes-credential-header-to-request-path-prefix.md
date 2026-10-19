@@ -1,3 +1,17 @@
+---
+id: egress-scopes-credential-header-to-request-path-prefix
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2515, agent-substrate/substrate#2541]
+  exit: as#2541 decision
+depends_on: [ate-api-reports-egress-policy-contract-kubectl, giantswarm/agentgateway-upstream:substrate-egress-applies-credential-header-by-request-path-prefix]
+commit: giantswarm/substrate#349
+verified: 2026-10-19
+---
 # The egress gateway scopes a credential header to a request path prefix
 
 - **Status:** carried

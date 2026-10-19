@@ -1,3 +1,17 @@
+---
+id: release-checklist-names-upgrade-entry-patch-step
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none
+depends_on: []
+commit: giantswarm/substrate#378
+verified: 2026-10-19
+---
 # release checklist names the upgrade entry of a patch release
 
 - **Status:** carried

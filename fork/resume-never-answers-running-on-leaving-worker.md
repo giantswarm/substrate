@@ -1,3 +1,17 @@
+---
+id: resume-never-answers-running-on-leaving-worker
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2480]
+  exit: upstream PR after as#2480
+depends_on: [crash-records-worker-leaving-once-crashs-teardown, running-actor-lost-worker-returns-to-snapshot]
+commit: giantswarm/substrate#384
+verified: 2026-10-19
+---
 # A resume never answers RUNNING on a worker that started leaving under its restore
 
 - **Status:** carried

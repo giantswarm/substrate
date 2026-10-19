@@ -1,3 +1,17 @@
+---
+id: ca-pools-rotate-with-cross-certified-overlap
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#932, agent-substrate/substrate#971]
+  exit: upstream design issue then PR
+depends_on: []
+commit: c8584af3
+verified: 2026-10-19
+---
 # CA pools rotate with a cross-certified overlap
 
 - **Status:** carried

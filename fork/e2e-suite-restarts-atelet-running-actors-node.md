@@ -1,3 +1,17 @@
+---
+id: e2e-suite-restarts-atelet-running-actors-node
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none planned
+depends_on: []
+commit: giantswarm/substrate#179
+verified: 2026-10-19
+---
 # An e2e suite restarts the atelet of a running actor's node and requires the next suspend to commit …
 
 - **Status:** carried

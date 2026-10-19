@@ -1,3 +1,17 @@
+---
+id: atelet-mounts-var-lib-kubelet-plugins-with
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [kagent-dev/substrate#39]
+  exit: kd#39 merged
+depends_on: []
+commit: b79ed513
+verified: 2026-10-19
+---
 # atelet mounts `/var/lib/kubelet/plugins` with `mountPropagation
 
 - **Status:** carried

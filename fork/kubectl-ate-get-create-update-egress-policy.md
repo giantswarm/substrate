@@ -1,3 +1,17 @@
+---
+id: kubectl-ate-get-create-update-egress-policy
+fork: substrate
+theme: egress-policies
+category: feature
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#1659, agent-substrate/substrate#1813]
+  exit: carried on release-1.3 only; no commit on giantswarm, dropped from this ledger once release-1.3 is retired
+depends_on: []
+commit: giantswarm/substrate#156
+verified: 2026-10-19
+---
 # `kubectl ate get`, `create` and `update egress-policy` on `release-1.3`
 
 - **Status:** carried

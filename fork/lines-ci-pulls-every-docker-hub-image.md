@@ -1,3 +1,17 @@
+---
+id: lines-ci-pulls-every-docker-hub-image
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none
+depends_on: []
+commit: giantswarm/substrate#242
+verified: 2026-10-19
+---
 # The line's CI pulls every Docker Hub image through `mirror.gcr.io`, Google's public pull-through …
 
 - **Status:** carried

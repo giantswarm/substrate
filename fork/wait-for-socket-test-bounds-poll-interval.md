@@ -1,3 +1,17 @@
+---
+id: wait-for-socket-test-bounds-poll-interval
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#408
+verified: 2026-10-19
+---
 # waitForSocket's promptness test bounds the poll interval, not the wall clock
 
 - **Status:** carried

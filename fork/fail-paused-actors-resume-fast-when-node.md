@@ -1,3 +1,17 @@
+---
+id: fail-paused-actors-resume-fast-when-node
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1761, agent-substrate/substrate#397, agent-substrate/substrate#398, agent-substrate/substrate#401, agent-substrate/substrate#589]
+  exit: upstream PR
+depends_on: [make-every-pause-durable-after-pauseactor-finalizes]
+commit: 7ef4058d
+verified: 2026-10-19
+---
 # Fail a `PAUSED` actor's resume fast when the node holding its local snapshot is gone, and crash it …
 
 - **Status:** carried

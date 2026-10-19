@@ -1,3 +1,17 @@
+---
+id: ate-api-accepts-removed-snapshot-config-on-pause
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2309, agent-substrate/substrate#2542]
+  exit: as#2542 decision or kagent line past 1.10.x; likely declined under pre-1.0 policy
+depends_on: []
+commit: giantswarm/substrate#372
+verified: 2026-10-19
+---
 # ate-api accepts the removed SnapshotConfig.on_pause for a transition
 
 - **Status:** carried

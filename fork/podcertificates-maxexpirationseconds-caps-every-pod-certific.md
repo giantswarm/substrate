@@ -1,3 +1,17 @@
+---
+id: podcertificates-maxexpirationseconds-caps-every-pod-certific
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1344]
+  exit: kd chart PR
+depends_on: []
+commit: bf2728fe
+verified: 2026-10-19
+---
 # `podCertificates.maxExpirationSeconds` caps every pod certificate the chart requests
 
 - **Status:** carried

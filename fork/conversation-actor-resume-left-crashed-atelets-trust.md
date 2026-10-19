@@ -1,3 +1,17 @@
+---
+id: conversation-actor-resume-left-crashed-atelets-trust
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: line release after which no such actors remain
+depends_on: [actortemplate-reconciler-takes-again-golden-atelets-trust]
+commit: giantswarm/substrate#335
+verified: 2026-10-19
+---
 # A conversation actor a resume left `CRASHED` on atelet's trust-bundle guard returns to the snapshot …
 
 - **Status:** carried

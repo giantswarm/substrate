@@ -1,3 +1,17 @@
+---
+id: every-gvisor-workerpool-runs-releases-own-ateom
+fork: substrate
+theme: compat-migrations
+category: gs-specific
+status: carried
+upstream:
+  outcome: fork-only
+  refs: [agent-substrate/substrate#1357]
+  exit: fix the consumer-side ordering instead
+depends_on: [actors-run-as-their-images-user-workdir]
+commit: giantswarm/substrate#114
+verified: 2026-10-19
+---
 # Every gVisor WorkerPool runs the release's own `ateom-gvisor`
 
 - **Status:** carried

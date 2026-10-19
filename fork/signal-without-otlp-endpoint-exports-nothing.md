@@ -1,3 +1,17 @@
+---
+id: signal-without-otlp-endpoint-exports-nothing
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR
+depends_on: []
+commit: giantswarm/substrate#136
+verified: 2026-10-19
+---
 # A signal without an OTLP endpoint exports nothing
 
 - **Status:** carried

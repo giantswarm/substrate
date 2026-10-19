@@ -1,3 +1,17 @@
+---
+id: glutton-cpu-burn-test-bounded-by-scheduler-share
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#449
+verified: 2026-10-19
+---
 # The glutton CPU burn test is bounded by the scheduler's share
 
 - **Status:** carried

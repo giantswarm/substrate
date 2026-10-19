@@ -1,3 +1,17 @@
+---
+id: atunnel-ends-connect-tunnel-when-actor-closes
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#2531]
+  exit: next re-pin
+depends_on: []
+commit: giantswarm/substrate#451
+verified: 2026-10-19
+---
 # atunnel ends a CONNECT tunnel when the actor closes its connection
 
 - **Status:** carried
