@@ -9,7 +9,7 @@ upstream:
   refs: []
   exit: chart-shape migration
 depends_on: [chart-keeps-lines-shape-on-v0-5-0-alpha2-base]
-commit: ""
+commit: 73da0a6d
 verified: 2026-10-19
 ---
 # The certificate controller runs the PostgreSQL signer only with a CA pool

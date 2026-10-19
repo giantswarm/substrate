@@ -9,7 +9,7 @@ upstream:
   refs: []
   exit: line release after which no 1.8 rows remain
 depends_on: []
-commit: ""
+commit: 87c54ce5
 verified: 2026-10-19
 ---
 # ate-api reads a 1.8 actor's local-snapshot node and assigned node

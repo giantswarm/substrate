@@ -9,7 +9,7 @@ upstream:
   refs: []
   exit: one-time migration to platform sub-charts (agent-platform#977 starts it)
 depends_on: [keep-podcertificate-controller-system-across-uninstall, podcertcontroller-runs-postgres-signer-only-with-ca-pool, read-ate-api-servers-postgresql-connection-string]
-commit: ""
+commit: 4d8ac843
 verified: 2026-10-19
 ---
 # The chart keeps the line's shape on the v0.5.0-alpha2 base
