@@ -4,19 +4,16 @@ fork: substrate
 theme: compat-migrations
 category: compat
 status: carried
+commits:
+  - 'fix(ateapi): read a 1.8 actor''s local-snapshot node and assigned node'
 upstream:
   outcome: fork-only
   refs: []
   exit: line release after which no 1.8 rows remain
 depends_on: []
-commit: 87c54ce5
 verified: 2026-10-19
 ---
 # ate-api reads a 1.8 actor's local-snapshot node and assigned node
-
-- **Status:** carried
-- **Upstream:** none: upstream's `AGENTS.md` keeps no compatibility with older formats before v1.0.0, so a migration from the line's 1.8 rows stays on the line. It leaves once no installation holds a row a 1.8 release wrote
-- **Our commit:** the re-pin onto v0.5.0-alpha2 (`fix(ateapi): read a 1.8 actor's local-snapshot node and assigned node`)
 
 ## Change
 
@@ -25,3 +22,9 @@ An Actor row is migrated on read (`cmd/ateapi/internal/store/atepg/legacy_snapsh
 ## Reason
 
 v0.5.0-alpha2 renumbers `LocalSnapshot.content_scope` onto the field the 1.8 line used for its node list and decides where an actor lives by `ActorStatus.assigned_node`, which no 1.8 release wrote. Read as written, a paused 1.8 actor has no node to resume on and its DATA snapshot reads as FULL; a running one crashes on its first pause after the upgrade for an unknown node, and a delete or crash skips terminating its sandbox. Actors and their snapshots from a 1.8 release resume on the new base with no manual step.
+
+## History
+
+none: upstream's `AGENTS.md` keeps no compatibility with older formats before v1.0.0, so a migration from the line's 1.8 rows stays on the line. It leaves once no installation holds a row a 1.8 release wrote
+
+the re-pin onto v0.5.0-alpha2 (`fix(ateapi): read a 1.8 actor's local-snapshot node and assigned node`)

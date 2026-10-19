@@ -4,19 +4,16 @@ fork: substrate
 theme: new-rpcs
 category: feature
 status: carried
+commits:
+  - 'fix(ateom): report a container exit under a running sandbox'
 upstream:
   outcome: to-file
   refs: []
   exit: same as ReportActorExit
 depends_on: [ateom-reports-sandbox-exit-of-running-actor]
-commit: giantswarm/substrate#464
 verified: 2026-10-19
 ---
 # ateom reports an application container that exits under a running sandbox
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch `upstream/container-exit`, on top of `upstream/sandbox-exit-report`, which it extends
-- **Our commit:** [#464](https://github.com/giantswarm/substrate/pull/464)
 
 ## Change
 
@@ -34,3 +31,9 @@ The pause container keeps a gVisor sandbox running after its application process
 saw such an exit: the actor stayed RUNNING with nothing in it, its sockets closed with the process, and every turn
 waited out its caller's deadline. A restored actor's process ended 83 ms after a model response reached its
 connection, and the turn hung until the client's bound; the exit status now names the cause.
+
+## History
+
+to file — prepared in the fork: branch `upstream/container-exit`, on top of `upstream/sandbox-exit-report`, which it extends
+
+[#464](https://github.com/giantswarm/substrate/pull/464)

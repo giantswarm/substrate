@@ -4,19 +4,17 @@ fork: substrate
 theme: chart-knobs
 category: bugfix
 status: carried
+commits:
+  - 'fix(chart): name the registry of every Docker Hub image default'
+  - 'fix(chart): keep images.awsCli a short name — the bucket-init Job''s template is immutable'
 upstream:
   outcome: to-file
   refs: []
   exit: kd chart PR
 depends_on: []
-commit: 735555b1
 verified: 2026-10-19
 ---
 # The chart's Docker Hub image defaults name their registry
-
-- **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/qualified-image-refs`](https://github.com/giantswarm/substrate/tree/upstream/qualified-image-refs) here (`27ae1f9`, on the mirror `main`); upstream's `manifests/ate-install/**` carry the same short names (rustfs, aws-cli, postgres; in `kind/` prometheus, otel, jaeger, envoy) and should travel with it; `images.awsCli` moved to the gsoci copy with the hook row below
-- **Our commit:** `735555b1` ([#42](https://github.com/giantswarm/substrate/pull/42)), [#43](https://github.com/giantswarm/substrate/pull/43)
 
 ## Change
 
@@ -25,3 +23,9 @@ The chart's Docker Hub image defaults name their registry (`images.postgres`, `i
 ## Reason
 
 which registry a short name means is the node runtime's call, and only containerd defaults it to docker.io — CRI-O (short-name mode enforcing, the containers-common alias table only) refuses `rustfs/rustfs`, `postgres` and `amazon/aws-cli` with `ImageInspectError: … returns ambiguous list`. On a bare-metal installation (containerd Sparks, CRI-O control planes, no taints) a drain rescheduled rustfs onto a CRI-O node on 2026-09-17 and the snapshot store was gone for 25 min; the bundled postgres and the bucket-init Job carry the same exposure. The installation overrides `substrate.images.*` in the meta chart until a release of the line ships this. On the line the `docker.io` names are superseded by the gsoci copies (next row); this row's upstream-shaped form is what upstream gets
+
+## History
+
+to file: the upstream-shaped patch is branch [`upstream/qualified-image-refs`](https://github.com/giantswarm/substrate/tree/upstream/qualified-image-refs) here (`27ae1f9`, on the mirror `main`); upstream's `manifests/ate-install/**` carry the same short names (rustfs, aws-cli, postgres; in `kind/` prometheus, otel, jaeger, envoy) and should travel with it; `images.awsCli` moved to the gsoci copy with the hook row below
+
+`735555b1` ([#42](https://github.com/giantswarm/substrate/pull/42)), [#43](https://github.com/giantswarm/substrate/pull/43)

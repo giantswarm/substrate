@@ -4,19 +4,16 @@ fork: substrate
 theme: ci-publish-infra
 category: infra
 status: carried
+commits:
+  - 'ci(fork): pull Docker Hub images through mirror.gcr.io'
 upstream:
   outcome: fork-only
   refs: []
   exit: none
 depends_on: []
-commit: giantswarm/substrate#242
 verified: 2026-10-19
 ---
 # The line's CI pulls every Docker Hub image through `mirror.gcr.io`, Google's public pull-through …
-
-- **Status:** carried
-- **Upstream:** fork-only, never upstream: upstream's CI runs on its own runners and never meets the limit; the script's knobs are unset there and change nothing
-- **Our commit:** [#242](https://github.com/giantswarm/substrate/pull/242) (`ci(fork): pull Docker Hub images through mirror.gcr.io`)
 
 ## Change
 
@@ -25,3 +22,9 @@ The line's CI pulls every Docker Hub image through `mirror.gcr.io`, Google's pub
 ## Reason
 
 GitHub-hosted runners share IPs that exhaust Docker Hub's unauthenticated pull limit: `run-tests` failed every Postgres-backed test on the pull of `postgres:18-alpine` and both e2e workflows stopped at the kind registry's `registry:3` with `toomanyrequests` ([#241](https://github.com/giantswarm/substrate/issues/241)); the kagent line fixed the same class the same way ([giantswarm/kagent-upstream#340](https://github.com/giantswarm/kagent-upstream/pull/340))
+
+## History
+
+fork-only, never upstream: upstream's CI runs on its own runners and never meets the limit; the script's knobs are unset there and change nothing
+
+[#242](https://github.com/giantswarm/substrate/pull/242) (`ci(fork): pull Docker Hub images through mirror.gcr.io`)

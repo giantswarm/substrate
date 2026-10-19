@@ -4,19 +4,16 @@ fork: substrate
 theme: ci-publish-infra
 category: infra
 status: carried
+commits:
+  - 'ci(helm-e2e): run every lane whatever an earlier lane did'
 upstream:
   outcome: open
   refs: [kagent-dev/substrate#71]
   exit: kd#71 merged
 depends_on: []
-commit: giantswarm/substrate#366
 verified: 2026-10-19
 ---
 # helm-e2e's lanes each run, whatever an earlier lane did
-
-- **Status:** carried
-- **Upstream:** [kagent-dev/substrate#71](https://github.com/kagent-dev/substrate/pull/71); agent-substrate/substrate has no helm-e2e. Falls away at the re-pin onto the first release that carries it
-- **Our commit:** [#366](https://github.com/giantswarm/substrate/pull/366)
 
 ## Change
 
@@ -25,3 +22,9 @@ Every `Run E2E tests (…)` step of helm-e2e runs once the setup before it succe
 ## Reason
 
 The lanes are steps of one job, so a failed lane skipped every later one: a flake in the gVisor lane hid the micro-VM lane on the same head until a re-run ([#365](https://github.com/giantswarm/substrate/issues/365)). Workflow-only.
+
+## History
+
+[kagent-dev/substrate#71](https://github.com/kagent-dev/substrate/pull/71); agent-substrate/substrate has no helm-e2e. Falls away at the re-pin onto the first release that carries it
+
+[#366](https://github.com/giantswarm/substrate/pull/366)

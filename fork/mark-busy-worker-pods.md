@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: feature
 status: carried
+commits:
+  - 'feat(atecontroller): mark worker pods hosting actors for autoscalers'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR
 depends_on: []
-commit: giantswarm/substrate#425
 verified: 2026-10-19
 ---
 # Mark the worker pods that host actors for the autoscaler
-
-- **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/busy-worker-do-not-disrupt`](https://github.com/giantswarm/substrate/tree/upstream/busy-worker-do-not-disrupt) here (`3913e1de`, on the mirror `main` @ `5cf1c245`; its message is the pull-request text). A team member opens the pull request with DCO sign-off once the team has reviewed it.
-- **Our commit:** [#425](https://github.com/giantswarm/substrate/pull/425)
 
 ## Change
 
@@ -25,3 +22,9 @@ ate-controller's `BusyMarker` (`cmd/atecontroller/internal/workersync/busy.go`) 
 ## Reason
 
 A worker pod's SIGTERM stops every actor it hosts, so Karpenter's consolidation of a node lost the turns in flight on its workers (giantswarm/agent-platform#1014). A static `karpenter.sh/do-not-disrupt` in the pool template would also pin idle workers' nodes forever; marking only busy workers keeps scale-down working.
+
+## History
+
+to file: the upstream-shaped patch is branch [`upstream/busy-worker-do-not-disrupt`](https://github.com/giantswarm/substrate/tree/upstream/busy-worker-do-not-disrupt) here (`3913e1de`, on the mirror `main` @ `5cf1c245`; its message is the pull-request text). A team member opens the pull request with DCO sign-off once the team has reviewed it.
+
+[#425](https://github.com/giantswarm/substrate/pull/425)

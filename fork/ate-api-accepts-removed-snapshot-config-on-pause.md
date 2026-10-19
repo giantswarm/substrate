@@ -4,19 +4,16 @@ fork: substrate
 theme: compat-migrations
 category: compat
 status: carried
+commits:
+  - 'fix(ateapi): accept the removed SnapshotConfig.on_pause for a transition'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2309, agent-substrate/substrate#2542]
   exit: as#2542 decision or kagent line past 1.10.x; likely declined under pre-1.0 policy
 depends_on: []
-commit: giantswarm/substrate#372
 verified: 2026-10-19
 ---
 # ate-api accepts the removed SnapshotConfig.on_pause for a transition
-
-- **Status:** carried
-- **Upstream:** [agent-substrate/substrate#2542](https://github.com/agent-substrate/substrate/pull/2542), open, from the branch `upstream/onpause-tolerance` on upstream `main` @ `f03327bd`; a compatibility shim for the field [#2309](https://github.com/agent-substrate/substrate/pull/2309) removed, which upstream's pre-v1.0 policy may decline
-- **Our commit:** [#372](https://github.com/giantswarm/substrate/pull/372): the fork's cherry-pick of the upstream pull request's two commits as one; `unmarshalStored` differs from upstream's, since the line migrates legacy rows there
 
 ## Change
 
@@ -25,3 +22,9 @@ The new package `internal/removedfields` lists the fields the API removed that a
 ## Reason
 
 kagent 1.10.x sets `on_pause` on every ActorTemplate it writes and compares the template it reads back with its compiled one by `proto.Equal`. Without this change, every new agent, agent edit and template recompile of such a kagent is refused on 1.9.x with `InvalidArgument` (`ActorTemplateRejected`). A shim that drops the field instead leaves those agents in `ActorTemplateConflict`, and a kagent restart puts the agents created before the step there as well. The change leaves once every consumer's kagent is built against protos without the field (kagent-dev/kagent dropped it with its Substrate v0.5.0-alpha bump) and ate-api logs no removed field.
+
+## History
+
+[agent-substrate/substrate#2542](https://github.com/agent-substrate/substrate/pull/2542), open, from the branch `upstream/onpause-tolerance` on upstream `main` @ `f03327bd`; a compatibility shim for the field [#2309](https://github.com/agent-substrate/substrate/pull/2309) removed, which upstream's pre-v1.0 policy may decline
+
+[#372](https://github.com/giantswarm/substrate/pull/372): the fork's cherry-pick of the upstream pull request's two commits as one; `unmarshalStored` differs from upstream's, since the line migrates legacy rows there

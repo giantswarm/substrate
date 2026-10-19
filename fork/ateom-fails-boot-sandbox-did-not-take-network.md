@@ -4,19 +4,17 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'ateom-gvisor: fail a boot whose sandbox did not take the actor''s network'
+  - 'fix(ateapi): a sandbox that did not take the actor''s network is a transient crash'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR
 depends_on: []
-commit: giantswarm/substrate#418
 verified: 2026-10-19
 ---
 # Fail a boot whose sandbox did not take the actor's network, and retake its golden
-
-- **Status:** carried
-- **Upstream:** to file: the branch [`upstream/sandbox-network-taken`](https://github.com/giantswarm/substrate/tree/upstream/sandbox-network-taken) (`3f05e24c`, on v0.5.0-alpha2) carries the ateom half; the transient cause is the line's own, beside its other transient crash causes
-- **Our commit:** [#418](https://github.com/giantswarm/substrate/pull/418): a `cherry-pick -x` of the upstream-ready commit and the line's transient cause
 
 ## Change
 
@@ -25,3 +23,9 @@ ateom-gvisor checks right after the pause container starts or is restored that t
 ## Reason
 
 a sandbox without the actor's interface leaves the kernel holding the address, and the kernel resets every connection to it: the wakeup probe was refused for its whole 30 s while the workload's own output said it was ready, and the template failed for good with `GoldenActorCrashed` ([#398](https://github.com/giantswarm/substrate/issues/398), helm-e2e on `395070a5`, gVisor lane). The failure named neither the network nor the worker, and a retry would have outlived it.
+
+## History
+
+to file: the branch [`upstream/sandbox-network-taken`](https://github.com/giantswarm/substrate/tree/upstream/sandbox-network-taken) (`3f05e24c`, on v0.5.0-alpha2) carries the ateom half; the transient cause is the line's own, beside its other transient crash causes
+
+[#418](https://github.com/giantswarm/substrate/pull/418): a `cherry-pick -x` of the upstream-ready commit and the line's transient cause

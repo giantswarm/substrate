@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(ateapi): retry a resume a rolling worker pool interrupts'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2477, agent-substrate/substrate#2479]
   exit: as#2479 merged
 depends_on: [actortemplate-reconciler-retries-golden-take-rolling-worker]
-commit: giantswarm/substrate#303
 verified: 2026-10-19
 ---
 # A resume a rolling worker pool interrupts is retried
-
-- **Status:** carried
-- **Upstream:** [agent-substrate/substrate#2479](https://github.com/agent-substrate/substrate/pull/2479), from the branch `upstream/session-resume-transient-retry`, stacked on [agent-substrate/substrate#2477](https://github.com/agent-substrate/substrate/pull/2477) (upstream `main` @ `29c049fc`): the recovery and retry of the resume, the shared list with the cancelled worker call; a paused actor keeps its local snapshot and node and has only its worker claim released, since upstream's terminate reaches the snapshot's node. The unreachable-worker cause and the `ActorTransitionReconciler`'s healing stay fork-only: upstream's crash frees the worker without a teardown that could observe it, and upstream has no transition reconciler
-- **Our commit:** [#303](https://github.com/giantswarm/substrate/pull/303): the fork's own commit
 
 ## Change
 
@@ -25,3 +22,9 @@ A resume a rolling worker pool interrupts is retried (a crash recorded by a resu
 ## Reason
 
 a session actor resumed while the worker pool rolled crashed for good on a draining worker, a missing ateom socket, a cancelled wakeup probe or its worker pod going away mid-restore, although its snapshot was intact; kagent's `ResumeSession` then failed for that conversation until someone reverted the actor by hand, and `RevertActor` drops a pause snapshot ([#297](https://github.com/giantswarm/substrate/issues/297)). Now the session resumes by itself once a worker is up
+
+## History
+
+[agent-substrate/substrate#2479](https://github.com/agent-substrate/substrate/pull/2479), from the branch `upstream/session-resume-transient-retry`, stacked on [agent-substrate/substrate#2477](https://github.com/agent-substrate/substrate/pull/2477) (upstream `main` @ `29c049fc`): the recovery and retry of the resume, the shared list with the cancelled worker call; a paused actor keeps its local snapshot and node and has only its worker claim released, since upstream's terminate reaches the snapshot's node. The unreachable-worker cause and the `ActorTransitionReconciler`'s healing stay fork-only: upstream's crash frees the worker without a teardown that could observe it, and upstream has no transition reconciler
+
+[#303](https://github.com/giantswarm/substrate/pull/303): the fork's own commit

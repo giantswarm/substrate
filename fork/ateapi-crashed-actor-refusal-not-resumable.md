@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(ateapi): mark a crashed actor''s resume refusal not resumable'
 upstream:
   outcome: to-file
   refs: [agent-substrate/substrate#1562]
   exit: upstream error-code contract (draft D on as#1562)
 depends_on: [giantswarm/agentgateway-upstream:a-resume-refusal-marked-not-resumable-is-answered-at-once]
-commit: giantswarm/substrate#445
 verified: 2026-10-19
 ---
 # A crashed actor's resume refusal is marked not resumable
-
-- **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/ateapi-crashed-actor-not-resumable` (`4f3cb20d1`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
-- **Our commit:** [#445](https://github.com/giantswarm/substrate/pull/445): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form
 
 ## Change
 
@@ -34,3 +31,9 @@ agentgateway line from 2.3.0 on, already answers a refusal carrying this directi
 `a-resume-refusal-marked-not-resumable-is-answered-at-once.md`); this change is its producer for a crashed actor, and
 the Go resumer honors the same directive. kagent's gateway reads the refusal as a send its runtime did not accept and
 reverts and resumes the actor.
+
+## History
+
+not opened yet: the upstream-ready commit is on the branch `upstream/ateapi-crashed-actor-not-resumable` (`4f3cb20d1`, mirror `main` at the pin `v0.5.0-alpha2` + the change, DCO-signed)
+
+[#445](https://github.com/giantswarm/substrate/pull/445): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form

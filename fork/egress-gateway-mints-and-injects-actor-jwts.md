@@ -4,19 +4,22 @@ fork: substrate
 theme: credential-injection
 category: feature
 status: carried
+commits:
+  - Egress policies can inject actor JWTs
+  - 'feat(egress): run the agentgateway line''s stable 2.4.0'
+  - Rename `MintActorJWTRequest.audience` to `audiences`.
+  - 'feat(egress): inject actor JWTs on the agentgateway dataplane with the agentgateway line''s 2.4.0-rc.1'
+  - 'test(chart): admit a release candidate of the agentgateway line as the dataplane image'
+  - 'feat(egress): run the agentgateway line''s 2.4.0-rc.2, which mints through MintActorJWT'
+  - Egress gateway can mint and cache actor JWTs
 upstream:
   outcome: drops-at-repin
   refs: [agent-substrate/substrate#2135, agent-substrate/substrate#2141, agent-substrate/substrate#2421]
   exit: next re-pin
 depends_on: [giantswarm/agentgateway-upstream:the-substrate-egress-injects-a-minted-actor-jwt]
-commit: giantswarm/substrate#421
 verified: 2026-10-19
 ---
 # The egress gateway mints and injects actor JWTs
-
-- **Status:** carried
-- **Upstream:** merged on agent-substrate/substrate `main`: [agent-substrate/substrate#2135](https://github.com/agent-substrate/substrate/pull/2135) (`66f8a888`), [#2141](https://github.com/agent-substrate/substrate/pull/2141) (`d966c8e8`), [#2421](https://github.com/agent-substrate/substrate/pull/2421) (`55b6e00e`); all three in agent-substrate/substrate v0.5.0 (2026-10-14) and kagent-dev/substrate v0.5.0-alpha4 (2026-10-14), not in the v0.5.0-alpha2 pin. Leaves at the first re-pin onto a tag that contains them.
-- **Our commit:** [#421](https://github.com/giantswarm/substrate/pull/421): the `git cherry-pick -x` of the three upstream commits, with the agentgateway line's `2.4.0-rc.2` as the agentgateway dataplane; [#429](https://github.com/giantswarm/substrate/pull/429) moves the dataplane to the stable `2.4.0`
 
 ## Change
 
@@ -25,3 +28,9 @@ The Envoy ext_proc gateway (`cmd/atenet/internal/router/egress`) injects an `act
 ## Reason
 
 A Session's Bearer caller credential in kagent compiles to an `actor_jwt` rule ([giantswarm/kagent-upstream#297](https://github.com/giantswarm/kagent-upstream/issues/297)). Without the mint, the Envoy gateway answered `501` and the agentgateway dataplane `403 invalid credential URI: `, so no agent could call a service as the person it works for.
+
+## History
+
+merged on agent-substrate/substrate `main`: [agent-substrate/substrate#2135](https://github.com/agent-substrate/substrate/pull/2135) (`66f8a888`), [#2141](https://github.com/agent-substrate/substrate/pull/2141) (`d966c8e8`), [#2421](https://github.com/agent-substrate/substrate/pull/2421) (`55b6e00e`); all three in agent-substrate/substrate v0.5.0 (2026-10-14) and kagent-dev/substrate v0.5.0-alpha4 (2026-10-14), not in the v0.5.0-alpha2 pin. Leaves at the first re-pin onto a tag that contains them.
+
+[#421](https://github.com/giantswarm/substrate/pull/421): the `git cherry-pick -x` of the three upstream commits, with the agentgateway line's `2.4.0-rc.2` as the agentgateway dataplane; [#429](https://github.com/giantswarm/substrate/pull/429) moves the dataplane to the stable `2.4.0`

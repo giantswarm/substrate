@@ -4,19 +4,16 @@ fork: substrate
 theme: chart-knobs
 category: gs-specific
 status: carried
+commits:
+  - 'fix(helm): recreate the rustfs bucket-init Job, its image from gsoci'
 upstream:
   outcome: to-file
   refs: []
   exit: kd chart PR (hook half)
 depends_on: []
-commit: f4256587
 verified: 2026-10-19
 ---
 # The `rustfs-bucket-init` Job is a Helm hook
-
-- **Status:** carried
-- **Upstream:** to file for kagent-dev/substrate (the hook only; the gsoci default is fork-only)
-- **Our commit:** `f4256587` ([#85](https://github.com/giantswarm/substrate/pull/85))
 
 ## Change
 
@@ -25,3 +22,9 @@ The `rustfs-bucket-init` Job is a Helm hook (`post-install,post-upgrade`, delete
 ## Reason
 
 a Job's pod template is immutable: as a plain release resource any change of its image failed the upgrade of every installation with `spec.template: … field is immutable` until the completed Job was deleted by hand, so the chart kept Docker Hub's short name `amazon/aws-cli` and the platform could not run from gsoci only (giantswarm/agent-platform#580). On an upgrade from a release where the Job is a release resource, Helm deletes the old Job (gone from the manifest) and the post-upgrade hook creates the new one. `charts/substrate/tests/rustfs_test.yaml` holds the hook
+
+## History
+
+to file for kagent-dev/substrate (the hook only; the gsoci default is fork-only)
+
+`f4256587` ([#85](https://github.com/giantswarm/substrate/pull/85))

@@ -4,19 +4,16 @@ fork: substrate
 theme: chart-knobs
 category: gs-specific
 status: carried
+commits:
+  - 'fix(chart): the third-party image defaults are their gsoci copies'
 upstream:
   outcome: fork-only
   refs: []
   exit: adopt global.imageRegistry at a re-pin and drop the hardcoded defaults
 depends_on: []
-commit: giantswarm/substrate#45
 verified: 2026-10-19
 ---
 # The chart's third-party image defaults are their `gsoci.azurecr.io/giantswarm/â€¦` copies
-
-- **Status:** carried
-- **Upstream:** **ours to keep**: a Giant Swarm registry is not upstream's default; the upstream-shaped change is the row above (`upstream/qualified-image-refs`)
-- **Our commit:** [#45](https://github.com/giantswarm/substrate/pull/45)
 
 ## Change
 
@@ -25,3 +22,9 @@ The chart's third-party image defaults are their `gsoci.azurecr.io/giantswarm/â€
 ## Reason
 
 every Giant Swarm installation pulls from gsoci.azurecr.io and its image policy trusts the Giant Swarm signing identity (giantswarm/agent-platform#575, #580): a chart default off gsoci is pulled from a public registry the fleet does not otherwise reach and no policy admits. Until this release the meta chart forwards the same references in its `substrate.images` block (giantswarm/agent-platform, values.yaml), which becomes redundant with it
+
+## History
+
+**ours to keep**: a Giant Swarm registry is not upstream's default; the upstream-shaped change is the row above (`upstream/qualified-image-refs`)
+
+[#45](https://github.com/giantswarm/substrate/pull/45)

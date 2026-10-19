@@ -47,7 +47,7 @@ case_() {
   fi
 }
 
-case_ "no citation" 0 "- **Upstream:** to file — prepared in the fork: branch \`upstream/x\`"
+case_ "no citation" 0 "to file — prepared in the fork: branch \`upstream/x\`"
 case_ "public links" 0 "[#7](https://github.com/giantswarm/substrate/pull/7), giantswarm/agent-platform#12"
 case_ "an image path is no citation" 0 "\`gsoci.azurecr.io/giantswarm/pause:3.10.2\`"
 case_ "the internal repository" 1 "queued on [giantswarm/giantswarm#1](https://github.com/giantswarm/giantswarm/issues/1)" "giantswarm/giantswarm (internal)"

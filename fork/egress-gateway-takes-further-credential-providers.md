@@ -4,19 +4,19 @@ fork: substrate
 theme: credential-injection
 category: feature
 status: carried
+commits:
+  - 'feat(credprovider): serve k8s.io alone; the Google access-token provider is a plugin'
+  - 'feat(credprovider): mint Google access tokens from SA key Secrets'
+  - 'fix(chart): validate the egress gateway''s further credential providers'
+  - 'feat(chart): further credential providers for the egress gateway'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2829, agent-substrate/substrate#2830, kagent-dev/substrate#90]
   exit: kd#90 and as#2830 merged
 depends_on: []
-commit: giantswarm/substrate#248
 verified: 2026-10-19
 ---
 # The egress gateway takes further credential providers
-
-- **Status:** carried
-- **Upstream:** [kagent-dev/substrate#90](https://github.com/kagent-dev/substrate/pull/90) (open, 2026-10-18, the chart); [agent-substrate/substrate#2829](https://github.com/agent-substrate/substrate/issues/2829) (open, 2026-10-18) and [#2830](https://github.com/agent-substrate/substrate/pull/2830) (draft, 2026-10-18) for ate-setup
-- **Our commit:** [#248](https://github.com/giantswarm/substrate/pull/248) (carries [#104](https://github.com/giantswarm/substrate/pull/104) onto the v0.4.0-alpha1 line)
 
 ## Change
 
@@ -25,3 +25,9 @@ The egress gateway takes further credential providers (`credentialProvider.addit
 ## Reason
 
 kagent injects the caller of the current turn at egress through its own provider, so the caller's bearer never enters the actor: agentgateway already selects a provider by URI authority and fetches the actor's egress policy on every request, but the chart rendered one provider only
+
+## History
+
+[kagent-dev/substrate#90](https://github.com/kagent-dev/substrate/pull/90) (open, 2026-10-18, the chart); [agent-substrate/substrate#2829](https://github.com/agent-substrate/substrate/issues/2829) (open, 2026-10-18) and [#2830](https://github.com/agent-substrate/substrate/pull/2830) (draft, 2026-10-18) for ate-setup
+
+[#248](https://github.com/giantswarm/substrate/pull/248) (carries [#104](https://github.com/giantswarm/substrate/pull/104) onto the v0.4.0-alpha1 line)

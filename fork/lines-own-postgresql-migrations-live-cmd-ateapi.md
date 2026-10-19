@@ -4,19 +4,16 @@ fork: substrate
 theme: durable-pause
 category: gs-specific
 status: carried
+commits:
+  - 'fix(atepg): keep the line''s own migrations in a ledger of their own'
 upstream:
   outcome: fork-only
   refs: []
   exit: drops when no fork schema remains
 depends_on: [durable-pauses-background-commit-holds-no-lease]
-commit: 50db8ba9
 verified: 2026-10-19
 ---
 # The line's own PostgreSQL migrations live in `cmd/ateapi/internal/store/atepg/migrations_fork/` …
-
-- **Status:** carried
-- **Upstream:** none: fork-only, upstream carries no migrations but its own
-- **Our commit:** `giantswarm`: the 2026-10-08 re-pin (`sync/20261008-v0.4.0-alpha1`)
 
 ## Change
 
@@ -25,3 +22,9 @@ The line's own PostgreSQL migrations live in `cmd/ateapi/internal/store/atepg/mi
 ## Reason
 
 renumbering upstream's migrations around the line's shifts every later upstream migration on every re-pin and leaves upstream files whose number differs on the line; with two ledgers a re-pin carries `migrations/` as upstream ships it. A 1.6 ateapi rolled back to 1.5.x finds `schema_migrations` at 3 and the lease columns it reads
+
+## History
+
+none: fork-only, upstream carries no migrations but its own
+
+`giantswarm`: the 2026-10-08 re-pin (`sync/20261008-v0.4.0-alpha1`)

@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(sandbox): keep only cluster search domains in the sandbox resolv.conf'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR
 depends_on: []
-commit: giantswarm/substrate#216
 verified: 2026-10-19
 ---
 # A sandbox's resolv.conf keeps only the cluster domain's search entries
-
-- **Status:** carried
-- **Upstream:** to file: agent-substrate/substrate `main` (`98473853`, 2026-10-06) still copies the pod's whole search list into the sandbox and logs no query name; no upstream issue covers it
-- **Our commit:** `giantswarm`: [#216](https://github.com/giantswarm/substrate/pull/216)
 
 ## Change
 
@@ -25,3 +22,9 @@ A sandbox's resolv.conf keeps only the cluster domain's search entries (`dns.San
 ## Reason
 
 under ndots:5 every cluster Service name was first tried under the node's search domain (the CI runner's `*.internal.cloudapp.net`), a query cluster DNS can only forward to the node's resolvers; c-ares (curl, so git, in Alpine Harness images) and musl end the whole lookup when one search query times out or fails, so one forwarded query left unanswered failed a fresh gVisor sandbox's skill fetch with `Could not resolve host` about a second after start, and the relay's only log line named no query ([#215](https://github.com/giantswarm/substrate/issues/215))
+
+## History
+
+to file: agent-substrate/substrate `main` (`98473853`, 2026-10-06) still copies the pod's whole search list into the sandbox and logs no query name; no upstream issue covers it
+
+`giantswarm`: [#216](https://github.com/giantswarm/substrate/pull/216)

@@ -4,19 +4,16 @@ fork: substrate
 theme: credential-injection
 category: bugfix
 status: carried
+commits:
+  - 'fix(atenet): classify a 403 route outcome as denied, not resume_error'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2534]
   exit: as#2534 merged
 depends_on: []
-commit: giantswarm/substrate#354
 verified: 2026-10-19
 ---
 # The router's route outcome names a 403 denied, not resume_error
-
-- **Status:** carried
-- **Upstream:** [agent-substrate/substrate#2534](https://github.com/agent-substrate/substrate/pull/2534), open, from the branch `upstream/egress-denied-outcome` on upstream `main` @ `579cfcb6`
-- **Our commit:** [#354](https://github.com/giantswarm/substrate/pull/354): the fork's cherry-pick of the upstream commit, unchanged
 
 ## Change
 
@@ -25,3 +22,9 @@ verified: 2026-10-19
 ## Reason
 
 Without a 403 case every egress policy refusal and every ingress `PermissionDenied` counted as `resume_error`, the router-defect outcome, so an alert on router defects fired on ordinary policy decisions and a real resume failure hid among them. Why an egress request was refused is on `atenet.router.egress.refused`.
+
+## History
+
+[agent-substrate/substrate#2534](https://github.com/agent-substrate/substrate/pull/2534), open, from the branch `upstream/egress-denied-outcome` on upstream `main` @ `579cfcb6`
+
+[#354](https://github.com/giantswarm/substrate/pull/354): the fork's cherry-pick of the upstream commit, unchanged

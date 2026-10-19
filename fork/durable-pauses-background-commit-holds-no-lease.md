@@ -4,19 +4,17 @@ fork: substrate
 theme: durable-pause
 category: feature
 status: carried
+commits:
+  - 'fix(ateapi): discard a stale pause upload outside the actor''s lease'
+  - 'fix(ateapi): keep the durable-pause commit off the actor''s lease'
 upstream:
   outcome: to-file
   refs: []
   exit: durable pause design issue upstream
 depends_on: [lines-own-postgresql-migrations-live-cmd-ateapi, make-every-pause-durable-after-pauseactor-finalizes]
-commit: giantswarm/substrate#193
 verified: 2026-10-19
 ---
 # The durable pause's background commit holds no lease on the actor
-
-- **Status:** carried
-- **Upstream:** to file with the durable-pause patch; the lease holder and the fenced update are upstream-shaped (no fork references). Its migration, released in 1.5.0 as `migrations/000003_lease_holder.sql`, is `migrations_fork/000001_lease_holder.sql` in the fork migration ledger since the 2026-10-08 re-pin (next row). Upstream's worker-assignment reconciler takes its leases as `worker-assignment-reconcile` (the worker's) and `worker-assignment-release` (an actor's)
-- **Our commit:** `giantswarm`: [#193](https://github.com/giantswarm/substrate/pull/193); also [#99](https://github.com/giantswarm/substrate/pull/99) (`fix(ateapi): discard a stale pause upload outside the actor's lease`)
 
 ## Change
 
@@ -25,3 +23,9 @@ The durable pause's background commit holds no lease on the actor: it writes the
 ## Reason
 
 the commit held the lease for its store round trips; on the loaded `E2E (agentgateway)` job those outlasted the six retries, about 0.7 s, of `acquireActorLease`, and a pause or suspend right after a resume from `PAUSED` failed with `Aborted` ([giantswarm/substrate#187](https://github.com/giantswarm/substrate/issues/187)): the only background holder of an actor's lease was that commit, and no wait a client can afford bounds a database under load. Now nothing but a lifecycle operation holds the lease, and the one write the commit makes is ordered against them by the store
+
+## History
+
+to file with the durable-pause patch; the lease holder and the fenced update are upstream-shaped (no fork references). Its migration, released in 1.5.0 as `migrations/000003_lease_holder.sql`, is `migrations_fork/000001_lease_holder.sql` in the fork migration ledger since the 2026-10-08 re-pin (next row). Upstream's worker-assignment reconciler takes its leases as `worker-assignment-reconcile` (the worker's) and `worker-assignment-release` (an actor's)
+
+`giantswarm`: [#193](https://github.com/giantswarm/substrate/pull/193); also [#99](https://github.com/giantswarm/substrate/pull/99) (`fix(ateapi): discard a stale pause upload outside the actor's lease`)
