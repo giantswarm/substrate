@@ -24,10 +24,13 @@ import (
 // A path prefix scopes a CredentialHeader to the requests under it. Prefixes
 // and request paths are compared as written, byte for byte, so both must be
 // in a form an origin cannot read differently: a path with a dot segment, an
-// empty segment, a backslash, or a percent-encoded '.', '/' or '\' could
-// resolve outside a prefix it starts with. Admission refuses such a prefix,
-// and such a request path matches no prefix: it receives only the header's
-// binding without one.
+// empty segment, a backslash, or a percent-encoded '.' or '\' could resolve
+// outside a prefix it starts with. A percent-encoded '/' names one segment to
+// most origins (GitLab's "projects/<group>%2F<project>") and a separator to
+// some, so a path carrying one is canonical only if it has no dot or empty
+// segment read either way. Admission refuses such a prefix, and a prefix with
+// a percent-encoded '/' at all; such a request path matches no prefix: it
+// receives only the header's binding without one.
 
 // ValidatePathPrefix reports why prefix cannot scope a CredentialHeader, or
 // nil when it can.
@@ -35,7 +38,7 @@ func ValidatePathPrefix(prefix string) error {
 	if !strings.HasPrefix(prefix, "/") {
 		return errors.New(`must start with "/"`)
 	}
-	if !isCanonicalPath(prefix) {
+	if !isCanonicalPath(prefix) || strings.Contains(strings.ToLower(prefix), "%2f") {
 		return errors.New(`must be printable ASCII without a query, a dot or empty segment, a backslash, or a percent-encoded ".", "/" or "\"`)
 	}
 	return nil
@@ -103,13 +106,15 @@ func isCanonicalPath(path string) bool {
 			return false
 		}
 	}
-	lower := strings.ToLower(path)
-	for _, encoded := range []string{"%2e", "%2f", "%5c"} {
+	lower := strings.ToLower(path[1:])
+	for _, encoded := range []string{"%2e", "%5c"} {
 		if strings.Contains(lower, encoded) {
 			return false
 		}
 	}
-	segments := strings.Split(path[1:], "/")
+	// Read with "%2F" as a separator, a path has every empty and dot segment
+	// it has as written, and those an origin decoding "%2F" sees.
+	segments := strings.Split(strings.ReplaceAll(lower, "%2f", "/"), "/")
 	for i, segment := range segments {
 		if segment == "" && i != len(segments)-1 {
 			return false

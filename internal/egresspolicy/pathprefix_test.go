@@ -104,11 +104,37 @@ func TestReplaceHeadersFor(t *testing.T) {
 	}
 }
 
+// A percent-encoded slash is canonical when reading it as a separator yields
+// no dot or empty segment, so GitLab's encoded project, file and branch paths
+// get the credential scoped above them.
+func TestReplaceHeadersForEncodedSlash(t *testing.T) {
+	api := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Bearer ", CredentialUri: "ate-secret://p/gitlab-api", PathPrefix: "/api/v4/"}
+	scoped := &ateapipb.HttpRuleEffects{ReplaceHeaders: []*ateapipb.CredentialHeader{api}}
+
+	for _, target := range []string{
+		"/api/v4/projects/workspaces%2Fworkspace-proof",
+		"/api/v4/projects/workspaces%2fworkspace-proof/merge_requests",
+		"/api/v4/projects/group%2Fsub%2Fproject/repository/files/docs%2FREADME.md/raw",
+		"/api/v4/projects/group%2Fproject/repository/branches/feature%252Fx",
+	} {
+		if got := ReplaceHeadersFor(scoped, target); len(got) != 1 || got[0] != api {
+			t.Errorf("ReplaceHeadersFor(scoped, %q) = %v, want the scoped entry", target, got)
+		}
+	}
+	// An encoded slash never moves a path under a prefix it is not under as
+	// written.
+	for _, target := range []string{"/api%2Fv4/projects", "/api/v4%2Fprojects", "/api%2fv4/user"} {
+		if got := ReplaceHeadersFor(scoped, target); len(got) != 0 {
+			t.Errorf("ReplaceHeadersFor(scoped, %q) = %v, want none", target, got)
+		}
+	}
+}
+
 // The request path is compared as written, so every form an origin could
 // resolve outside a prefix it starts with matches no prefix: dot segments,
-// percent-encoded dots, slashes and backslashes in either case, empty
-// segments, path parameters and backslashes. Such a request gets the
-// host-wide entry, none without one.
+// percent-encoded dots and backslashes in either case, empty segments (a
+// percent-encoded slash read as a separator too), path parameters and
+// backslashes. Such a request gets the host-wide entry, none without one.
 func TestReplaceHeadersForEscapes(t *testing.T) {
 	codex := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Bearer ", CredentialUri: "ate-secret://p/codex", PathPrefix: "/backend-api/codex/"}
 	host := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Basic ", CredentialUri: "ate-secret://p/host"}
@@ -137,6 +163,10 @@ func TestReplaceHeadersForEscapes(t *testing.T) {
 		"/backend-api/codex//other",
 		"/backend-api/codex/..;/..;/other",
 		"/backend-api/codex/..;x=1/other",
+		"/backend-api/codex/a%2f..%2f..%2fother",
+		"/backend-api/codex/a%2F.%2Fother",
+		"/backend-api/codex/a%2F%2Fother",
+		"/backend-api/codex/a%2F..;x=1%2Fother",
 		`/backend-api/codex/..\..\other`,
 		"/backend-api/codex/..%5c..%5cother",
 		"/backend-api/codex/..%5C..%5Cother",
