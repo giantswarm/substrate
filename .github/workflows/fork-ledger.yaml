@@ -22,7 +22,8 @@
 # workflow, and the line's ruleset requires this check on the head the landing
 # pushes: the push of the candidate reports it, with no row to check, as a
 # candidate is closed by its landing, never merged. The job also keeps the
-# ledger citing public repositories only: this repository is public.
+# ledger citing public repositories only (this repository is public) and
+# every fork/ file opening with a valid header (FORK.md, the ledger).
 name: fork-ledger
 on:
   push:
@@ -52,10 +53,13 @@ jobs:
         with:
           # HEAD^1 of the merge is the line: the lines a pull request adds.
           fetch-depth: 2
-      - name: Fixture runs of the check
+      - name: Fixture runs of the checks
         run: |
           .github/scripts/fork-ledger-test.sh
           .github/scripts/fork-public-links-test.sh
+          .github/scripts/ledger-header-test.sh
+      - name: Every ledger file opens with a valid header
+        run: .github/scripts/ledger-header.sh substrate fork
       # The line publishes from CircleCI to gsoci only; a re-pin replays
       # upstream's workflow files, which publish to GitHub's container
       # registry. The bracket keeps this file out of its own match.
