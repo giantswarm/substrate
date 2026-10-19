@@ -73,6 +73,18 @@ func EgressAllowPassthroughOnPorts(ports []int32, patterns ...string) *ateapipb.
 	}
 }
 
+// EgressAllowTCP is a rule that lets an actor send TCP that is neither TLS
+// nor HTTP to the addresses in cidrs on the given ports, relayed by the gateway
+// without being read.
+func EgressAllowTCP(ports []int32, cidrs ...string) *ateapipb.EgressRule {
+	return &ateapipb.EgressRule{
+		Tcp: &ateapipb.TCPRule{
+			Cidrs: cidrs,
+			Ports: &ateapipb.Ports{Numbers: ports},
+		},
+	}
+}
+
 // EgressInjectHeader is an https rule (see EgressAllowHTTPS) that also carries
 // a replace_headers effect: on a match, the gateway resolves credentialURI
 // through its credential provider and replaces header with prefix plus the

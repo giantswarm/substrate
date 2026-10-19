@@ -409,6 +409,10 @@ func TestValidateEgressPolicyRules(t *testing.T) {
 	passthroughRule := func(ports *ateapipb.Ports, patterns ...string) *ateapipb.EgressRule {
 		return &ateapipb.EgressRule{TlsPassthrough: &ateapipb.TLSPassthroughRule{Hostnames: patterns, Ports: ports}}
 	}
+	tcpRule := func(ports *ateapipb.Ports, hostnames []string, cidrs ...string) *ateapipb.EgressRule {
+		return &ateapipb.EgressRule{Tcp: &ateapipb.TCPRule{Hostnames: hostnames, Cidrs: cidrs, Ports: ports}}
+	}
+	tcp := rule.Child("tcp")
 	portNumbers := func(numbers ...int32) *ateapipb.Ports { return &ateapipb.Ports{Numbers: numbers} }
 	allPorts := func() *ateapipb.Ports { return &ateapipb.Ports{All: &ateapipb.AllPorts{}} }
 
@@ -994,6 +998,84 @@ func TestValidateEgressPolicyRules(t *testing.T) {
 		},
 		want: field.ErrorList{
 			field.Required(rule.Child("https", "effects"), "at least one effect must be specified"),
+		},
+	}, {
+		name: "tcp rule",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(portNumbers(22), []string{"git.example.com"}, "192.0.2.0/24", "2001:db8::/32", "198.51.100.7/32")
+		},
+	}, {
+		name: "tcp rule on every port",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(allPorts(), nil, "10.0.0.0/8")
+		},
+	}, {
+		name: "tcp rule without ports",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(nil, []string{"git.example.com"})
+		},
+		want: field.ErrorList{
+			field.Required(tcp.Child("ports"), ""),
+		},
+	}, {
+		name: "tcp rule without hostnames or cidrs",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(portNumbers(22), nil)
+		},
+		want: field.ErrorList{
+			field.Required(tcp, "at least one hostname or cidr must be specified"),
+		},
+	}, {
+		name: "tcp rule with a wildcard hostname",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(portNumbers(22), []string{"*.example.com", "*", ""})
+		},
+		want: field.ErrorList{
+			field.Invalid(tcp.Child("hostnames").Index(0), "*.example.com", "must be a DNS hostname without a wildcard"),
+			field.Invalid(tcp.Child("hostnames").Index(1), "*", "must be a DNS hostname without a wildcard"),
+			field.Required(tcp.Child("hostnames").Index(2), ""),
+		},
+	}, {
+		name: "tcp rule with invalid cidrs",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(portNumbers(22), nil, "192.0.2.7/24", "192.0.2.7", "example.com/32", "")
+		},
+		want: field.ErrorList{
+			field.Invalid(tcp.Child("cidrs").Index(0), "192.0.2.7/24", `"192.0.2.7/24" has bits set past its prefix length; the range is "192.0.2.0/24"`),
+			field.Invalid(tcp.Child("cidrs").Index(1), "192.0.2.7", `"192.0.2.7" is not an address range in CIDR notation`),
+			field.Invalid(tcp.Child("cidrs").Index(2), "example.com/32", `"example.com/32" is not an address range in CIDR notation`),
+			field.Required(tcp.Child("cidrs").Index(3), ""),
+		},
+	}, {
+		name: "tcp rule repeating a cidr",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules[0] = tcpRule(portNumbers(22), nil, "192.0.2.0/24", "192.0.2.0/24")
+		},
+		want: field.ErrorList{
+			field.Duplicate(tcp.Child("cidrs").Index(1), "192.0.2.0/24"),
+		},
+	}, {
+		name: "tcp rules on the same cidr and port tie",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules = []*ateapipb.EgressRule{
+				tcpRule(portNumbers(22, 2222), nil, "192.0.2.0/24"),
+				tcpRule(portNumbers(2222), nil, "192.0.2.0/24"),
+			}
+		},
+		want: field.ErrorList{
+			field.Invalid(rules.Index(1).Child("tcp", "cidrs").Index(0), "192.0.2.0/24", `ties with egress_policy.rules[0].tcp.cidrs[0] on port 2222`),
+		},
+	}, {
+		name: "a tcp rule ties with no rule of another protocol",
+		mutate: func(p *ateapipb.EgressPolicy) {
+			p.Rules = []*ateapipb.EgressRule{
+				{Http: &ateapipb.HTTPRule{Hostnames: []string{"git.example.com"}, Ports: allPorts()}},
+				passthroughRule(allPorts(), "git.example.com"),
+				tcpRule(allPorts(), []string{"git.example.com"}),
+			}
+		},
+		want: field.ErrorList{
+			field.Invalid(rules.Index(1).Child("tls_passthrough", "hostnames").Index(0), "git.example.com", `ties with egress_policy.rules[0].http.hostnames[0] on every port`),
 		},
 	}}
 	for _, tc := range tests {

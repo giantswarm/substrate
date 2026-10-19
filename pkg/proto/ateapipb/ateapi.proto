@@ -586,9 +586,10 @@ message EgressPolicyTemplate {
 
 // EgressRule allows traffic for a given protocol and destination (host name
 // or IP, and port). The protocol fixes what the gateway matches on and when:
-// a request, or a TLS connection at its ClientHello. Traffic that matches no
-// rule is refused. All protocols here run over TCP; UDP is blocked. Protocols
-// where the server sends first after connect are not supported.
+// a request, a TLS connection at its ClientHello, or other TCP at its first
+// bytes. Traffic that matches no rule is refused. All protocols here run over
+// TCP; UDP is blocked. Protocols where the server sends first after connect
+// are not supported.
 //
 // Users should expect additional protocols to be supported in the future.
 message EgressRule {
@@ -612,6 +613,13 @@ message EgressRule {
   // +k8s:optional
   // +k8s:unionMember
   TLSPassthroughRule tls_passthrough = 3;
+
+  // TCP that is neither TLS nor HTTP to the named hosts or address ranges,
+  // relayed without being read.
+  //
+  // +k8s:optional
+  // +k8s:unionMember
+  TCPRule tcp = 4;
 }
 
 // HTTPRule allows cleartext HTTP and is evaluated per request on the request
@@ -709,6 +717,51 @@ message TLSPassthroughRule {
   //
   // +k8s:required
   Ports ports = 2;
+}
+
+// TCPRule allows TCP that is neither TLS nor HTTP, which the gateway relays
+// without reading it, such as SSH or a database protocol whose client speaks
+// first. It is evaluated once per connection, when the first bytes the Actor
+// sends are neither a TLS ClientHello nor an HTTP request, on the address and
+// port the Actor connected to. TLS and HTTP to the same destination are
+// decided by the other rules, never by this one, so a tcp rule ties with no
+// rule of another protocol. A tcp rule has no effects, and a policy change
+// reaches an open connection only when it ends.
+//
+// A hostname matches when the gateway, at that connection, resolves it to the
+// address the Actor connected to; the Actor's own resolution plays no part,
+// so an address the name does not resolve to from the gateway is refused.
+// The addresses of the gateway and its node (loopback, link-local, the
+// clouds' metadata and platform services, the gateway's own address, and
+// their NAT64 forms) are reached only through a CIDR inside their range:
+// never through a hostname, whatever it resolves to, nor through a wider
+// CIDR. Unspecified, multicast and broadcast addresses are never reached.
+//
+// +k8s:customValidation # at least one hostname or cidr
+message TCPRule {
+  // DNS names, each matched exactly: the syntax of HTTPRule.hostnames
+  // without wildcards and without "*".
+  //
+  // +k8s:optional
+  // +k8s:maxItems=256
+  // +k8s:listType=set
+  // +k8s:customValidation # format
+  repeated string hostnames = 1;
+
+  // Address ranges in CIDR notation, IPv4 or IPv6, with no bits set past the
+  // prefix length: "192.0.2.0/24", "2001:db8::/32", or "192.0.2.10/32" for one
+  // address. An IPv4-mapped IPv6 address matches as the IPv4 address.
+  //
+  // +k8s:optional
+  // +k8s:maxItems=256
+  // +k8s:listType=set
+  // +k8s:customValidation # format
+  repeated string cidrs = 2;
+
+  // Ports of the destination the Actor connected to.
+  //
+  // +k8s:required
+  Ports ports = 3;
 }
 
 // Ports selects the destination ports a rule matches. Every port, or a set

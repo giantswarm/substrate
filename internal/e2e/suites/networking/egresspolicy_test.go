@@ -16,6 +16,7 @@ package networking
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -152,6 +153,73 @@ func TestActorEgressHTTPSByHostnamePassthrough(t *testing.T) {
 	if !dataplane.IsEgressPolicyDenied(status, string(body)) {
 		t.Fatalf("fetch of a host outside the policy returned HTTP %d, want an egress-policy denial; body: %s", status, body)
 	}
+}
+
+// egressTCPTarget is an origin that speaks neither TLS nor HTTP: testserver's
+// tcp-echo subcommand, published on the SSH-like port 2222.
+func egressTCPTarget(name string) e2e.ServerPod {
+	return e2e.ServerPod{
+		Name:       name,
+		ImportPath: "github.com/agent-substrate/substrate/internal/e2e/fixtures/testserver",
+		Args:       []string{"tcp-echo"},
+		Port:       2222,
+		TargetPort: 8080,
+		TCPProbe:   true,
+	}
+}
+
+// TestActorEgressTCPByAddress: a tcp rule names one origin's address and port.
+// The gateway relays a client-first exchange to it and closes a connection to
+// another origin speaking the same protocol, with no bytes returned.
+func TestActorEgressTCPByAddress(t *testing.T) {
+	ctx := context.Background()
+	dataplane := e2e.CurrentAtenetDataplane()
+	listed := e2e.DeployServerPod(t, ctx, egressTCPTarget("egresstcp"))
+	unlisted := e2e.DeployServerPod(t, ctx, egressTCPTarget("egresstcp-unlisted"))
+
+	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "egress-tcp", e2e.EgressFixture(),
+		e2e.EgressAllowTCP([]int32{int32(listed.Port)}, listed.ClusterIP+"/32"))
+	router := mustRouterClient(t, ctx)
+	defer router.Close()
+	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: actorName}
+	waitForActorRoute(t, ctx, router, actorRef)
+
+	const send, echo = "SSH-2.0-actor\r\n", "echo: SSH-2.0-actor\r\n"
+	want := ""
+	if dataplane.RelaysTCPRules() {
+		want = echo
+	}
+	received := exchangeTCPThroughEgressActor(t, ctx, router, actorRef, listed.Address(), send, func(received string) bool { return received == want })
+	if received != want {
+		t.Fatalf("TCP to the listed origin %s received %q, want %q", listed.Address(), received, want)
+	}
+	received = exchangeTCPThroughEgressActor(t, ctx, router, actorRef, unlisted.Address(), send, func(string) bool { return true })
+	if received != "" {
+		t.Fatalf("TCP to the unlisted origin %s received %q, want the connection closed with nothing", unlisted.Address(), received)
+	}
+}
+
+// exchangeTCPThroughEgressActor has the actor send send to target over raw TCP
+// and returns what came back, retrying until done accepts it or the actor's
+// route answers no longer with a transient 503.
+func exchangeTCPThroughEgressActor(t *testing.T, ctx context.Context, router *e2e.RouterClient, actorRef resources.ActorRef, target, send string, done func(received string) bool) string {
+	t.Helper()
+	payload := []byte(fmt.Sprintf(`{"target":%q,"send":%q}`, target, send))
+	var received string
+	status, body := postThroughEgressActorUntil(t, ctx, router, actorRef, "/tcp", payload, func(status int, body []byte) bool {
+		var response struct {
+			Received string `json:"received"`
+		}
+		if status != http.StatusOK || json.Unmarshal(body, &response) != nil {
+			return false
+		}
+		received = response.Received
+		return done(received)
+	})
+	if status != http.StatusOK {
+		t.Fatalf("POST /tcp for %s returned HTTP %d, want 200; body: %s", target, status, body)
+	}
+	return received
 }
 
 // fetchThroughEgressActorUntil is fetchThroughEgressActor with the caller

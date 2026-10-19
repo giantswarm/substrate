@@ -96,6 +96,9 @@ data:
                   root: /run/servicedns.podcert.ate.dev/trust-bundle.pem
               credentialProviders:
               {{- include "substrate.egressCredentialProviders" . | trim | nindent 14 }}
+      # Neither TLS nor HTTP: relayed only when a tcp rule of the actor's
+      # egress policy allows the address and port its CONNECT named, which the
+      # gateway then dials.
       - protocol: TCP
         tcpRoutes:
         - backends:

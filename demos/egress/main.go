@@ -155,6 +155,7 @@ func newHandler(client *http.Client) http.Handler {
 		writeJSON(w, response.StatusCode, fetchResponse{StatusCode: response.StatusCode, Body: string(body), ServerCert: serverCert})
 	})
 	mux.HandleFunc("/grpc", handleGRPC)
+	mux.HandleFunc("/tcp", handleTCP)
 	return mux
 }
 
