@@ -9,7 +9,7 @@ upstream:
   refs: []
   exit: drops when no fork schema remains
 depends_on: [durable-pauses-background-commit-holds-no-lease]
-commit: ""
+commit: 50db8ba9
 verified: 2026-10-19
 ---
 # The line's own PostgreSQL migrations live in `cmd/ateapi/internal/store/atepg/migrations_fork/` …
