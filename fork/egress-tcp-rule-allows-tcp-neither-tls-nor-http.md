@@ -5,10 +5,10 @@ theme: egress-policies
 category: feature
 status: carried
 commits:
-  - "feat(egress): a tcp rule allows TCP that is neither TLS nor HTTP"
-  - "fix(egresspolicy): the line's egress policy contract carries the tcp rule"
-  - "chore(agentgateway): run 2.5.0-rc.1, which relays a tcp rule"
-  - "test(ate-setup): the agentgateway egress overlay has the tcp listener"
+  - 'feat(egress): a tcp rule allows TCP that is neither TLS nor HTTP'
+  - 'fix(egresspolicy): the line''s egress policy contract carries the tcp rule'
+  - 'chore(agentgateway): run 2.5.0-rc.1, which relays a tcp rule'
+  - 'test(ate-setup): the agentgateway egress overlay has the tcp listener'
 upstream:
   outcome: to-file
   refs: []
