@@ -733,11 +733,12 @@ message CredentialHeader {
   // the path without its query, byte for byte, at a segment boundary:
   // "/api" matches "/api" and "/api/v4" but not "/apis", "/api/" matches
   // "/api/v4" but not "/api". A request path with a dot segment, an empty
-  // segment, a backslash, or a percent-encoded ".", "/" or "\" matches no
-  // prefix, since an origin may resolve it outside the prefix it starts with.
+  // segment (a percent-encoded "/" read as a separator too), a backslash, or
+  // a percent-encoded "." or "\" matches no prefix, since an origin may
+  // resolve it outside the prefix it starts with.
   //
-  // The prefix must start with "/", be printable ASCII, and carry no query
-  // and none of the forms above.
+  // The prefix must start with "/", be printable ASCII, and carry no query,
+  // none of the forms above, and no percent-encoded "/".
   //
   // +k8s:optional
   // +k8s:maxLength=1024

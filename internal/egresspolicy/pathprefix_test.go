@@ -103,3 +103,29 @@ func TestReplaceHeadersFor(t *testing.T) {
 		t.Errorf("ReplaceHeadersFor(nil) = %v, want none", got)
 	}
 }
+
+// A percent-encoded slash is canonical when reading it as a separator yields
+// no dot or empty segment, so GitLab's encoded project, file and branch paths
+// get the credential scoped above them.
+func TestReplaceHeadersForEncodedSlash(t *testing.T) {
+	api := &ateapipb.CredentialHeader{Header: "authorization", Prefix: "Bearer ", CredentialUri: "ate-secret://p/gitlab-api", PathPrefix: "/api/v4/"}
+	scoped := &ateapipb.HttpRuleEffects{ReplaceHeaders: []*ateapipb.CredentialHeader{api}}
+
+	for _, target := range []string{
+		"/api/v4/projects/workspaces%2Fworkspace-proof",
+		"/api/v4/projects/workspaces%2fworkspace-proof/merge_requests",
+		"/api/v4/projects/group%2Fsub%2Fproject/repository/files/docs%2FREADME.md/raw",
+		"/api/v4/projects/group%2Fproject/repository/branches/feature%252Fx",
+	} {
+		if got := ReplaceHeadersFor(scoped, target); len(got) != 1 || got[0] != api {
+			t.Errorf("ReplaceHeadersFor(scoped, %q) = %v, want the scoped entry", target, got)
+		}
+	}
+	// An encoded slash never moves a path under a prefix it is not under as
+	// written.
+	for _, target := range []string{"/api%2Fv4/projects", "/api/v4%2Fprojects", "/api%2fv4/user"} {
+		if got := ReplaceHeadersFor(scoped, target); len(got) != 0 {
+			t.Errorf("ReplaceHeadersFor(scoped, %q) = %v, want none", target, got)
+		}
+	}
+}
