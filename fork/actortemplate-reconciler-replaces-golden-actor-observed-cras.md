@@ -3,20 +3,16 @@ id: actortemplate-reconciler-replaces-golden-actor-observed-cras
 fork: substrate
 theme: golden-boot
 category: bugfix
-status: carried
+status: dropped
+commits: []
 upstream:
   outcome: to-file
   refs: []
   exit: carried on release-1.3 only; no commit on giantswarm, dropped from this ledger once release-1.3 is retired
 depends_on: []
-commit: 9d9895e9
 verified: 2026-10-19
 ---
 # The ActorTemplate reconciler replaces a golden actor observed `CRASHED` before its snapshot instead …
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch [`upstream/golden-actor-crash-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-actor-crash-bound) (`0955e7d1` on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text; `golden_actor_crashes` is field 4 there, upstream's next free number of `GoldenSnapshotStatus`, 5 on the line behind the fork-only `workload_boot_failures`, whose bound the patch leaves out; the reconciler tests green on the mirror)
-- **Our commit:** `release-1.3` only: `9d9895e9` ([#131](https://github.com/giantswarm/substrate/pull/131), first release 1.3.1); the 1.4 line records the crash on the actor and gets its own patch, [#132](https://github.com/giantswarm/substrate/issues/132)
 
 ## Change
 
@@ -25,3 +21,9 @@ The ActorTemplate reconciler replaces a golden actor observed `CRASHED` before i
 ## Reason
 
 the actor records no crash cause, and a worker deleted under a booting golden actor by a pool roll crashes it like a workload crash: the template failed for good and kept no golden. An upgrade boots the goldens of the templates it renders while it rolls the worker pool; in the lab the first golden after the upgrade lost its draining worker every time ([giantswarm/substrate#105](https://github.com/giantswarm/substrate/issues/105))
+
+## History
+
+to file — prepared in the fork: branch [`upstream/golden-actor-crash-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-actor-crash-bound) (`0955e7d1` on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text; `golden_actor_crashes` is field 4 there, upstream's next free number of `GoldenSnapshotStatus`, 5 on the line behind the fork-only `workload_boot_failures`, whose bound the patch leaves out; the reconciler tests green on the mirror)
+
+`release-1.3` only: `9d9895e9` ([#131](https://github.com/giantswarm/substrate/pull/131), first release 1.3.1); the 1.4 line records the crash on the actor and gets its own patch, [#132](https://github.com/giantswarm/substrate/issues/132)

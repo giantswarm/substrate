@@ -4,19 +4,16 @@ fork: substrate
 theme: new-rpcs
 category: feature
 status: carried
+commits:
+  - 'fix(ateom): report the sandbox exit of a running actor'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream issue first (CONTRIBUTING), then PR
 depends_on: []
-commit: giantswarm/substrate#439
 verified: 2026-10-19
 ---
 # ateom reports the sandbox exit of a running actor
-
-- **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/sandbox-exit-report` (`1a8c98f7`, mirror `main` @ `5cf1c245` + the change, DCO-signed; `main`'s `crashActor` only frees the worker, so the upstream commit does not tear the sandbox down)
-- **Our commit:** [#439](https://github.com/giantswarm/substrate/pull/439): the fork's own commit of the same change on the pin, whose crash also terminates the sandbox on the worker
 
 ## Change
 
@@ -35,3 +32,9 @@ Nothing observed a running actor's sandbox: one killed right after ate-api-serve
 the reproduction) left the actor RUNNING for minutes with no crash, and every turn sent to it hung until the
 client's deadline. kagent's recovery (revert and resume) starts only from a crash
 ([#437](https://github.com/giantswarm/substrate/issues/437)).
+
+## History
+
+not opened yet: the upstream-ready commit is on the branch `upstream/sandbox-exit-report` (`1a8c98f7`, mirror `main` @ `5cf1c245` + the change, DCO-signed; `main`'s `crashActor` only frees the worker, so the upstream commit does not tear the sandbox down)
+
+[#439](https://github.com/giantswarm/substrate/pull/439): the fork's own commit of the same change on the pin, whose crash also terminates the sandbox on the worker

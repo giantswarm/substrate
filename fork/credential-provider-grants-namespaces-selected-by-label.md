@@ -4,19 +4,16 @@ fork: substrate
 theme: tenancy
 category: gs-specific
 status: carried
+commits:
+  - 'feat(credential-provider): grant namespaces selected by label'
 upstream:
   outcome: to-file
   refs: [giantswarm/substrate-credential-providers#13]
   exit: move into the plugin's config and drop the fork patch
 depends_on: []
-commit: giantswarm/substrate#456
 verified: 2026-10-19
 ---
 # The Kubernetes credential provider grants namespaces selected by label
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch `upstream/credential-provider-namespace-selector`
-- **Our commit:** [#456](https://github.com/giantswarm/substrate/pull/456): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's
 
 ## Change
 
@@ -25,3 +22,9 @@ A namespace policy of the Kubernetes credential provider can carry an `ownNamesp
 ## Reason
 
 The Agent Platform runs each organization's agents in the organization's namespace, which is created at run time and labeled `giantswarm.io/organization`, and each agent's atespace is its namespace. The provider read its grants from a fixed list in the chart, so no organization namespace was granted and its agents' model keys, MCP headers and git credentials were refused, and the golden actors of their templates, which boot in `ate-golden`, could not fetch their git skills ([giantswarm/agent-platform#1041](https://github.com/giantswarm/agent-platform/issues/1041)).
+
+## History
+
+to file — prepared in the fork: branch `upstream/credential-provider-namespace-selector`
+
+[#456](https://github.com/giantswarm/substrate/pull/456): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's

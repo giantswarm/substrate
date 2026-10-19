@@ -4,19 +4,17 @@ fork: substrate
 theme: chart-shape
 category: gs-specific
 status: carried
+commits:
+  - 'fix(chart): render manifests from the line''s single chart'
+  - 'fix(chart): keep the line''s chart shape on the v0.5.0-alpha2 base'
 upstream:
   outcome: fork-only
   refs: []
   exit: one-time migration to platform sub-charts (agent-platform#977 starts it)
 depends_on: [keep-podcertificate-controller-system-across-uninstall, podcertcontroller-runs-postgres-signer-only-with-ca-pool, read-ate-api-servers-postgresql-connection-string]
-commit: 4d8ac843
 verified: 2026-10-19
 ---
 # The chart keeps the line's shape on the v0.5.0-alpha2 base
-
-- **Status:** carried
-- **Upstream:** none: the line's chart interface, which its consumers install
-- **Our commit:** the re-pin onto v0.5.0-alpha2 (`fix(chart): keep the line's chart shape on the v0.5.0-alpha2 base`)
 
 ## Change
 
@@ -25,3 +23,9 @@ The substrate chart keeps the line's PostgreSQL interface (the bundled StatefulS
 ## Reason
 
 v0.5.0-alpha2 moves PostgreSQL out of the chart (pre-created Secrets per role, client certificates, schema `substrate`) and the certificate controller into a chart of its own. Taken as is, an upgrade from a 1.8 release would lose the database the chart installed and the trust chain of every pod; the line's shape upgrades an installation in place. Upstream's new default limits (atelet 1Gi, ate-api 1Gi, ate-controller 512Mi memory) apply on the upgrade.
+
+## History
+
+none: the line's chart interface, which its consumers install
+
+the re-pin onto v0.5.0-alpha2 (`fix(chart): keep the line's chart shape on the v0.5.0-alpha2 base`)

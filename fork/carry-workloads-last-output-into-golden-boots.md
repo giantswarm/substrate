@@ -4,19 +4,16 @@ fork: substrate
 theme: golden-boot
 category: feature
 status: carried
+commits:
+  - 'fix(ateom): quote the workload''s last output in the wakeup-probe deadline error'
 upstream:
   outcome: to-file
   refs: []
   exit: trim the branch, then upstream PR
 depends_on: []
-commit: cea85000
 verified: 2026-10-19
 ---
 # Carry the workload's last output into the golden boot's failure
-
-- **Status:** carried
-- **Upstream:** to file, output-tail half only: the branch [`upstream/golden-boot-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-boot-bound) (`6a9e73f6`) still carries the dropped bound and needs trimming first. Nothing upstream carries the workload's output (checked v0.4.0-alpha1)
-- **Our commit:** `cea85000` (the #39 original `4becc5cd`, first release v0.0.30-gs.4; re-pinned onto v0.3.0-alpha1 without the bound)
 
 ## Change
 
@@ -25,3 +22,9 @@ Carry the workload's last output into the golden boot's failure (ateom keeps eac
 ## Reason
 
 a golden boot whose workload exits before its readiness probe answers is not a crash: ateom returned the missed deadline, the golden actor stayed `RESUMING` on its claimed worker, the reconciler retried, and the same boot ran once a minute for as long as the template existed with `error_message` never set — kagent reported `Ready=False ActorTemplatePending` indefinitely and the workload's own last lines (`fatal: could not read Username for 'https://github.com'`, the Go ADK's `failed to materialize Agent Plugins … exit status 128`) were only in the worker pod's log, which the agent's author cannot read. On an installation (2026-09-15) a portal-created agent with three private skills and no credential looped about 120 boots over two hours until its HelmRelease was patched by hand. Now the crash message on the template and the Agent's `ActorTemplateFailed` condition quote the workload's last lines
+
+## History
+
+to file, output-tail half only: the branch [`upstream/golden-boot-bound`](https://github.com/giantswarm/substrate/tree/upstream/golden-boot-bound) (`6a9e73f6`) still carries the dropped bound and needs trimming first. Nothing upstream carries the workload's output (checked v0.4.0-alpha1)
+
+`cea85000` (the #39 original `4becc5cd`, first release v0.0.30-gs.4; re-pinned onto v0.3.0-alpha1 without the bound)

@@ -4,19 +4,16 @@ fork: substrate
 theme: chart-knobs
 category: gs-specific
 status: carried
+commits:
+  - 'fix(chart): bound the egress gateway''s ephemeral storage'
 upstream:
   outcome: to-file
   refs: []
   exit: kd chart PR
 depends_on: []
-commit: 9246909a
 verified: 2026-10-19
 ---
 # The egress gateway's ephemeral storage is bounded
-
-- **Status:** carried
-- **Upstream:** to file: upstream's `atenet-egress.yaml` renders the same unbounded shape and no upstream issue covers it
-- **Our commit:** `9246909a` ([#255](https://github.com/giantswarm/substrate/pull/255), rebase-merged 2026-10-10; first release 1.8.0-rc.4)
 
 ## Change
 
@@ -25,3 +22,9 @@ The egress gateway's ephemeral storage is bounded (`atenetEgress.resources` for 
 ## Reason
 
 the chart rendered both containers without `resources` and the emptyDir without a `sizeLimit`, so a cluster policy that requires bounded ephemeral storage for a container mounting an emptyDir (Kyverno's `require-emptydir-requests-and-limits`) reported the egress gateway on every install ([giantswarm/agent-platform#880](https://github.com/giantswarm/agent-platform/issues/880))
+
+## History
+
+to file: upstream's `atenet-egress.yaml` renders the same unbounded shape and no upstream issue covers it
+
+`9246909a` ([#255](https://github.com/giantswarm/substrate/pull/255), rebase-merged 2026-10-10; first release 1.8.0-rc.4)

@@ -4,19 +4,16 @@ fork: substrate
 theme: workspace-volumes
 category: bugfix
 status: carried
+commits:
+  - 'fix(resources): compare repeated message fields with proto.Equal'
 upstream:
   outcome: to-file
   refs: [agent-substrate/substrate#231, giantswarm/substrate#234]
   exit: upstream PR
 depends_on: [existing-volume-mounted-per-actor-at-sub]
-commit: giantswarm/substrate#234
 verified: 2026-10-19
 ---
 # `resources.DeepEqual`, the unchanged-value check of the generated declarative validation, compares …
-
-- **Status:** carried
-- **Upstream:** to file: upstream `main` has the same `DeepEqual`
-- **Our commit:** [#234](https://github.com/giantswarm/substrate/pull/234) (`fix(resources): compare repeated message fields with proto.Equal`)
 
 ## Change
 
@@ -25,3 +22,9 @@ verified: 2026-10-19
 ## Reason
 
 it handed the slice to `reflect.DeepEqual`, which also compares each message's internal state; the RPC logger's marshal fills the size cache, so a repeated message field and its clone differed and an `+k8s:immutable` repeated field (`Actor.existing_volumes`, row below) failed every `CreateActor` with "field is immutable"
+
+## History
+
+to file: upstream `main` has the same `DeepEqual`
+
+[#234](https://github.com/giantswarm/substrate/pull/234) (`fix(resources): compare repeated message fields with proto.Equal`)

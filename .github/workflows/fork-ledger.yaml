@@ -23,7 +23,8 @@
 # pushes: the push of the candidate reports it, with no row to check, as a
 # candidate is closed by its landing, never merged. The job also keeps the
 # ledger citing public repositories only (this repository is public) and
-# every fork/ file opening with a valid header (FORK.md, the ledger).
+# every fork/ file opening with a valid header that names its carried commits,
+# each carried commit named by one file (FORK.md, the ledger).
 name: fork-ledger
 on:
   push:
@@ -51,15 +52,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          # HEAD^1 of the merge is the line: the lines a pull request adds.
-          fetch-depth: 2
+          # HEAD^1 of the merge is the line: the lines a pull request adds;
+          # the whole history, so the merge base with the mirrored upstream
+          # main bounds the carried commits.
+          fetch-depth: 0
       - name: Fixture runs of the checks
         run: |
           .github/scripts/fork-ledger-test.sh
           .github/scripts/fork-public-links-test.sh
           .github/scripts/ledger-header-test.sh
-      - name: Every ledger file opens with a valid header
-        run: .github/scripts/ledger-header.sh substrate fork
+      - name: Every ledger file opens with a valid header, every carried commit has its file
+        run: |
+          git fetch --quiet --no-tags origin main:refs/remotes/origin/main
+          .github/scripts/ledger-header.sh substrate fork --complete origin/main
       # The line publishes from CircleCI to gsoci only; a re-pin replays
       # upstream's workflow files, which publish to GitHub's container
       # registry. The bracket keeps this file out of its own match.

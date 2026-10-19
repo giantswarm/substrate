@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(atunnel): end a CONNECT tunnel when the actor closes its connection'
 upstream:
   outcome: drops-at-repin
   refs: [agent-substrate/substrate#2531]
   exit: next re-pin
 depends_on: []
-commit: giantswarm/substrate#451
 verified: 2026-10-19
 ---
 # atunnel ends a CONNECT tunnel when the actor closes its connection
-
-- **Status:** carried
-- **Upstream:** the relay change of upstream's own commit `da35a983` ([agent-substrate/substrate#2531](https://github.com/agent-substrate/substrate/pull/2531), merged), in every upstream release since v0.5.0-alpha4; a backport of that change alone, nothing to file upstream, which leaves the line at the first re-pin onto v0.5.0-alpha4 or later
-- **Our commit:** [#451](https://github.com/giantswarm/substrate/pull/451)
 
 ## Change
 
@@ -32,3 +29,9 @@ router held its request stream open. A gRPC call to an HTTP/1.1-only actor takes
 router's HTTP/2 preface with an HTTP/1.1 response and closes. When that answer was lost, the router waited for the
 actor's SETTINGS frame until its client's timeout instead of failing the call at once. The networking e2e's
 `TestIngressProtocolDowngrade` hit it as a 30 s timeout ([#450](https://github.com/giantswarm/substrate/issues/450)).
+
+## History
+
+the relay change of upstream's own commit `da35a983` ([agent-substrate/substrate#2531](https://github.com/agent-substrate/substrate/pull/2531), merged), in every upstream release since v0.5.0-alpha4; a backport of that change alone, nothing to file upstream, which leaves the line at the first re-pin onto v0.5.0-alpha4 or later
+
+[#451](https://github.com/giantswarm/substrate/pull/451)

@@ -4,19 +4,16 @@ fork: substrate
 theme: new-rpcs
 category: feature
 status: carried
+commits:
+  - 'feat(ateom,atelet): count each sandbox''s DNS queries'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR merged or declined
 depends_on: [podmonitors-six-workloads-that-serve-metrics]
-commit: giantswarm/substrate#475
 verified: 2026-10-19
 ---
 # The sandbox's DNS relay counts each actor's queries, and atelet exports them by template
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch `upstream/actor-dns-query-counter`
-- **Our commit:** [#475](https://github.com/giantswarm/substrate/pull/475): the upstream-ready commit, rebase-merged
 
 ## Change
 
@@ -25,3 +22,9 @@ Each sandbox's DNS relay (`internal/ateomnet/dns`) counts every query it receive
 ## Reason
 
 DNS leaves the sandbox through the gateway's relay without passing the egress policy, so an actor can carry data out in the names it looks up. The only DNS signal was CoreDNS's, which sees the worker pod, not the actor. A count per template, set against `ate.actor.stats.sampled_actors`, gives an alert on DNS volume per actor; the actor stays off the labels (the registry's no-actor-identity rule) and on the usage record.
+
+## History
+
+to file — prepared in the fork: branch `upstream/actor-dns-query-counter`
+
+[#475](https://github.com/giantswarm/substrate/pull/475): the upstream-ready commit, rebase-merged

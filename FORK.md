@@ -41,11 +41,22 @@ own in [`fork/`](fork/): one small file per change, so two concurrent pull reque
 The directory is the index (`ls fork/`); this file carries no per-change rows. A file reads:
 
 ```markdown
+---
+id: <the file name without .md>
+fork: substrate
+theme: <one of the shared theme slugs>
+category: pin | infra | bugfix | feature | gs-specific | compat | test
+status: carried | dropped | superseded
+commits:
+  - '<the subject of each carried commit, as git shows it, without its (#N) suffix>'
+upstream:
+  outcome: merged | open | declined | superseded | to-file | fork-only | drops-at-repin | none
+  refs: [owner/repo#N, ...]
+  exit: <what makes the change leave the fork>
+depends_on: [<a file of this ledger>, owner/repo:<a file of another line>, owner/repo#N]
+verified: <YYYY-MM-DD, the day the upstream state was last checked>
+---
 # <short title>
-
-- **Status:** carried
-- **Upstream:** the upstream pull request or issue, with its state
-- **Our commit:** the commit on `giantswarm`, replayed at every re-pin
 
 ## Change
 
@@ -54,9 +65,13 @@ What the commit does.
 ## Reason
 
 Why the line carries it.
+
+## History
+
+What upstream and the line did about it, by date; prose, not state.
 ```
 
-Every ledger file opens with a YAML front-matter that a generator reads (the prose below it is for people): `id` (the file name), `fork` (`substrate`), `theme` (one of the shared theme slugs, `session-lifecycle` to `never-filed`), `category` (`pin`, `infra`, `bugfix`, `feature`, `gs-specific`, `compat` or `test`), `status`, `upstream.outcome` (`merged`, `open`, `declined`, `superseded`, `to-file`, `fork-only`, `drops-at-repin` or `none`), `upstream.refs` (every upstream and fork item as `owner/repo#N`), `upstream.exit` (what makes the change leave the fork), `depends_on` (ledger files of this or another line, `owner/repo:<slug>` for another line, or an `owner/repo#N` item), `commit` (the commit on `giantswarm`, or the fork pull request as `giantswarm/substrate#N` where the file names no commit) and `verified` (the date the upstream state was last checked). `.github/scripts/ledger-header.sh substrate fork` checks every header and runs in the `fork-ledger` workflow of every pull request (the same rules as `fork-ledger validate`); `fork-ledger header` seeds one from the prose. Proposal and vocabulary: giantswarm/kagent-upstream#719.
+The front-matter is the single source of a change's state; nothing below it repeats it. A generator reads it, the prose is for people. `commits` names every commit the change carries by its subject, the one thing a re-pin keeps while it rewrites every SHA; `theme` is one of the shared slugs (`session-lifecycle` to `never-filed`); `upstream.refs` cite every upstream and fork item as `owner/repo#N`; `upstream.exit` says what makes the change leave the fork; `depends_on` names ledger files of this or another line (`owner/repo:<slug>` for another line) or an `owner/repo#N` item; `verified` is the day the upstream state was last checked. `## History` holds what the earlier bullets said, verbatim. `.github/scripts/ledger-header.sh substrate fork --complete origin/main` checks every header, that no subject is named twice, and, from the merge base with the mirrored upstream `main`, that every carried commit is named by exactly one file unless a prefix of `fork/EXEMPT` covers it (the ledger's own edits, the pins and markers the re-pin tooling writes, the bots); it runs in the `fork-ledger` workflow of every pull request, the same rules as `fork-ledger validate --complete`. `fork-ledger header` converts a file and seeds its header. Proposal and vocabulary: giantswarm/kagent-upstream#719.
 
 A change adds or edits only its own file, in its own pull request; the file's name is the change's key. A re-pin
 that makes a change redundant deletes its file (the paragraphs below name what each re-pin dropped). The

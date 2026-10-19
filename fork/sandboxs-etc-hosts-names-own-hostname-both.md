@@ -4,19 +4,16 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(ateom): name the actor''s hostname in its /etc/hosts'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR
 depends_on: []
-commit: giantswarm/substrate#243
 verified: 2026-10-19
 ---
 # A sandbox's `/etc/hosts` names its own hostname
-
-- **Status:** carried
-- **Upstream:** to file: agent-substrate/substrate `main` (`fd7a9cde`, 2026-10-10) writes no `/etc/hosts` into the sandbox
-- **Our commit:** `giantswarm`: [#243](https://github.com/giantswarm/substrate/pull/243)
 
 ## Change
 
@@ -25,3 +22,9 @@ A sandbox's `/etc/hosts` names its own hostname: both ateoms write `127.0.0.1 lo
 ## Reason
 
 the hostname `actor` was in no sandbox's `/etc/hosts`, so every lookup of it (`hostname -f`, a runtime resolving itself at start) left the sandbox through the DNS relay; cluster DNS forwarded the bare name upstream, which answered SERVFAIL, and each e2e lane run logged 96 relay warnings for `actor.` ([#220](https://github.com/giantswarm/substrate/issues/220))
+
+## History
+
+to file: agent-substrate/substrate `main` (`fd7a9cde`, 2026-10-10) writes no `/etc/hosts` into the sandbox
+
+`giantswarm`: [#243](https://github.com/giantswarm/substrate/pull/243)

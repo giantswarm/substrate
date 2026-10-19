@@ -4,19 +4,17 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'test(ateapi): let the store variable''s type be inferred'
+  - 'fix(ateapi): delete the template row before its golden actor and tag'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR
 depends_on: []
-commit: giantswarm/substrate#168
 verified: 2026-10-19
 ---
 # `DeleteActorTemplate` deletes the template row first, under the caller's preconditions checked in …
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch [`upstream/template-delete-row-first`](https://github.com/giantswarm/substrate/tree/upstream/template-delete-row-first) (`064172d0`, the patch `fcce668c` and a lint fix on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text)
-- **Our commit:** `giantswarm`: [#168](https://github.com/giantswarm/substrate/pull/168); `release-1.3`: [#169](https://github.com/giantswarm/substrate/pull/169) (that line has no delete preconditions)
 
 ## Change
 
@@ -25,3 +23,9 @@ verified: 2026-10-19
 ## Reason
 
 the golden actor and tag went first, so a row delete the store refused (a uid or version conflict, a store error) or a crash of ate-api between the steps left a template whose golden tag was gone: every actor of it was refused on resume as not resumable, `GOLDEN_SNAPSHOT_UNAVAILABLE`, for as long as the template existed ([giantswarm/substrate#105](https://github.com/giantswarm/substrate/issues/105)). Upstream's order kept the row for a retry to rediscover the golden by; a row that outlives its golden is the worse leak
+
+## History
+
+to file — prepared in the fork: branch [`upstream/template-delete-row-first`](https://github.com/giantswarm/substrate/tree/upstream/template-delete-row-first) (`064172d0`, the patch `fcce668c` and a lint fix on the mirror `main` @ `c2e2e130`, DCO-signed, no fork references, its message the pull-request text)
+
+`giantswarm`: [#168](https://github.com/giantswarm/substrate/pull/168); `release-1.3`: [#169](https://github.com/giantswarm/substrate/pull/169) (that line has no delete preconditions)

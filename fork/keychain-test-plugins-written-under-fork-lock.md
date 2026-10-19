@@ -4,19 +4,16 @@ fork: substrate
 theme: test-flakes
 category: test
 status: carried
+commits:
+  - 'test(atelet): write credential provider test plugins under the fork lock'
 upstream:
   outcome: to-file
   refs: [agent-substrate/substrate#2528]
   exit: upstream PR or drop if as#2528 covers it
 depends_on: []
-commit: giantswarm/substrate#447
 verified: 2026-10-19
 ---
 # The keychain tests write their plugins under the fork lock
-
-- **Status:** carried
-- **Upstream:** not opened yet: the upstream-ready commit is on the branch `upstream/keychain-fake-plugin-etxtbsy` (`7668cb4a2`, mirror `main` @ `5cf1c245` + the change, DCO-signed)
-- **Our commit:** [#447](https://github.com/giantswarm/substrate/pull/447): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form
 
 ## Change
 
@@ -29,3 +26,9 @@ The tests run in parallel. If another test forks while a plugin is still open fo
 write descriptor, and exec of the plugin fails with `ETXTBSY`. The keychain skips a provider that fails to run, so the
 test failed later on a missing `fake-provider.requests` file. That flake hit the line's CI under a loaded `go test ./...`
 ([#440](https://github.com/giantswarm/substrate/issues/440)).
+
+## History
+
+not opened yet: the upstream-ready commit is on the branch `upstream/keychain-fake-plugin-etxtbsy` (`7668cb4a2`, mirror `main` @ `5cf1c245` + the change, DCO-signed)
+
+[#447](https://github.com/giantswarm/substrate/pull/447): a `git cherry-pick -x` of the upstream-ready commit, its subject in the line's conventional form

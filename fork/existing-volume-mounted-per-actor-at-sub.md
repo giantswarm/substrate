@@ -4,19 +4,17 @@ fork: substrate
 theme: workspace-volumes
 category: feature
 status: carried
+commits:
+  - 'feat: mount an existing volume per actor at a sub-path'
+  - 'fix(volume): publish a read-only mount with the volume''s own mode'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#1637, agent-substrate/substrate#1988, agent-substrate/substrate#1994]
   exit: as#1988 merged (gated); drop the ungated fork API
 depends_on: [read-write-mounts-missing-sub-path-directory, resources-deepequal-unchanged-value-check-generated-declarat, giantswarm/kagent-upstream:session-the-sessions-actor-with-its-workspace-directory]
-commit: giantswarm/substrate#234
 verified: 2026-10-19
 ---
 # An existing volume mounted per actor at a sub-path
-
-- **Status:** carried
-- **Upstream:** follows agent-substrate/substrate#1637 (shared volumes across actors, open), in the shape proposed there (https://github.com/agent-substrate/substrate/issues/1637#issuecomment-6083442678), on top of #1988's access modes (open); upstream puts it behind the Preview gate of #1994 (open), which this line does not carry, so it is ungated here. Exit: drops at the re-pin that carries #1637's API
-- **Our commit:** [#234](https://github.com/giantswarm/substrate/pull/234) (`feat: mount an existing volume per actor at a sub-path`); also [#342](https://github.com/giantswarm/substrate/pull/342) (`fix(volume): publish a read-only mount with the volume's own mode`)
 
 ## Change
 
@@ -25,3 +23,9 @@ An existing volume mounted per actor at a sub-path: an ActorTemplate declares it
 ## Reason
 
 Sessions on one workspace each need their own directory of one read-write-many volume read-write and its git mirrors read-only, hundreds a day; a per-actor volume or snapshot per Session does not scale, and an external volume was created per actor, attached single-node-writer and deleted with it, with no sub-path or read-only mount
+
+## History
+
+follows agent-substrate/substrate#1637 (shared volumes across actors, open), in the shape proposed there (https://github.com/agent-substrate/substrate/issues/1637#issuecomment-6083442678), on top of #1988's access modes (open); upstream puts it behind the Preview gate of #1994 (open), which this line does not carry, so it is ungated here. Exit: drops at the re-pin that carries #1637's API
+
+[#234](https://github.com/giantswarm/substrate/pull/234) (`feat: mount an existing volume per actor at a sub-path`); also [#342](https://github.com/giantswarm/substrate/pull/342) (`fix(volume): publish a read-only mount with the volume's own mode`)

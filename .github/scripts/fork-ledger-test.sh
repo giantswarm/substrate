@@ -64,7 +64,9 @@ pr "a reason without the label" 1 '{"number":46,"title":"ci: x","body":"no-ledge
 
 mkdir "${DIR}/fork"
 cat >"${DIR}/fork/a-change.md" <<'EOF'
-- **Our commit:** `89abcdef`, [#50](https://github.com/giantswarm/substrate/pull/50)
+## History
+
+`89abcdef`, [#50](https://github.com/giantswarm/substrate/pull/50)
 EOF
 files='[{"path":"cmd/x.go"},{"path":"fork/a-change.md"}]'
 LEDGER_DIR="${DIR}/fork" pr "row in a ledger file" 0 '{"number":50,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}'

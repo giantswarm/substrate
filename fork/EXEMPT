@@ -1,0 +1,12 @@
+# Commit subjects that need no ledger file, by prefix (ledger-header.sh --complete, fork-ledger validate --complete).
+docs(
+docs:
+chore(fork)
+chore(substrate)
+build(fork)
+chore: align files
+chore(deps)
+sync:
+amend!
+fixup!
+fix(fork)

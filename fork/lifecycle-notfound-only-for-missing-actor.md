@@ -4,19 +4,17 @@ fork: substrate
 theme: session-lifecycle
 category: bugfix
 status: carried
+commits:
+  - 'fix(ateapi): lifecycle RPCs answer NotFound only for a missing actor'
+  - 'fix(ateapi): a pause whose worker is deleted under its release does not fail'
 upstream:
   outcome: none
   refs: []
   exit: prepare and file
 depends_on: []
-commit: giantswarm/substrate#410
 verified: 2026-10-19
 ---
 # NotFound on Pause, Resume, Suspend and Revert only for a missing actor
-
-- **Status:** carried
-- **Upstream:** none opened
-- **Our commit:** [#410](https://github.com/giantswarm/substrate/pull/410): the fork's own commit
 
 ## Change
 
@@ -25,3 +23,9 @@ verified: 2026-10-19
 ## Reason
 
 Before, the handlers mapped any `store.ErrNotFound` to `NotFound`, so a worker or claim lookup that lost a race told the caller its actor does not exist; the suspend's release path was fixed alone, and the pause's release still returned the store's `ErrNotFound`. `TestLifecycleRPCs_NotFoundOnlyForMissingActor` covers each RPC, `TestEnsurePausedFinalized_WorkerDeletedUnderRelease` runs the real `DeleteWorker` workflow in the pause's release window.
+
+## History
+
+none opened
+
+[#410](https://github.com/giantswarm/substrate/pull/410): the fork's own commit

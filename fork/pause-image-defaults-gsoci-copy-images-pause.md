@@ -4,19 +4,16 @@ fork: substrate
 theme: chart-knobs
 category: gs-specific
 status: carried
+commits:
+  - 'fix(chart): the pause image defaults to its gsoci copy, the same digest'
 upstream:
   outcome: fork-only
   refs: []
   exit: adopt global.imageRegistry
 depends_on: [gvisor-sandboxconfigs-pause-image-chart-value]
-commit: dd957c2e
 verified: 2026-10-19
 ---
 # The pause image defaults to its gsoci copy
-
-- **Status:** carried
-- **Upstream:** **ours to keep**: a Giant Swarm registry is not upstream's default; the upstream-shaped change is the row above
-- **Our commit:** `dd957c2e` ([#225](https://github.com/giantswarm/substrate/pull/225), rebase-merged 2026-10-09; first release 1.6.3)
 
 ## Change
 
@@ -25,3 +22,9 @@ The pause image defaults to its gsoci copy: `images.pause` = `gsoci.azurecr.io/g
 ## Reason
 
 every Giant Swarm installation pulls from gsoci.azurecr.io, and one whose egress admits only that registry cannot reach `registry.k8s.io`; the same digest, so the snapshots that record it restore unchanged ([#224](https://github.com/giantswarm/substrate/issues/224))
+
+## History
+
+**ours to keep**: a Giant Swarm registry is not upstream's default; the upstream-shaped change is the row above
+
+`dd957c2e` ([#225](https://github.com/giantswarm/substrate/pull/225), rebase-merged 2026-10-09; first release 1.6.3)

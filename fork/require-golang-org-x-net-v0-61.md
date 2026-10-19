@@ -4,19 +4,17 @@ fork: substrate
 theme: version-pins
 category: pin
 status: carried
+commits:
+  - 'fix(deps): bump x/net to v0.60.0 and pin Go 1.27.2'
+  - 'fix(deps): bump golang.org/x/net to v0.61.0 for two HTTP/2 CVEs'
 upstream:
   outcome: drops-at-repin
   refs: []
   exit: upstream bumps x/net
 depends_on: []
-commit: giantswarm/substrate#252
 verified: 2026-10-19
 ---
 # Require `golang.org/x/net` v0.61.0 in every module that had it below
-
-- **Status:** carried
-- **Upstream:** not for upstream as such: changes versions only and falls away at the re-pin onto the first upstream commit that requires `x/net` ≥ v0.61.0 (upstream's dependency automation moves it)
-- **Our commit:** [#252](https://github.com/giantswarm/substrate/pull/252) (`fix(deps): bump golang.org/x/net to v0.61.0 for two HTTP/2 CVEs`)
 
 ## Change
 
@@ -25,3 +23,9 @@ Require `golang.org/x/net` v0.61.0 in every module that had it below (`go.mod`, 
 ## Reason
 
 CVE-2026-97032 and CVE-2026-78663, two HTTP/2 vulnerabilities in `x/net` below v0.61.0; the platform's Go repositories move together, their CircleCI nancy step refusing the older module
+
+## History
+
+not for upstream as such: changes versions only and falls away at the re-pin onto the first upstream commit that requires `x/net` ≥ v0.61.0 (upstream's dependency automation moves it)
+
+[#252](https://github.com/giantswarm/substrate/pull/252) (`fix(deps): bump golang.org/x/net to v0.61.0 for two HTTP/2 CVEs`)

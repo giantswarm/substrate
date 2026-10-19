@@ -4,19 +4,16 @@ fork: substrate
 theme: credential-injection
 category: bugfix
 status: carried
+commits:
+  - 'fix(atenet): answer a denied gRPC call with the denial''s gRPC code'
 upstream:
   outcome: to-file
   refs: []
   exit: upstream PR; not on the line's production ingress path (agentgateway dataplane)
 depends_on: []
-commit: giantswarm/substrate#200
 verified: 2026-10-19
 ---
 # The atenet router answers a denial in the caller's protocol
-
-- **Status:** carried
-- **Upstream:** to file: the upstream-shaped patch is branch [`upstream/atenet-grpc-denial-code`](https://github.com/giantswarm/substrate/tree/upstream/atenet-grpc-denial-code) here (`0a91139b`, on the mirror `main`); agent-substrate/substrate `main` (`296e329a`, 2026-10-08) still answers every denial as `text/plain` and no upstream issue or pull request covers it (searched 2026-10-08); a team member opens the agent-substrate/substrate pull request with DCO sign-off once the team has reviewed it
-- **Our commit:** `giantswarm`: [#200](https://github.com/giantswarm/substrate/pull/200)
 
 ## Change
 
@@ -25,3 +22,9 @@ The atenet router answers a denial in the caller's protocol: a gRPC call (`conte
 ## Reason
 
 a gRPC caller of a held actor (one whose lease another operation holds, answered Aborted by ate-api) got `Unavailable`: Envoy turned the router's plain-text 503 into a gRPC status by gRPC's HTTP-to-status table, so the caller could not tell a held actor, whose operation it should retry, from an unavailable control plane (a missing actor arrived as `Unimplemented`) ([giantswarm/substrate#158](https://github.com/giantswarm/substrate/issues/158); proven with the dataplane's Envoy v1.39 in the pull request). The AgentGateway dataplane, which this line's chart runs, answers its own ingress denials by the same fallback table (a missing actor `Unimplemented`, a held one `Unknown`), which the e2e records per dataplane; its counterpart is [giantswarm/agentgateway-upstream#43](https://github.com/giantswarm/agentgateway-upstream/issues/43)
+
+## History
+
+to file: the upstream-shaped patch is branch [`upstream/atenet-grpc-denial-code`](https://github.com/giantswarm/substrate/tree/upstream/atenet-grpc-denial-code) here (`0a91139b`, on the mirror `main`); agent-substrate/substrate `main` (`296e329a`, 2026-10-08) still answers every denial as `text/plain` and no upstream issue or pull request covers it (searched 2026-10-08); a team member opens the agent-substrate/substrate pull request with DCO sign-off once the team has reviewed it
+
+`giantswarm`: [#200](https://github.com/giantswarm/substrate/pull/200)
