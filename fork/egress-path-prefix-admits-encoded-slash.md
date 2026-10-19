@@ -4,19 +4,15 @@ fork: substrate
 theme: credential-injection
 category: bugfix
 status: carried
+commits: []
 upstream:
   outcome: to-file
   refs: []
   exit: goes with the path_prefix change (agent-substrate/substrate#2541)
 depends_on: [egress-scopes-credential-header-to-request-path-prefix, giantswarm/agentgateway-upstream:substrate-egress-path-prefix-admits-an-encoded-slash]
-commit: giantswarm/substrate#483
 verified: 2026-10-19
 ---
 # A path-prefixed credential header applies to a path with an encoded slash
-
-- **Status:** carried
-- **Upstream:** to file — prepared in the fork: branch `upstream/egress-path-prefix-encoded-slash` on top of `upstream/egress-credential-path-prefix`, so it goes upstream with or after the path-prefix change. Drops at the re-pin onto a commit containing it
-- **Our commit:** [#483](https://github.com/giantswarm/substrate/pull/483), for [#481](https://github.com/giantswarm/substrate/issues/481)
 
 ## Change
 
@@ -25,3 +21,9 @@ verified: 2026-10-19
 ## Reason
 
 GitLab addresses a project by its URL-encoded path (`/api/v4/projects/<group>%2F<project>`), and a credential for its API is scoped to `/api/v4/`. With every `%2F` path non-canonical, such a request reached GitLab without the credential and was answered `404 Project Not Found`, so `glab api projects/<group>%2F<project>` and `glab mr create` failed from a Session.
+
+## History
+
+to file — prepared in the fork: branch `upstream/egress-path-prefix-encoded-slash` on top of `upstream/egress-credential-path-prefix`, so it goes upstream with or after the path-prefix change. Drops at the re-pin onto a commit containing it
+
+[#483](https://github.com/giantswarm/substrate/pull/483), for [#481](https://github.com/giantswarm/substrate/issues/481)
