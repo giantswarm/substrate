@@ -1179,16 +1179,17 @@ conversations and durable volumes survive it.
 - **Egress contract:** `v0.4.0-alpha1+path-prefix+tcp`. A 1.15
   `kubectl ate` and a 1.16 ate-api refuse each other's egress-policy
   writes; use the `kubectl ate` of the release the server runs.
-- **Chart:** `images.agentgateway` is 2.5.0-rc.1, which relays a stream a
-  `tcp` rule allows; the agentgateway egress config gains its TCP
+- **Chart:** `images.agentgateway` is 2.5.0-rc.2, which relays a stream a
+  `tcp` rule allows and applies a path-prefixed credential to a path with
+  a percent-encoded `/`; the agentgateway egress config gains its TCP
   listener. The Envoy dataplane keeps closing such streams.
 - **During the roll:** a `tcp` rule takes effect once the egress gateway
   runs the new agentgateway; until then such a stream is closed as before.
 - **Credential path prefix:** a request path with a percent-encoded `/`
   (GitLab's `/api/v4/projects/<group>%2F<project>`) gets the
   `replace_headers` entry whose `path_prefix` it lies under, when reading
-  `%2F` as a separator yields no dot or empty segment; until atenet's
-  egress runs 1.16 it gets only the host-wide entry, as before.
+  `%2F` as a separator yields no dot or empty segment; until the egress
+  gateway runs 1.16 it gets only the host-wide entry, as before.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
