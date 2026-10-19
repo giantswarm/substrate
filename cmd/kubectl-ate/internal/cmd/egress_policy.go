@@ -213,8 +213,9 @@ func checkEgressPolicyContract(ctx context.Context, guard egressPolicyGuard, ver
 }
 
 // requireEgressRuleHostnames refuses, before a write to a server that reports
-// no egress-policy contract, a rule that names no protocol or no hostname. Every
-// protocol of this contract requires hostnames, so such a rule is invalid here;
+// no egress-policy contract, a rule that names no protocol or no hostname (a
+// tcp rule: no hostname and no CIDR). Every protocol of this contract requires
+// one, so such a rule is invalid here;
 // a server of another contract can decode it as a valid rule of its own that
 // allows every destination, and it reads back unchanged.
 func requireEgressRuleHostnames(policy *ateapipb.EgressPolicy, actor *ateapipb.ObjectRef) error {
@@ -227,6 +228,8 @@ func requireEgressRuleHostnames(policy *ateapipb.EgressPolicy, actor *ateapipb.O
 			hostnames = rule.GetHttps().GetHostnames()
 		case rule.GetTlsPassthrough() != nil:
 			hostnames = rule.GetTlsPassthrough().GetHostnames()
+		case rule.GetTcp() != nil:
+			hostnames = append(rule.GetTcp().GetHostnames(), rule.GetTcp().GetCidrs()...)
 		}
 		if len(hostnames) == 0 {
 			return fmt.Errorf(`refusing to write the egress policy for actor %q in atespace %q: ate-api reports no egress-policy contract, and rules[%d] names no protocol with hostnames, which a server of another contract can store as a rule allowing every destination`,

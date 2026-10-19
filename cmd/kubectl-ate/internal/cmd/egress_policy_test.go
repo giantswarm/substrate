@@ -1017,6 +1017,19 @@ func TestEgressPolicyRunners_Guard(t *testing.T) {
 			wantErr: []string{`ate-api reports no egress-policy contract, and rules[1] names no protocol with hostnames, which a server of another contract can store as a rule allowing every destination`},
 		},
 		{
+			name:    "a server without a contract gets no tcp rule without hostnames or cidrs",
+			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{Tcp: &ateapipb.TCPRule{Ports: &ateapipb.Ports{Numbers: []int32{22}}}}}},
+			wantErr: []string{`rules[0] names no protocol with hostnames`},
+		},
+		{
+			name:         "a server without a contract takes a tcp rule naming only cidrs",
+			guard:        &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
+			policy:       &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{Tcp: &ateapipb.TCPRule{Cidrs: []string{"192.0.2.0/24"}, Ports: &ateapipb.Ports{Numbers: []int32{22}}}}}},
+			wantWrite:    true,
+			wantReadBack: true,
+		},
+		{
 			name:    "a server without a contract gets no rule without a protocol",
 			guard:   &fakeEgressPolicyGuard{contractErr: unimplemented, stored: accepted},
 			policy:  &ateapipb.EgressPolicy{Metadata: meta, Rules: []*ateapipb.EgressRule{{}}},
