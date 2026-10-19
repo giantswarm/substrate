@@ -9,7 +9,7 @@ upstream:
   refs: [agent-substrate/substrate#2099]
   exit: re-pin onto kd v0.6.0-alpha3 or later; prepared chart branch superseded
 depends_on: []
-commit: "08779062"
+commit: 08779062
 verified: 2026-10-19
 ---
 # ate-idp-server serves the actor-JWT issuer
