@@ -4,19 +4,19 @@ fork: substrate
 theme: egress-policies
 category: feature
 status: carried
+commits:
+  - "feat(egress): a tcp rule allows TCP that is neither TLS nor HTTP"
+  - "fix(egresspolicy): the line's egress policy contract carries the tcp rule"
+  - "chore(agentgateway): run 2.5.0-rc.1, which relays a tcp rule"
+  - "test(ate-setup): the agentgateway egress overlay has the tcp listener"
 upstream:
   outcome: to-file
   refs: []
   exit: file an upstream issue first (egress API locked for GA), then the branch upstream/egress-tcp-rule
 depends_on: [ate-api-reports-egress-policy-contract-kubectl, giantswarm/agentgateway-upstream:the-substrate-egress-relays-tcp-a-tcp-rule-allows]
-commit: giantswarm/substrate#479
 verified: 2026-10-19
 ---
 # An egress tcp rule allows TCP that is neither TLS nor HTTP
-
-- **Status:** carried
-- **Upstream:** prepared in the fork, branch `upstream/egress-tcp-rule` on upstream `main`; not filed yet. Upstream's maintainers call the egress API locked for GA and ask for API changes as issues first.
-- **Our commit:** [#479](https://github.com/giantswarm/substrate/pull/479): the rule, its validation, the agentgateway TCP listener, tests and docs, and a fork-only commit that moves the line's egress policy contract to `v0.4.0-alpha1+path-prefix+tcp`
 
 ## Change
 
@@ -29,3 +29,9 @@ An agent could not use git over SSH, or a database or message broker whose proto
 ## Re-pin
 
 `tcp` is field 4 of `EgressRule`'s oneof, a number upstream has not assigned. While upstream does not carry the rule, every re-pin checks the new pin's `EgressRule` in `pkg/proto/ateapipb/ateapi.proto`. If upstream gave field 4 (or the name `tcp`) another meaning, the replay stops, and the line moves its field to a free number with an automatic migration of stored policies before the re-pin lands. If upstream adopts the rule as proposed, the re-pin drops this commit and the contract suffix `+tcp` with it.
+
+## History
+
+prepared in the fork, branch `upstream/egress-tcp-rule` on upstream `main`; not filed yet. Upstream's maintainers call the egress API locked for GA and ask for API changes as issues first.
+
+[#479](https://github.com/giantswarm/substrate/pull/479): the rule, its validation, the agentgateway TCP listener, tests and docs, and a fork-only commit that moves the line's egress policy contract to `v0.4.0-alpha1+path-prefix+tcp`
