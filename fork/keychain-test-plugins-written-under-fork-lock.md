@@ -1,3 +1,17 @@
+---
+id: keychain-test-plugins-written-under-fork-lock
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2528]
+  exit: upstream PR or drop if as#2528 covers it
+depends_on: []
+commit: giantswarm/substrate#447
+verified: 2026-10-19
+---
 # The keychain tests write their plugins under the fork lock
 
 - **Status:** carried

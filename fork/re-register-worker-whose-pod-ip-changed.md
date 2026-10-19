@@ -1,3 +1,17 @@
+---
+id: re-register-worker-whose-pod-ip-changed
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1837, agent-substrate/substrate#1983, agent-substrate/substrate#944]
+  exit: as#1983 merged
+depends_on: [ateom-keeps-re-asserting-capacity-report]
+commit: b438d13c
+verified: 2026-10-19
+---
 # Re-register a worker whose pod IP changed in place
 
 - **Status:** carried

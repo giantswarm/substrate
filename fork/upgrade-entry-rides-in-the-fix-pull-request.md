@@ -1,3 +1,17 @@
+---
+id: upgrade-entry-rides-in-the-fix-pull-request
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none
+depends_on: []
+commit: giantswarm/substrate#404
+verified: 2026-10-19
+---
 # the upgrade entry rides in the pull request of the fix that cuts the patch
 
 - **Status:** carried

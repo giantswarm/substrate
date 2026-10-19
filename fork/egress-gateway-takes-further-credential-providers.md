@@ -1,3 +1,17 @@
+---
+id: egress-gateway-takes-further-credential-providers
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2829, agent-substrate/substrate#2830, kagent-dev/substrate#90]
+  exit: kd#90 and as#2830 merged
+depends_on: []
+commit: giantswarm/substrate#248
+verified: 2026-10-19
+---
 # The egress gateway takes further credential providers
 
 - **Status:** carried

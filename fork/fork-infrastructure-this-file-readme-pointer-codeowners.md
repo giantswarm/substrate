@@ -1,3 +1,17 @@
+---
+id: fork-infrastructure-this-file-readme-pointer-codeowners
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none; says six ko images but the line now publishes kubernetes-secrets and ate-idp-server too
+depends_on: []
+commit: giantswarm/substrate#460
+verified: 2026-10-19
+---
 # Fork infrastructure
 
 - **Status:** carried

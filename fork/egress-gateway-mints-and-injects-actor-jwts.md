@@ -1,3 +1,17 @@
+---
+id: egress-gateway-mints-and-injects-actor-jwts
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#2135, agent-substrate/substrate#2141, agent-substrate/substrate#2421]
+  exit: next re-pin
+depends_on: [giantswarm/agentgateway-upstream:the-substrate-egress-injects-a-minted-actor-jwt]
+commit: giantswarm/substrate#421
+verified: 2026-10-19
+---
 # The egress gateway mints and injects actor JWTs
 
 - **Status:** carried

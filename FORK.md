@@ -56,6 +56,8 @@ What the commit does.
 Why the line carries it.
 ```
 
+Every ledger file opens with a YAML front-matter that a generator reads (the prose below it is for people): `id` (the file name), `fork` (`substrate`), `theme` (one of the shared theme slugs, `session-lifecycle` to `never-filed`), `category` (`pin`, `infra`, `bugfix`, `feature`, `gs-specific`, `compat` or `test`), `status`, `upstream.outcome` (`merged`, `open`, `declined`, `superseded`, `to-file`, `fork-only`, `drops-at-repin` or `none`), `upstream.refs` (every upstream and fork item as `owner/repo#N`), `upstream.exit` (what makes the change leave the fork), `depends_on` (ledger files of this or another line, `owner/repo:<slug>` for another line, or an `owner/repo#N` item), `commit` (the commit on `giantswarm`, or the fork pull request as `giantswarm/substrate#N` where the file names no commit) and `verified` (the date the upstream state was last checked). `fork-ledger validate --fork substrate fork` checks the header; `fork-ledger header` seeds one from the prose. Proposal and vocabulary: giantswarm/kagent-upstream#719.
+
 A change adds or edits only its own file, in its own pull request; the file's name is the change's key. A re-pin
 that makes a change redundant deletes its file (the paragraphs below name what each re-pin dropped). The
 fork-infrastructure file (CI, publishing, sync, the ledger check) covers the changes to files that are not

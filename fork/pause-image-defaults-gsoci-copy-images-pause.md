@@ -1,3 +1,17 @@
+---
+id: pause-image-defaults-gsoci-copy-images-pause
+fork: substrate
+theme: chart-knobs
+category: gs-specific
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: adopt global.imageRegistry
+depends_on: [gvisor-sandboxconfigs-pause-image-chart-value]
+commit: dd957c2e
+verified: 2026-10-19
+---
 # The pause image defaults to its gsoci copy
 
 - **Status:** carried

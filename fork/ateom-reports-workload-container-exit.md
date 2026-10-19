@@ -1,3 +1,17 @@
+---
+id: ateom-reports-workload-container-exit
+fork: substrate
+theme: new-rpcs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: same as ReportActorExit
+depends_on: [ateom-reports-sandbox-exit-of-running-actor]
+commit: giantswarm/substrate#464
+verified: 2026-10-19
+---
 # ateom reports an application container that exits under a running sandbox
 
 - **Status:** carried

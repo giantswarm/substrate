@@ -1,3 +1,17 @@
+---
+id: deleteactortemplate-deletes-template-row-first-under-callers
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#168
+verified: 2026-10-19
+---
 # `DeleteActorTemplate` deletes the template row first, under the caller's preconditions checked in …
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: atelet-pins-images-cache-must-always-hold
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1383, agent-substrate/substrate#463, agent-substrate/substrate#735, agent-substrate/substrate#811, agent-substrate/substrate#836]
+  exit: upstream PR against as#1383
+depends_on: []
+commit: ba39208a
+verified: 2026-10-19
+---
 # atelet pins images the cache must always hold
 
 - **Status:** carried

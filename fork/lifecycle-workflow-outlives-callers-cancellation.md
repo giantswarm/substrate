@@ -1,3 +1,17 @@
+---
+id: lifecycle-workflow-outlives-callers-cancellation
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1383, agent-substrate/substrate#1761, agent-substrate/substrate#1914, agent-substrate/substrate#646, agent-substrate/substrate#991]
+  exit: upstream PR
+depends_on: []
+commit: 76a6abc8
+verified: 2026-10-19
+---
 # A lifecycle workflow outlives its caller's cancellation
 
 - **Status:** carried

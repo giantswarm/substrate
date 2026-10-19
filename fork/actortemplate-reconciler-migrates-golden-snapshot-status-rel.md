@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-migrates-golden-snapshot-status-rel
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2105]
+  exit: line release after which no pre-golden-tag state exists; upstream AGENTS.md forbids fallbacks
+depends_on: []
+commit: 78d4ad00
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler migrates a golden snapshot status a release before golden tags …
 
 - **Status:** carried

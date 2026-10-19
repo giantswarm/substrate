@@ -1,3 +1,17 @@
+---
+id: bundled-rustfs-deployment-stops-old-pod-before
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR
+depends_on: []
+commit: bff94a57
+verified: 2026-10-19
+---
 # The bundled RustFS Deployment stops its old pod before it starts the new one
 
 - **Status:** carried

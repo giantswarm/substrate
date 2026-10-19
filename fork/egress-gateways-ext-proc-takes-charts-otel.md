@@ -1,3 +1,17 @@
+---
+id: egress-gateways-ext-proc-takes-charts-otel
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [kagent-dev/substrate#46, kagent-dev/substrate#48]
+  exit: kd chart PR
+depends_on: [chart-adds-podlabels-every-long-running-pod, podmonitors-six-workloads-that-serve-metrics]
+commit: 126a8682
+verified: 2026-10-19
+---
 # The egress gateway's ext-proc takes the chart's `otel` settings like every other Go component
 
 - **Status:** carried

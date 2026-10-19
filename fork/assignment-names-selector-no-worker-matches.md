@@ -1,3 +1,17 @@
+---
+id: assignment-names-selector-no-worker-matches
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: small upstream PR
+depends_on: [fail-paused-actors-resume-fast-when-node]
+commit: giantswarm/substrate#395
+verified: 2026-10-19
+---
 # An assignment names the selector when no worker matches it
 
 - **Status:** carried

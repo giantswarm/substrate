@@ -1,3 +1,17 @@
+---
+id: charts-third-party-image-defaults-are-their
+fork: substrate
+theme: chart-knobs
+category: gs-specific
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: adopt global.imageRegistry at a re-pin and drop the hardcoded defaults
+depends_on: []
+commit: giantswarm/substrate#45
+verified: 2026-10-19
+---
 # The chart's third-party image defaults are their `gsoci.azurecr.io/giantswarm/…` copies
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: resume-cut-by-worker-drain-answers-unavailable
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2480]
+  exit: upstream PR after as#2480
+depends_on: [crash-records-worker-leaving-once-crashs-teardown]
+commit: giantswarm/substrate#320
+verified: 2026-10-19
+---
 # A resume cut by a worker drain answers `Unavailable` naming its crash
 
 - **Status:** carried

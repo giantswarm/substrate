@@ -1,3 +1,17 @@
+---
+id: route-outcome-denied-for-a-403
+fork: substrate
+theme: credential-injection
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2534]
+  exit: as#2534 merged
+depends_on: []
+commit: giantswarm/substrate#354
+verified: 2026-10-19
+---
 # The router's route outcome names a 403 denied, not resume_error
 
 - **Status:** carried

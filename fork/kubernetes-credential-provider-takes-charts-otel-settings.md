@@ -1,3 +1,17 @@
+---
+id: kubernetes-credential-provider-takes-charts-otel-settings
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [kagent-dev/substrate#46, kagent-dev/substrate#48]
+  exit: kd chart PR
+depends_on: [podmonitors-six-workloads-that-serve-metrics]
+commit: f5d3b0d0
+verified: 2026-10-19
+---
 # The Kubernetes credential provider takes the chart's `otel` settings like every other Go component
 
 - **Status:** carried

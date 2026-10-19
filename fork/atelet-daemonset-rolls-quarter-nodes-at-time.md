@@ -1,3 +1,17 @@
+---
+id: atelet-daemonset-rolls-quarter-nodes-at-time
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2481]
+  exit: as#2481 merged plus a kd chart PR
+depends_on: []
+commit: giantswarm/substrate#313
+verified: 2026-10-19
+---
 # The atelet DaemonSet rolls a quarter of the nodes at a time
 
 - **Status:** carried

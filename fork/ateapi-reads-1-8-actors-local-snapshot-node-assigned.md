@@ -1,3 +1,17 @@
+---
+id: ateapi-reads-1-8-actors-local-snapshot-node-assigned
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: line release after which no 1.8 rows remain
+depends_on: []
+commit: ""
+verified: 2026-10-19
+---
 # ate-api reads a 1.8 actor's local-snapshot node and assigned node
 
 - **Status:** carried

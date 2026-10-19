@@ -1,3 +1,17 @@
+---
+id: lifecycle-notfound-only-for-missing-actor
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: none
+  refs: []
+  exit: prepare and file
+depends_on: []
+commit: giantswarm/substrate#410
+verified: 2026-10-19
+---
 # NotFound on Pause, Resume, Suspend and Revert only for a missing actor
 
 - **Status:** carried

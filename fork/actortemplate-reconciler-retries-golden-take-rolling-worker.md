@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-retries-golden-take-rolling-worker
+fork: substrate
+theme: golden-boot
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2477]
+  exit: as#2477 merged; the clearing of old state stays fork-only
+depends_on: []
+commit: giantswarm/substrate#294
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler retries a golden take a rolling worker pool interrupts
 
 - **Status:** carried

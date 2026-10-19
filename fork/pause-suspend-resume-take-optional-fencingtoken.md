@@ -1,3 +1,17 @@
+---
+id: pause-suspend-resume-take-optional-fencingtoken
+fork: substrate
+theme: durable-pause
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: design issue upstream
+depends_on: [giantswarm/kagent-upstream:session-fence-a-frozen-quiescence-holders-late-pause]
+commit: giantswarm/substrate#182
+verified: 2026-10-19
+---
 # Pause, Suspend and Resume take an optional `FencingToken`
 
 - **Status:** carried

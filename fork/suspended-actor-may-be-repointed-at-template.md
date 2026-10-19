@@ -1,3 +1,17 @@
+---
+id: suspended-actor-may-be-repointed-at-template
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#148
+verified: 2026-10-19
+---
 # A suspended actor may be repointed at a template that adds, removes or changes `system_info` …
 
 - **Status:** carried

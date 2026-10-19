@@ -1,3 +1,17 @@
+---
+id: gvisor-sandboxconfigs-pause-image-chart-value
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [kagent-dev/substrate#23]
+  exit: kd chart PR
+depends_on: []
+commit: f844d726
+verified: 2026-10-19
+---
 # The gVisor SandboxConfig's pause image is a chart value
 
 - **Status:** carried

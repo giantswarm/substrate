@@ -1,3 +1,17 @@
+---
+id: helm-e2e-lanes-run-whatever-an-earlier-lane-did
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: open
+  refs: [kagent-dev/substrate#71]
+  exit: kd#71 merged
+depends_on: []
+commit: giantswarm/substrate#366
+verified: 2026-10-19
+---
 # helm-e2e's lanes each run, whatever an earlier lane did
 
 - **Status:** carried

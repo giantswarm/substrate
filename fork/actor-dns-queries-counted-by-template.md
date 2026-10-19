@@ -1,3 +1,17 @@
+---
+id: actor-dns-queries-counted-by-template
+fork: substrate
+theme: new-rpcs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR merged or declined
+depends_on: [podmonitors-six-workloads-that-serve-metrics]
+commit: giantswarm/substrate#475
+verified: 2026-10-19
+---
 # The sandbox's DNS relay counts each actor's queries, and atelet exports them by template
 
 - **Status:** carried

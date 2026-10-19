@@ -1,3 +1,17 @@
+---
+id: read-ate-api-servers-postgresql-connection-string
+fork: substrate
+theme: chart-shape
+category: feature
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#1979, kagent-dev/substrate#32]
+  exit: adopt upstream's keys
+depends_on: [chart-keeps-lines-shape-on-v0-5-0-alpha2-base]
+commit: b2623ebf
+verified: 2026-10-19
+---
 # Read ate-api-server's PostgreSQL connection string from a Secret
 
 - **Status:** carried

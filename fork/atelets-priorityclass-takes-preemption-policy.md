@@ -1,3 +1,17 @@
+---
+id: atelets-priorityclass-takes-preemption-policy
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#247]
+  exit: kd chart PR
+depends_on: []
+commit: 768e18ed
+verified: 2026-10-19
+---
 # atelet's PriorityClass takes its preemption policy
 
 - **Status:** carried

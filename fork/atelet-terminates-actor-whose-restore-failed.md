@@ -1,3 +1,17 @@
+---
+id: atelet-terminates-actor-whose-restore-failed
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#436
+verified: 2026-10-19
+---
 # atelet terminates an actor whose restore failed
 
 - **Status:** carried

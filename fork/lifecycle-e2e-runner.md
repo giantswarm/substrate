@@ -1,3 +1,17 @@
+---
+id: lifecycle-e2e-runner
+fork: substrate
+theme: test-flakes
+category: test
+status: carried
+upstream:
+  outcome: superseded
+  refs: []
+  exit: mark the file dropped
+depends_on: []
+commit: 2014424b
+verified: 2026-10-19
+---
 # The lifecycle e2e runner
 
 - **Status:** carried

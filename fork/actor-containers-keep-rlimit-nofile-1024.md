@@ -1,3 +1,17 @@
+---
+id: actor-containers-keep-rlimit-nofile-1024
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: declined
+  refs: [agent-substrate/substrate#2530]
+  exit: none; carried for good unless the line drops pre-1.0 checkpoints
+depends_on: []
+commit: giantswarm/substrate#353
+verified: 2026-10-19
+---
 # Actor containers keep RLIMIT_NOFILE at 1024
 
 - **Status:** carried

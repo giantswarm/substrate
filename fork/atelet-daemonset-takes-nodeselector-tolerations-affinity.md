@@ -1,3 +1,17 @@
+---
+id: atelet-daemonset-takes-nodeselector-tolerations-affinity
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1874, kagent-dev/substrate#16]
+  exit: kd chart PR
+depends_on: []
+commit: 931f9ed4
+verified: 2026-10-19
+---
 # The atelet DaemonSet takes `nodeSelector`, `tolerations` and `affinity`
 
 - **Status:** carried

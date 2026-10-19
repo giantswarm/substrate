@@ -1,3 +1,17 @@
+---
+id: workerpool-spec-template-takes-topologyspreadconstraints
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#212, agent-substrate/substrate#247, agent-substrate/substrate#793, agent-substrate/substrate#819]
+  exit: upstream PR
+depends_on: []
+commit: d2ba96d2
+verified: 2026-10-19
+---
 # `WorkerPool.spec.template` takes `topologySpreadConstraints`
 
 - **Status:** carried

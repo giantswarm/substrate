@@ -1,3 +1,17 @@
+---
+id: charts-docker-hub-image-defaults-name-their
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR
+depends_on: []
+commit: 735555b1
+verified: 2026-10-19
+---
 # The chart's Docker Hub image defaults name their registry
 
 - **Status:** carried

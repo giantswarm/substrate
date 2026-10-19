@@ -1,3 +1,17 @@
+---
+id: helm-e2e-pins-azure-setup-helm-v4
+fork: substrate
+theme: ci-publish-infra
+category: pin
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd PR
+depends_on: []
+commit: 5b47d357
+verified: 2026-10-19
+---
 # helm-e2e pins `azure/setup-helm` to its v4.3.1 release by commit and installs Helm v4.3.0 on every …
 
 - **Status:** carried

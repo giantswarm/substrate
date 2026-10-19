@@ -1,3 +1,17 @@
+---
+id: gvisor-restore-refuses-snapshot-layout-before-one
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2462]
+  exit: as#2462 merged
+depends_on: []
+commit: 11a6bc4f
+verified: 2026-10-19
+---
 # A gVisor restore refuses a snapshot in the layout before one tar per durable volume
 
 - **Status:** carried

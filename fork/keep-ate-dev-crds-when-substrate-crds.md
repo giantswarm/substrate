@@ -1,3 +1,17 @@
+---
+id: keep-ate-dev-crds-when-substrate-crds
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [giantswarm/substrate#12]
+  exit: kd chart PR
+depends_on: []
+commit: afdacaca
+verified: 2026-10-19
+---
 # Keep the `ate.dev` CRDs when the `substrate-crds` release is uninstalled
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: resources-deepequal-unchanged-value-check-generated-declarat
+fork: substrate
+theme: workspace-volumes
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#231, giantswarm/substrate#234]
+  exit: upstream PR
+depends_on: [existing-volume-mounted-per-actor-at-sub]
+commit: giantswarm/substrate#234
+verified: 2026-10-19
+---
 # `resources.DeepEqual`, the unchanged-value check of the generated declarative validation, compares …
 
 - **Status:** carried

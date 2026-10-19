@@ -1,3 +1,17 @@
+---
+id: objectstorage-bounds-large-transfers
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2538]
+  exit: as#2538 merged
+depends_on: []
+commit: giantswarm/substrate#362
+verified: 2026-10-19
+---
 # objectstorage bounds the large transfers a process runs at once
 
 - **Status:** carried

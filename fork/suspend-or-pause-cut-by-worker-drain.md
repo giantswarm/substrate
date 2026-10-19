@@ -1,3 +1,17 @@
+---
+id: suspend-or-pause-cut-by-worker-drain
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2484]
+  exit: as#2484 merged
+depends_on: [crash-records-worker-leaving-once-crashs-teardown]
+commit: giantswarm/substrate#324
+verified: 2026-10-19
+---
 # A suspend or pause cut by a worker drain returns the actor to its last durable snapshot
 
 - **Status:** carried

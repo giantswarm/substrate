@@ -1,3 +1,17 @@
+---
+id: egress-gateways-ext-proc-names-telemetry-atenet
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: trivial kd chart PR
+depends_on: []
+commit: 6627a636
+verified: 2026-10-19
+---
 # The egress gateway's ext-proc names its telemetry `atenet-egress`
 
 - **Status:** carried
