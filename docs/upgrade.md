@@ -1179,10 +1179,11 @@ conversations and durable volumes survive it.
 - **Egress contract:** `v0.4.0-alpha1+path-prefix+tcp`. A 1.15
   `kubectl ate` and a 1.16 ate-api refuse each other's egress-policy
   writes; use the `kubectl ate` of the release the server runs.
-- **Chart:** `images.agentgateway` is 2.5.0-rc.2, which relays a stream a
-  `tcp` rule allows and applies a path-prefixed credential to a path with
-  a percent-encoded `/`; the agentgateway egress config gains its TCP
-  listener. The Envoy dataplane keeps closing such streams.
+- **Chart:** `images.agentgateway` is 2.5.0, which relays a stream a
+  `tcp` rule allows, applies a path-prefixed credential to a path with a
+  percent-encoded `/`, and answers a denied request with a 403 that names
+  the destination and where it is allowed; the agentgateway egress config
+  gains its TCP listener. The Envoy dataplane keeps closing such streams.
 - **During the roll:** a `tcp` rule takes effect once the egress gateway
   runs the new agentgateway; until then such a stream is closed as before.
 - **Credential path prefix:** a request path with a percent-encoded `/`
