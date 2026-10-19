@@ -1165,6 +1165,28 @@ step, and conversations and durable volumes survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.15 to 1.16 step
+
+1.16.0 stays on upstream v0.5.0-alpha2 and adds the `tcp` egress rule:
+TCP that is neither TLS nor HTTP, allowed by hostname or CIDR and port.
+Step to it from the latest 1.15 patch with the numbered steps above; the
+step needs no migration, no snapshot reset and no manual step, and
+conversations and durable volumes survive it.
+
+- **Persisted format:** unchanged for every stored policy. `EgressRule`
+  gains `tcp` (field 4 of its oneof), which no 1.15 policy sets; no CRD,
+  no Postgres schema and no snapshot layout differs from 1.15.
+- **Egress contract:** `v0.4.0-alpha1+path-prefix+tcp`. A 1.15
+  `kubectl ate` and a 1.16 ate-api refuse each other's egress-policy
+  writes; use the `kubectl ate` of the release the server runs.
+- **Chart:** `images.agentgateway` is 2.5.0-rc.1, which relays a stream a
+  `tcp` rule allows; the agentgateway egress config gains its TCP
+  listener. The Envoy dataplane keeps closing such streams.
+- **During the roll:** a `tcp` rule takes effect once the egress gateway
+  runs the new agentgateway; until then such a stream is closed as before.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
