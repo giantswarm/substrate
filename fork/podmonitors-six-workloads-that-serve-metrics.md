@@ -1,3 +1,17 @@
+---
+id: podmonitors-six-workloads-that-serve-metrics
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1781, kagent-dev/substrate#46]
+  exit: kd#46 merged
+depends_on: []
+commit: 3fb1622a
+verified: 2026-10-19
+---
 # PodMonitors for the six workloads that serve metrics
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: actors-run-as-their-images-user-workdir
+fork: substrate
+theme: compat-migrations
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1906, agent-substrate/substrate#1910, agent-substrate/substrate#1918]
+  exit: re-pin onto a base containing as#1906 and as#1918
+depends_on: [giantswarm/kagent-upstream:harness-run-claude-code-as-the-images-unprivileged]
+commit: f55a4de4
+verified: 2026-10-19
+---
 # Actors run as their image's `USER` in its `WORKDIR`
 
 - **Status:** carried

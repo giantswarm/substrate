@@ -1,3 +1,17 @@
+---
+id: helm-verify-pins-actions-checkout-v5-1
+fork: substrate
+theme: ci-publish-infra
+category: pin
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd PR
+depends_on: []
+commit: 96c6557e
+verified: 2026-10-19
+---
 # helm-verify pins `actions/checkout` to its v5.1.0 release and `azure/setup-helm` to its v4.3.1 …
 
 - **Status:** carried

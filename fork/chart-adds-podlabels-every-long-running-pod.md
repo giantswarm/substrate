@@ -1,3 +1,17 @@
+---
+id: chart-adds-podlabels-every-long-running-pod
+fork: substrate
+theme: chart-knobs
+category: gs-specific
+status: carried
+upstream:
+  outcome: open
+  refs: [kagent-dev/substrate#48]
+  exit: kd#48 merged
+depends_on: []
+commit: 628377d7
+verified: 2026-10-19
+---
 # The chart adds `podLabels` to every long-running pod, next to its own `app` label, which a …
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: mark-busy-worker-pods
+fork: substrate
+theme: session-lifecycle
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#425
+verified: 2026-10-19
+---
 # Mark the worker pods that host actors for the autoscaler
 
 - **Status:** carried

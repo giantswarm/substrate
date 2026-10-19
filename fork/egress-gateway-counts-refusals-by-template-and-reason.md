@@ -1,3 +1,17 @@
+---
+id: egress-gateway-counts-refusals-by-template-and-reason
+fork: substrate
+theme: new-rpcs
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2527]
+  exit: as#2527 merged
+depends_on: [podmonitors-six-workloads-that-serve-metrics]
+commit: giantswarm/substrate#351
+verified: 2026-10-19
+---
 # The egress gateway counts its refusals by actor template and reason
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: rustfs-bucket-init-job-helm-hook
+fork: substrate
+theme: chart-knobs
+category: gs-specific
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR (hook half)
+depends_on: []
+commit: f4256587
+verified: 2026-10-19
+---
 # The `rustfs-bucket-init` Job is a Helm hook
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: two-serviceaccounts-take-annotations-ate-api-server
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1277, kagent-dev/substrate#31]
+  exit: kd chart PR for the annotations half; extraEnv half drops
+depends_on: []
+commit: 4e4b8f27
+verified: 2026-10-19
+---
 # The two ServiceAccounts take annotations and ate-api-server takes `extraEnv`
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: externalsnapshot-source-local-snapshot-name-durable-pauses
+fork: substrate
+theme: durable-pause
+category: compat
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: durable pause design issue upstream
+depends_on: [make-every-pause-durable-after-pauseactor-finalizes]
+commit: giantswarm/substrate#165
+verified: 2026-10-19
+---
 # `ExternalSnapshot.source_local_snapshot_name`, the durable pause's carried field, has number 10001, …
 
 - **Status:** carried

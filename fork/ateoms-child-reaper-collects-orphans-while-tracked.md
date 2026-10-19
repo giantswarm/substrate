@@ -1,3 +1,17 @@
+---
+id: ateoms-child-reaper-collects-orphans-while-tracked
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2180]
+  exit: upstream PR or as#2180
+depends_on: []
+commit: giantswarm/substrate#133
+verified: 2026-10-19
+---
 # ateom's child reaper collects orphans while tracked runsc subcommands run
 
 - **Status:** carried

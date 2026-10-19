@@ -1,3 +1,17 @@
+---
+id: crashactor-terminates-sandbox-atelet-detaches-actors-volumes
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1936, agent-substrate/substrate#1953, agent-substrate/substrate#1972]
+  exit: as#1953 or as#1972 merged
+depends_on: [existing-volume-mounted-per-actor-at-sub]
+commit: giantswarm/substrate#258
+verified: 2026-10-19
+---
 # `crashActor` terminates the sandbox on atelet, detaches the actor's volumes and only then releases …
 
 - **Status:** carried

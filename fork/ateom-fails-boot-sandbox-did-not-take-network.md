@@ -1,3 +1,17 @@
+---
+id: ateom-fails-boot-sandbox-did-not-take-network
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#418
+verified: 2026-10-19
+---
 # Fail a boot whose sandbox did not take the actor's network, and retake its golden
 
 - **Status:** carried

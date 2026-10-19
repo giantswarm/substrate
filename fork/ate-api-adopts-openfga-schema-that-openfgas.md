@@ -1,3 +1,17 @@
+---
+id: ate-api-adopts-openfga-schema-that-openfgas
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1839]
+  exit: line release after which no 1.3 installs remain
+depends_on: []
+commit: giantswarm/substrate#138
+verified: 2026-10-19
+---
 # ate-api adopts an OpenFGA schema that OpenFGA's own embedded migrations created
 
 - **Status:** carried

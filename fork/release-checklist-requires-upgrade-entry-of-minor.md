@@ -1,3 +1,17 @@
+---
+id: release-checklist-requires-upgrade-entry-of-minor
+fork: substrate
+theme: ci-publish-infra
+category: infra
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: none
+depends_on: []
+commit: giantswarm/substrate#459
+verified: 2026-10-19
+---
 # release checklist requires the upgrade entry of a minor, before its first release candidate
 
 - **Status:** carried

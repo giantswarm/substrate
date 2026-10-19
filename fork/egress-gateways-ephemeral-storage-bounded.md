@@ -1,3 +1,17 @@
+---
+id: egress-gateways-ephemeral-storage-bounded
+fork: substrate
+theme: chart-knobs
+category: gs-specific
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR
+depends_on: []
+commit: 9246909a
+verified: 2026-10-19
+---
 # The egress gateway's ephemeral storage is bounded
 
 - **Status:** carried

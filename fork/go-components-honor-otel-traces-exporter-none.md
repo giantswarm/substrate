@@ -1,3 +1,17 @@
+---
+id: go-components-honor-otel-traces-exporter-none
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#1878, agent-substrate/substrate#2189, agent-substrate/substrate#2190, agent-substrate/substrate#2193]
+  exit: next re-pin for most; as#2189 for ateworker
+depends_on: []
+commit: 48560a41
+verified: 2026-10-19
+---
 # The Go components honor `OTEL_TRACES_EXPORTER=none`
 
 - **Status:** carried

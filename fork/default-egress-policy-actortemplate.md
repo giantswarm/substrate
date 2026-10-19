@@ -1,3 +1,17 @@
+---
+id: default-egress-policy-actortemplate
+fork: substrate
+theme: egress-policies
+category: feature
+status: carried
+upstream:
+  outcome: superseded
+  refs: [agent-substrate/substrate#1324, agent-substrate/substrate#1558, agent-substrate/substrate#1868, agent-substrate/substrate#2159, kagent-dev/kagent#2604]
+  exit: re-pin onto as#2159's shape; field 9 changes meaning
+depends_on: [giantswarm/kagent-upstream:substrate-the-compiled-actortemplate-carries-the-revisions-egress]
+commit: e1e2d822
+verified: 2026-10-19
+---
 # A default egress policy on the ActorTemplate
 
 - **Status:** carried

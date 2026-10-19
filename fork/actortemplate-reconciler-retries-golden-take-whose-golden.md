@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-retries-golden-take-whose-golden
+fork: substrate
+theme: golden-boot
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2483]
+  exit: as#2483 merged
+depends_on: [actortemplate-reconciler-retries-golden-take-rolling-worker]
+commit: giantswarm/substrate#323
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler retries a golden take whose golden actor it finds `DELETING`, …
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: egress-gateway-tells-actor-why-credential-was
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2555, agentgateway/agentgateway#3875]
+  exit: as#2555 resolved upstream, then agentgateway#3875
+depends_on: [giantswarm/agentgateway-upstream:a-credential-providers-failure-is-answered-by-its-class]
+commit: giantswarm/substrate#112
+verified: 2026-10-19
+---
 # The egress gateway tells the actor why a credential was refused
 
 - **Status:** carried

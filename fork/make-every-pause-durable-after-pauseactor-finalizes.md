@@ -1,3 +1,17 @@
+---
+id: make-every-pause-durable-after-pauseactor-finalizes
+fork: substrate
+theme: durable-pause
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#398, agent-substrate/substrate#401, agent-substrate/substrate#798]
+  exit: design issue upstream within 4 weeks or converge on as#798
+depends_on: [durable-pauses-background-commit-holds-no-lease, externalsnapshot-source-local-snapshot-name-durable-pauses, lines-own-postgresql-migrations-live-cmd-ateapi]
+commit: 012fabd0
+verified: 2026-10-19
+---
 # Make every pause durable
 
 - **Status:** carried

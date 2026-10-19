@@ -1,3 +1,17 @@
+---
+id: require-golang-org-x-net-v0-61
+fork: substrate
+theme: version-pins
+category: pin
+status: carried
+upstream:
+  outcome: drops-at-repin
+  refs: []
+  exit: upstream bumps x/net
+depends_on: []
+commit: giantswarm/substrate#252
+verified: 2026-10-19
+---
 # Require `golang.org/x/net` v0.61.0 in every module that had it below
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: fail-actor-whose-image-registry-refuses-instead
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1220, agent-substrate/substrate#1817]
+  exit: re-check against ActorStatus.crash, then upstream PR
+depends_on: []
+commit: d14cac64
+verified: 2026-10-19
+---
 # Fail an actor whose image the registry refuses instead of resuming it forever
 
 - **Status:** carried

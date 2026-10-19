@@ -1,3 +1,17 @@
+---
+id: gvisor-restore-converts-snapshot-layout-before-one
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2462, agent-substrate/substrate#2472]
+  exit: as#2472 decision; expected decline (pre-1.0)
+depends_on: [gvisor-restore-refuses-snapshot-layout-before-one]
+commit: giantswarm/substrate#277
+verified: 2026-10-19
+---
 # A gVisor restore converts a snapshot in the layout before one tar per durable volume instead of …
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: lines-own-postgresql-migrations-live-cmd-ateapi
+fork: substrate
+theme: durable-pause
+category: gs-specific
+status: carried
+upstream:
+  outcome: fork-only
+  refs: []
+  exit: drops when no fork schema remains
+depends_on: [durable-pauses-background-commit-holds-no-lease]
+commit: ""
+verified: 2026-10-19
+---
 # The line's own PostgreSQL migrations live in `cmd/ateapi/internal/store/atepg/migrations_fork/` …
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: read-write-mounts-missing-sub-path-directory
+fork: substrate
+theme: workspace-volumes
+category: feature
+status: carried
+upstream:
+  outcome: fork-only
+  refs: [agent-substrate/substrate#1637]
+  exit: as#1637 resolution
+depends_on: [existing-volume-mounted-per-actor-at-sub]
+commit: giantswarm/substrate#239
+verified: 2026-10-19
+---
 # A read-write mount's missing `sub_path` directory is created at the bind
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: egress-gateways-agentgateway-config-has-no-protocol
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: fork-only
+  refs: [giantswarm/substrate#120]
+  exit: carried on release-1.3 only; no commit on giantswarm, dropped from this ledger once release-1.3 is retired
+depends_on: []
+commit: giantswarm/substrate#141
+verified: 2026-10-19
+---
 # The egress gateway's agentgateway config has no `protocol
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: paused-actor-carries-no-stale-crash
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: [suspended-actor-carries-no-stale-crash]
+commit: giantswarm/substrate#416
+verified: 2026-10-19
+---
 # a paused actor carries no stale crash record
 
 - **Status:** carried

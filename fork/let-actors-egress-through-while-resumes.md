@@ -1,3 +1,17 @@
+---
+id: let-actors-egress-through-while-resumes
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1543, agent-substrate/substrate#1959, agent-substrate/substrate#2117, agent-substrate/substrate#2159, agentgateway/agentgateway#3237, giantswarm/agentgateway-upstream#4]
+  exit: as#2117 merged
+depends_on: [giantswarm/agentgateway-upstream:the-egress-admits-a-resuming-actor-at-connect-time]
+commit: 6be3d50c
+verified: 2026-10-19
+---
 # Let an actor's egress through while it resumes
 
 - **Status:** carried

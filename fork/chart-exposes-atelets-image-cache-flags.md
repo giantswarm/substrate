@@ -1,3 +1,17 @@
+---
+id: chart-exposes-atelets-image-cache-flags
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR after the atelet flags land
+depends_on: [atelet-pins-images-cache-must-always-hold, atelet-reads-pinned-images-from-file-re]
+commit: 686b7835
+verified: 2026-10-19
+---
 # The chart exposes atelet's image-cache flags
 
 - **Status:** carried

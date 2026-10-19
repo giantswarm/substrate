@@ -1,3 +1,17 @@
+---
+id: ateom-reports-sandbox-exit-of-running-actor
+fork: substrate
+theme: new-rpcs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream issue first (CONTRIBUTING), then PR
+depends_on: []
+commit: giantswarm/substrate#439
+verified: 2026-10-19
+---
 # ateom reports the sandbox exit of a running actor
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: atelet-reads-pinned-images-from-file-re
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR stacked on the pinned-images flag
+depends_on: [atelet-pins-images-cache-must-always-hold]
+commit: ddf1c472
+verified: 2026-10-19
+---
 # atelet reads its pinned images from a file it re-reads at every pass
 
 - **Status:** carried

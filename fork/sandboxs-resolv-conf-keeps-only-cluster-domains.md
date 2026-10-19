@@ -1,3 +1,17 @@
+---
+id: sandboxs-resolv-conf-keeps-only-cluster-domains
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR
+depends_on: []
+commit: giantswarm/substrate#216
+verified: 2026-10-19
+---
 # A sandbox's resolv.conf keeps only the cluster domain's search entries
 
 - **Status:** carried

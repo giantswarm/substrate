@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-takes-golden-written-older-snapshot
+fork: substrate
+theme: compat-migrations
+category: compat
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2474, giantswarm/substrate#151, giantswarm/substrate#284]
+  exit: as#2474 decision; expected decline under pre-1.0 policy
+depends_on: [giantswarm/substrate#151]
+commit: giantswarm/substrate#282
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler takes a golden written in an older snapshot layout again
 
 - **Status:** carried

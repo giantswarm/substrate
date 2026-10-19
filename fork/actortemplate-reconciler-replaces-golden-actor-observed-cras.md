@@ -1,3 +1,17 @@
+---
+id: actortemplate-reconciler-replaces-golden-actor-observed-cras
+fork: substrate
+theme: golden-boot
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: carried on release-1.3 only; no commit on giantswarm, dropped from this ledger once release-1.3 is retired
+depends_on: []
+commit: 9d9895e9
+verified: 2026-10-19
+---
 # The ActorTemplate reconciler replaces a golden actor observed `CRASHED` before its snapshot instead …
 
 - **Status:** carried

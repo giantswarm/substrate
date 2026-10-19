@@ -1,3 +1,17 @@
+---
+id: running-actor-lost-worker-returns-to-snapshot
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#2484]
+  exit: upstream PR after as#2484
+depends_on: [suspend-or-pause-cut-by-worker-drain]
+commit: giantswarm/substrate#380
+verified: 2026-10-19
+---
 # A running actor whose worker went away returns to its last durable snapshot
 
 - **Status:** carried

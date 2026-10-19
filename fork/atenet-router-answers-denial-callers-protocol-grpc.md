@@ -1,3 +1,17 @@
+---
+id: atenet-router-answers-denial-callers-protocol-grpc
+fork: substrate
+theme: credential-injection
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: upstream PR; not on the line's production ingress path (agentgateway dataplane)
+depends_on: []
+commit: giantswarm/substrate#200
+verified: 2026-10-19
+---
 # The atenet router answers a denial in the caller's protocol
 
 - **Status:** carried

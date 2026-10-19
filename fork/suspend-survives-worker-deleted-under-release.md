@@ -1,3 +1,17 @@
+---
+id: suspend-survives-worker-deleted-under-release
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: none
+  refs: []
+  exit: prepare and file
+depends_on: []
+commit: giantswarm/substrate#405
+verified: 2026-10-19
+---
 # A suspend survives its worker's record being deleted under the release
 
 - **Status:** carried

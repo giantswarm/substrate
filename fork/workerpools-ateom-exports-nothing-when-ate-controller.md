@@ -1,3 +1,17 @@
+---
+id: workerpools-ateom-exports-nothing-when-ate-controller
+fork: substrate
+theme: chart-knobs
+category: bugfix
+status: carried
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#2189]
+  exit: as#2189 merged
+depends_on: [go-components-honor-otel-traces-exporter-none]
+commit: fb79b373
+verified: 2026-10-19
+---
 # A WorkerPool's ateom exports nothing when ate-controller has no OTLP endpoint
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: ateapi-crashed-actor-refusal-not-resumable
+fork: substrate
+theme: session-lifecycle
+category: bugfix
+status: carried
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#1562]
+  exit: upstream error-code contract (draft D on as#1562)
+depends_on: [giantswarm/agentgateway-upstream:a-resume-refusal-marked-not-resumable-is-answered-at-once]
+commit: giantswarm/substrate#445
+verified: 2026-10-19
+---
 # A crashed actor's resume refusal is marked not resumable
 
 - **Status:** carried

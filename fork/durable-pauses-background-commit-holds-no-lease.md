@@ -1,3 +1,17 @@
+---
+id: durable-pauses-background-commit-holds-no-lease
+fork: substrate
+theme: durable-pause
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: durable pause design issue upstream
+depends_on: [lines-own-postgresql-migrations-live-cmd-ateapi, make-every-pause-durable-after-pauseactor-finalizes]
+commit: giantswarm/substrate#193
+verified: 2026-10-19
+---
 # The durable pause's background commit holds no lease on the actor
 
 - **Status:** carried

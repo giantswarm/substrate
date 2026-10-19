@@ -1,3 +1,17 @@
+---
+id: egress-gateway-trusts-extra-cas-actors-upstream
+fork: substrate
+theme: credential-injection
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: kd chart PR
+depends_on: []
+commit: giantswarm/substrate#92
+verified: 2026-10-19
+---
 # The egress gateway trusts extra CAs on the actors' upstream HTTPS
 
 - **Status:** carried

@@ -1,3 +1,17 @@
+---
+id: carry-workloads-last-output-into-golden-boots
+fork: substrate
+theme: golden-boot
+category: feature
+status: carried
+upstream:
+  outcome: to-file
+  refs: []
+  exit: trim the branch, then upstream PR
+depends_on: []
+commit: cea85000
+verified: 2026-10-19
+---
 # Carry the workload's last output into the golden boot's failure
 
 - **Status:** carried
