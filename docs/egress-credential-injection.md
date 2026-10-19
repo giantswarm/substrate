@@ -122,8 +122,11 @@ entry applies, the header is forwarded unchanged. A prefix matches the path
 without its query at a segment boundary: `/api` matches `/api` and `/api/v4`
 but not `/apis`, and `/api/` matches `/api/v4` but not `/api`. A request path
 with a dot segment (`/api/../x`), an empty segment, a backslash, or a
-percent-encoded `.`, `/` or `\` matches no prefix, since an origin may resolve
-it outside the prefix it starts with. Two entries for one header and one
+percent-encoded `.` or `\` matches no prefix, since an origin may resolve it
+outside the prefix it starts with. A percent-encoded `/` is read as a separator
+as well: `/api/v4/projects/group%2Fproject` matches `/api/v4/`, while
+`/api/v4/a%2F..%2Fx` and `/api/v4/a%2F%2Fx` match no prefix. A `pathPrefix`
+itself carries no percent-encoded `/`. Two entries for one header and one
 `pathPrefix` are rejected at admission.
 
 ### Credential URIs
