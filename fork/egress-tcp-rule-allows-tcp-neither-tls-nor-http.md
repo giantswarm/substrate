@@ -9,14 +9,14 @@ upstream:
   refs: []
   exit: file an upstream issue first (egress API locked for GA), then the branch upstream/egress-tcp-rule
 depends_on: [ate-api-reports-egress-policy-contract-kubectl, giantswarm/agentgateway-upstream:the-substrate-egress-relays-tcp-a-tcp-rule-allows]
-commit: ""
+commit: giantswarm/substrate#479
 verified: 2026-10-19
 ---
 # An egress tcp rule allows TCP that is neither TLS nor HTTP
 
 - **Status:** carried
 - **Upstream:** prepared in the fork, branch `upstream/egress-tcp-rule` on upstream `main`; not filed yet. Upstream's maintainers call the egress API locked for GA and ask for API changes as issues first.
-- **Our commit:** PR_PLACEHOLDER: the rule, its validation, the agentgateway TCP listener, tests and docs, and a fork-only commit that moves the line's egress policy contract to `v0.4.0-alpha1+path-prefix+tcp`
+- **Our commit:** [#479](https://github.com/giantswarm/substrate/pull/479): the rule, its validation, the agentgateway TCP listener, tests and docs, and a fork-only commit that moves the line's egress policy contract to `v0.4.0-alpha1+path-prefix+tcp`
 
 ## Change
 
