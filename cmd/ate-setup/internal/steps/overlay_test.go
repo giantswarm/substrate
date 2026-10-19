@@ -591,8 +591,8 @@ func TestAgentgatewayEgressOverlay(t *testing.T) {
 			}
 		}
 		slices.Sort(protocols)
-		if !slices.Equal(protocols, []string{"HTTP", "HTTPS", "TLS"}) {
-			t.Errorf("egress listeners = %v, want HTTP, HTTPS interception, and TLS passthrough", protocols)
+		if !slices.Equal(protocols, []string{"HTTP", "HTTPS", "TCP", "TLS"}) {
+			t.Errorf("egress listeners = %v, want HTTP, HTTPS interception, TCP relay, and TLS passthrough", protocols)
 		}
 	}
 	if !foundConfig {

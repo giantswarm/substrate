@@ -85,9 +85,12 @@ func ValidateCustom_EgressPolicy_Metadata(_ context.Context, _ operation.Operati
 // ValidateCustom_EgressPolicy_Rules rejects two rules that tie on a pattern
 // and a port, whatever their protocols: the gateway would have no way to pick
 // one. Defaults are applied before validation, so an http rule left on 80
-// and an https rule left on 443 never tie.
+// and an https rule left on 443 never tie. A tcp rule decides streams no
+// other rule decides, so it ties only with another tcp rule, on a hostname or
+// a CIDR.
 func ValidateCustom_EgressPolicy_Rules(_ context.Context, _ operation.Operation, p *field.Path, rules, _ []*ateapipb.EgressRule) field.ErrorList {
 	type key struct {
+		tcp     bool
 		pattern string
 		port    portKey
 	}
@@ -98,14 +101,15 @@ func ValidateCustom_EgressPolicy_Rules(_ context.Context, _ operation.Operation,
 	var errs field.ErrorList
 	seen := map[key]match{}
 	for i, rule := range rules {
-		member, patterns, ports := ruleMatchFields(rule)
+		member, fields, ports := ruleMatchFields(rule)
 		if member == "" {
 			continue // handled by the union check
 		}
-		for j, pattern := range patterns {
-			path := p.Index(i).Child(member, "hostnames").Index(j)
+		for _, f := range fields {
+			path := p.Index(i).Child(member, f.name).Index(f.index)
+			pattern := f.value
 			for _, port := range portKeysOf(ports) {
-				k := key{pattern, port}
+				k := key{member == "tcp", pattern, port}
 				prior, ok := seen[k]
 				switch {
 				case !ok:
@@ -125,16 +129,36 @@ func ValidateCustom_EgressPolicyTemplate_Rules(ctx context.Context, op operation
 	return ValidateCustom_EgressPolicy_Rules(ctx, op, p, rules, oldRules)
 }
 
-// ruleMatchFields is what a rule matches on: the union member, its hostnames,
-// and its ports. Everything is empty for a rule that sets no member.
-func ruleMatchFields(rule *ateapipb.EgressRule) (member string, hostnames []string, ports *ateapipb.Ports) {
+// matchField is one entry a rule matches on: a hostname, or a tcp rule's
+// CIDR, with the list it is in and its index there.
+type matchField struct {
+	name  string
+	index int
+	value string
+}
+
+func matchFieldsOf(name string, values []string) []matchField {
+	fields := make([]matchField, 0, len(values))
+	for i, value := range values {
+		fields = append(fields, matchField{name: name, index: i, value: value})
+	}
+	return fields
+}
+
+// ruleMatchFields is what a rule matches on: the union member, its hostnames
+// (and a tcp rule's CIDRs), and its ports. Everything is empty for a rule that
+// sets no member.
+func ruleMatchFields(rule *ateapipb.EgressRule) (member string, fields []matchField, ports *ateapipb.Ports) {
 	switch {
 	case rule.GetHttp() != nil:
-		return "http", rule.GetHttp().GetHostnames(), rule.GetHttp().GetPorts()
+		return "http", matchFieldsOf("hostnames", rule.GetHttp().GetHostnames()), rule.GetHttp().GetPorts()
 	case rule.GetHttps() != nil:
-		return "https", rule.GetHttps().GetHostnames(), rule.GetHttps().GetPorts()
+		return "https", matchFieldsOf("hostnames", rule.GetHttps().GetHostnames()), rule.GetHttps().GetPorts()
 	case rule.GetTlsPassthrough() != nil:
-		return "tls_passthrough", rule.GetTlsPassthrough().GetHostnames(), rule.GetTlsPassthrough().GetPorts()
+		return "tls_passthrough", matchFieldsOf("hostnames", rule.GetTlsPassthrough().GetHostnames()), rule.GetTlsPassthrough().GetPorts()
+	case rule.GetTcp() != nil:
+		tcp := rule.GetTcp()
+		return "tcp", append(matchFieldsOf("hostnames", tcp.GetHostnames()), matchFieldsOf("cidrs", tcp.GetCidrs())...), tcp.GetPorts()
 	}
 	return "", nil, nil
 }
@@ -174,6 +198,39 @@ func ValidateCustom_HTTPSRule_Hostnames(_ context.Context, _ operation.Operation
 
 func ValidateCustom_TLSPassthroughRule_Hostnames(_ context.Context, _ operation.Operation, p *field.Path, patterns, _ []string) field.ErrorList {
 	return validateHostnamePatterns(patterns, p)
+}
+
+func ValidateCustom_TCPRule(_ context.Context, _ operation.Operation, p *field.Path, rule, _ *ateapipb.TCPRule) field.ErrorList {
+	if len(rule.GetHostnames()) == 0 && len(rule.GetCidrs()) == 0 {
+		return field.ErrorList{field.Required(p, "at least one hostname or cidr must be specified")}
+	}
+	return nil
+}
+
+func ValidateCustom_TCPRule_Hostnames(_ context.Context, _ operation.Operation, p *field.Path, hostnames, _ []string) field.ErrorList {
+	var errs field.ErrorList
+	for i, raw := range hostnames {
+		switch _, err := egresspolicy.ParseExactHostname(raw); {
+		case raw == "":
+			errs = append(errs, field.Required(p.Index(i), ""))
+		case err != nil:
+			errs = append(errs, field.Invalid(p.Index(i), raw, "must be a DNS hostname without a wildcard"))
+		}
+	}
+	return errs
+}
+
+func ValidateCustom_TCPRule_Cidrs(_ context.Context, _ operation.Operation, p *field.Path, cidrs, _ []string) field.ErrorList {
+	var errs field.ErrorList
+	for i, raw := range cidrs {
+		switch _, err := egresspolicy.ParseCIDR(raw); {
+		case raw == "":
+			errs = append(errs, field.Required(p.Index(i), ""))
+		case err != nil:
+			errs = append(errs, field.Invalid(p.Index(i), raw, err.Error()))
+		}
+	}
+	return errs
 }
 
 func ValidateCustom_HttpRuleEffects(_ context.Context, _ operation.Operation, p *field.Path, effects, _ *ateapipb.HttpRuleEffects) field.ErrorList {

@@ -107,7 +107,10 @@ rule, `egress_passthrough` under a `tls_passthrough` rule, and `denied`, which
 matches no chain and closes the connection, when neither covers the SNI. The
 passthrough chain resolves the SNI and relays the bytes to it on the dialed
 port; the address the actor dialed plays no part (see
-`docs/network-egress.md`).
+`docs/network-egress.md`). The Envoy dataplane has no chain for a `tcp`
+rule: a connection that is neither TLS nor HTTP takes the cleartext chain and
+fails there, whatever the policy says. The agentgateway dataplane relays one
+under a `tcp` rule (`docs/egress-traffic.md`).
 
 Identity on the request legs is `dev.ate.actor.identity`, the actor's SPIFFE
 ID that the outer chain set from the verified peer certificate and shares with

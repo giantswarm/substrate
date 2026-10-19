@@ -68,8 +68,11 @@ type ServerPod struct {
 	// an HTTP GET. A gRPC server answers an HTTP request with a protocol error,
 	// so a server speaking grpc must set this and register the health service.
 	GRPCProbe bool
+	// TCPProbe asks kubelet to probe by opening a TCP connection, for a server
+	// that speaks neither HTTP nor gRPC.
+	TCPProbe bool
 	// HealthPath is the HTTP readiness path, defaulting to /healthz. Ignored
-	// when GRPCProbe is set.
+	// when GRPCProbe or TCPProbe is set.
 	HealthPath string
 	// Volumes and VolumeMounts carry whatever credentials the server needs.
 	// Typed, rather than more YAML in the template, so the Secret names here
@@ -174,6 +177,9 @@ func serverArgs(spec ServerPod, targetPort string) string {
 func serverReadinessProbe(spec ServerPod, targetPort string) string {
 	if spec.GRPCProbe {
 		return "      grpc:\n        port: " + targetPort
+	}
+	if spec.TCPProbe {
+		return "      tcpSocket:\n        port: " + targetPort
 	}
 	path := spec.HealthPath
 	if path == "" {

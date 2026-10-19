@@ -40,6 +40,10 @@ type AtenetDataplane interface {
 	PlatformMetricPrefixes([]string) []string
 	RouteDurationSeen(context.Context, string) (bool, error)
 	MissingActorGRPCCode() codes.Code
+	// RelaysTCPRules reports whether the egress gateway relays TCP that is
+	// neither TLS nor HTTP when a tcp rule allows it. A gateway that does not
+	// closes it like any refused stream.
+	RelaysTCPRules() bool
 }
 
 // CurrentAtenetDataplane returns the implementation selected for this test
@@ -84,12 +88,18 @@ func (envoyAtenetDataplane) RouteDurationSeen(_ context.Context, collectorScrape
 // router answers it with the resume's own status.
 func (envoyAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.NotFound }
 
+// RelaysTCPRules: the Envoy egress gateway has no chain for a tcp rule yet;
+// its egress-policy module closes every stream that is neither TLS nor HTTP.
+func (envoyAtenetDataplane) RelaysTCPRules() bool { return false }
+
 type agentGatewayAtenetDataplane struct{}
 
 // MissingActorGRPCCode: AgentGateway answers its own ingress denial to a gRPC
 // call by gRPC's HTTP-to-status fallback table, which maps 404 to Unimplemented.
 // TODO: carry the resume's own status to gRPC callers in AgentGateway.
 func (agentGatewayAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.Unimplemented }
+
+func (agentGatewayAtenetDataplane) RelaysTCPRules() bool { return true }
 
 func (agentGatewayAtenetDataplane) NewParkingObserver(context.Context) (ParkingObserver, error) {
 	return agentGatewayParkingObserver{}, nil
