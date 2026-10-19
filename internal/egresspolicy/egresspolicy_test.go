@@ -542,3 +542,81 @@ func TestValidateDNSEgressPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestParseExactHostname(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		want string
+		ok   bool
+	}{
+		{"git.example.com", "git.example.com", true},
+		{"*.example.com", "", false},
+		{"*", "", false},
+		{"Git.example.com", "", false},
+		{"192.0.2.1", "", false},
+		{"", "", false},
+	} {
+		got, err := ParseExactHostname(tc.raw)
+		if (err == nil) != tc.ok || got != tc.want {
+			t.Errorf("ParseExactHostname(%q) = %q, %v; want %q, ok %v", tc.raw, got, err, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestParseCIDR(t *testing.T) {
+	for _, tc := range []struct {
+		raw string
+		ok  bool
+	}{
+		{"192.0.2.0/24", true},
+		{"192.0.2.7/32", true},
+		{"0.0.0.0/0", true},
+		{"2001:db8::/32", true},
+		{"192.0.2.7/24", false},
+		{"2001:db8::1/32", false},
+		{"192.0.2.7", false},
+		{"192.0.2.0/33", false},
+		{"fe80::1%eth0/128", false},
+		{"example.com/32", false},
+		{"", false},
+	} {
+		prefix, err := ParseCIDR(tc.raw)
+		if (err == nil) != tc.ok {
+			t.Errorf("ParseCIDR(%q) = %v, %v; want ok %v", tc.raw, prefix, err, tc.ok)
+		}
+		if tc.ok && prefix.String() != tc.raw {
+			t.Errorf("ParseCIDR(%q) = %v, want the range as written", tc.raw, prefix)
+		}
+	}
+}
+
+// A tcp rule is decided by the dataplane on the stream's address: it compiles
+// without error and decides no request and no SNI.
+func TestTCPRulesDecideNoRequestOrSNI(t *testing.T) {
+	policy, errs := Compile(&ateapipb.EgressPolicy{Rules: []*ateapipb.EgressRule{{
+		Tcp: &ateapipb.TcpRule{
+			Hostnames: []string{"git.example.com"},
+			Cidrs:     []string{"192.0.2.0/24"},
+			Ports:     &ateapipb.Ports{All: &ateapipb.AllPorts{}},
+		},
+	}}})
+	if len(errs) != 0 {
+		t.Fatalf("Compile errors: %v", errs)
+	}
+	if policy.RuleCount() != 1 {
+		t.Fatalf("RuleCount = %d, want 1", policy.RuleCount())
+	}
+	if rules := policy.SNIRules(22); len(rules) != 0 {
+		t.Errorf("SNIRules(22) = %v, want none", rules)
+	}
+	for _, decrypted := range []bool{false, true} {
+		dest := Destination{Hostname: "git.example.com", Port: 22}
+		if got := policy.EvaluateRequest(dest, decrypted); got.Allowed {
+			t.Errorf("EvaluateRequest(%+v, decrypted=%v) = %+v, want denied", dest, decrypted, got)
+		}
+		dest = Destination{IP: netip.MustParseAddr("192.0.2.7"), Port: 22}
+		if got := policy.EvaluateRequest(dest, decrypted); got.Allowed {
+			t.Errorf("EvaluateRequest(%+v, decrypted=%v) = %+v, want denied", dest, decrypted, got)
+		}
+	}
+}

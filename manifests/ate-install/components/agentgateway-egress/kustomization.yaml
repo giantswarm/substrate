@@ -120,6 +120,13 @@ patches:
               tcpRoutes:
               - backends:
                 - dynamic: {}
+            # Neither TLS nor HTTP: the gateway relays it only when a tcp rule
+            # allows the address and port the actor's CONNECT named, and dials
+            # that address whatever the route names.
+            - protocol: TCP
+              tcpRoutes:
+              - backends:
+                - dynamic: {}
   - target:
       group: apps
       version: v1

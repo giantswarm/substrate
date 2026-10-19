@@ -80,7 +80,8 @@ rejects that option with agentgateway rather than silently omitting it.
 - **Egress app (`main.go`)** — the Actor: `POST /` fetches an HTTP(S) URL and returns the status,
   body, and observed protocol. `POST /websocket` probes a `ws` or `wss` origin; `POST /grpc` makes
   unary and streaming gRPC calls, described below; `POST /connect` sends a forward proxy an HTTP
-  CONNECT, in the clear or over TLS, and returns its answer.
+  CONNECT, in the clear or over TLS, and returns its answer; `POST /tcp` exchanges bytes over raw
+  TCP, described below.
 - **Egress gateway** — the `atenet-egress` Deployment. Envoy uses a co-located atenet `ext_proc`
   container started with `--mode=egress`; agentgateway uses its built-in `substrateEgress` policy
   and does not need that sidecar. The installer renders the matching configuration and container.
@@ -203,6 +204,14 @@ kubectl -n ate-system logs deploy/atenet-egress -c agentgateway \
 
 The `whoami` body shows `RemoteAddr: <atenet-egress pod IP>` — proof the request egressed
 *through* the gateway rather than directly.
+
+## Raw TCP over the same tunnel
+
+`POST /tcp` with `{"target":"<ip>:<port>","send":"SSH-2.0-actor\r\n"}` makes the Actor dial that
+address, write `send` and return everything the server sent before it closed, as `received`.
+Traffic that is neither TLS nor HTTP needs a `tcp` rule naming the address (or a hostname the
+gateway resolves to it) and the port; without one the gateway closes the connection, so the answer
+is a `200` with an empty `received`, never a failed dial: atunnel accepted it inside the Actor.
 
 ## gRPC over the same tunnel
 

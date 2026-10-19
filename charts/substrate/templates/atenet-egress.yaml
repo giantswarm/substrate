@@ -115,6 +115,13 @@ data:
         tcpRoutes:
         - backends:
           - dynamic: {}
+      # Neither TLS nor HTTP: relayed only when a tcp rule of the actor's
+      # egress policy allows the address and port its CONNECT named, which the
+      # gateway then dials.
+      - protocol: TCP
+        tcpRoutes:
+        - backends:
+          - dynamic: {}
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -95,8 +95,8 @@ func applyActorDefaults(*ateapipb.Actor) {}
 func applyAtespaceDefaults(*ateapipb.Atespace) {}
 
 // applyEgressPolicyDefaults fills the port of an http or https rule that
-// names none: the protocol's well-known port. A tls_passthrough rule has no
-// default; validation requires its ports.
+// names none: the protocol's well-known port. A tls_passthrough or tcp rule
+// has no default; validation requires its ports.
 func applyEgressPolicyDefaults(p *ateapipb.EgressPolicy) {
 	if p == nil {
 		return

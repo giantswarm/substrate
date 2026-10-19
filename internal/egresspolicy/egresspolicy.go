@@ -17,7 +17,7 @@
 // matches with, so the two cannot drift.
 //
 // Requests are decided here; TLS connections are decided by the dataplane
-// against SNIRules.
+// against SNIRules, and other TCP by the dataplane against the tcp rules.
 //
 // The package is pure: no I/O, no logging.
 package egresspolicy
@@ -76,6 +76,7 @@ const (
 	protocolHTTP protocol = iota + 1
 	protocolHTTPS
 	protocolTLSPassthrough
+	protocolTCP
 )
 
 type compiledRule struct {
@@ -123,6 +124,12 @@ func Compile(policy *ateapipb.EgressPolicy) (*Policy, []error) {
 			cr.protocol = protocolTLSPassthrough
 			member = "tls_passthrough"
 			raw, ports = rule.GetTlsPassthrough().GetHostnames(), rule.GetTlsPassthrough().GetPorts()
+		case rule.GetTcp() != nil:
+			// Decided by the dataplane on the stream's address, never on a
+			// request or an SNI, so nothing here evaluates it.
+			cr.protocol = protocolTCP
+			compiled.rules = append(compiled.rules, cr)
+			continue
 		default:
 			compiled.rules = append(compiled.rules, cr)
 			continue
@@ -322,6 +329,32 @@ func ParseHostnamePattern(raw string) (HostnamePattern, error) {
 		pattern.dotSuffix = "." + name
 	}
 	return pattern, nil
+}
+
+// ParseExactHostname parses a hostname of a tcp rule: a hostname pattern
+// without a wildcard, since the gateway resolves the name itself.
+func ParseExactHostname(raw string) (string, error) {
+	pattern, err := ParseHostnamePattern(raw)
+	if err != nil {
+		return "", err
+	}
+	if pattern.any || pattern.wildcard {
+		return "", fmt.Errorf("%q is a wildcard, which cannot be resolved", raw)
+	}
+	return pattern.name, nil
+}
+
+// ParseCIDR parses an address range of a tcp rule: CIDR notation, IPv4 or
+// IPv6, with no bits set past the prefix length.
+func ParseCIDR(raw string) (netip.Prefix, error) {
+	prefix, err := netip.ParsePrefix(raw)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("%q is not an address range in CIDR notation", raw)
+	}
+	if masked := prefix.Masked(); masked != prefix {
+		return netip.Prefix{}, fmt.Errorf("%q has bits set past its prefix length; the range is %q", raw, masked)
+	}
+	return prefix, nil
 }
 
 // String returns the pattern in the form it was written.

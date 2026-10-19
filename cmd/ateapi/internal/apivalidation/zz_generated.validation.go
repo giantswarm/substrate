@@ -3522,7 +3522,7 @@ func Validate_EgressPolicy(
 	return errs
 }
 
-var unionMembershipFor_go_ate_dev_substrate_pkg_proto_ateapipb_EgressRule_ = validate.NewUnionMembership(validate.NewUnionMember("http"), validate.NewUnionMember("https"), validate.NewUnionMember("tls_passthrough"))
+var unionMembershipFor_go_ate_dev_substrate_pkg_proto_ateapipb_EgressRule_ = validate.NewUnionMembership(validate.NewUnionMember("http"), validate.NewUnionMember("https"), validate.NewUnionMember("tls_passthrough"), validate.NewUnionMember("tcp"))
 
 // Validate_EgressRule validates an instance of EgressRule according
 // to declarative validation rules in the API schema.
@@ -3548,6 +3548,12 @@ func Validate_EgressRule(
 				return false
 			}
 			return obj.TlsPassthrough != nil
+		},
+		func(obj *ateapipb.EgressRule) bool {
+			if obj == nil {
+				return false
+			}
+			return obj.Tcp != nil
 		}); len(e) != 0 {
 		errs = append(errs, e...)
 	}
@@ -3640,6 +3646,36 @@ func Validate_EgressRule(
 				return oldObj.TlsPassthrough
 			})
 		errs = append(errs, fn(fldPath.Child("tls_passthrough"), obj.TlsPassthrough, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.EgressRule.Tcp
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.TcpRule,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.OptionalPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_TcpRule(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.EgressRule) *ateapipb.TcpRule {
+				return oldObj.Tcp
+			})
+		errs = append(errs, fn(fldPath.Child("tcp"), obj.Tcp, oldVal, oldObj != nil)...)
 	}
 
 	return errs
@@ -8569,6 +8605,131 @@ func Validate_TagStatus(
 				return &oldObj.ActorTemplateUid
 			})
 		errs = append(errs, fn(fldPath.Child("actor_template_uid"), &obj.ActorTemplateUid, oldVal, oldObj != nil)...)
+	}
+
+	return errs
+}
+
+// Validate_TcpRule validates an instance of TcpRule according
+// to declarative validation rules in the API schema.
+func Validate_TcpRule(
+	ctx context.Context, op operation.Operation, fldPath *field.Path,
+	obj, oldObj *ateapipb.TcpRule) (errs field.ErrorList) {
+
+	// custom validation
+	if e := ValidateCustom_TcpRule(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+		errs = append(errs, e...)
+	}
+
+	{ // field ateapipb.TcpRule.Hostnames
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj []string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.MaxItems(ctx, op, fldPath, obj, oldObj, 256).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.OptionalSlice(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// custom validation
+			if e := ValidateCustom_TcpRule_Hostnames(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			// lists with set semantics require unique values
+			if e := validate.ValSliceUnique(ctx, op, fldPath, obj, oldObj, validate.DirectEqual); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.TcpRule) []string {
+				return oldObj.Hostnames
+			})
+		errs = append(errs, fn(fldPath.Child("hostnames"), obj.Hostnames, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.TcpRule.Cidrs
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj []string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.MaxItems(ctx, op, fldPath, obj, oldObj, 256).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.OptionalSlice(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// custom validation
+			if e := ValidateCustom_TcpRule_Cidrs(ctx, op, fldPath, obj, oldObj); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			// lists with set semantics require unique values
+			if e := validate.ValSliceUnique(ctx, op, fldPath, obj, oldObj, validate.DirectEqual); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.TcpRule) []string {
+				return oldObj.Cidrs
+			})
+		errs = append(errs, fn(fldPath.Child("cidrs"), obj.Cidrs, oldVal, oldObj != nil)...)
+	}
+
+	{ // field ateapipb.TcpRule.Ports
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj *ateapipb.Ports,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.RequiredPointer(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			// call the type's validation function
+			errs = append(errs, Validate_Ports(ctx, op, fldPath, obj, oldObj)...)
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.TcpRule) *ateapipb.Ports {
+				return oldObj.Ports
+			})
+		errs = append(errs, fn(fldPath.Child("ports"), obj.Ports, oldVal, oldObj != nil)...)
 	}
 
 	return errs

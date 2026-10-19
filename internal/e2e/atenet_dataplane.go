@@ -41,6 +41,10 @@ type AtenetDataplane interface {
 	RouteDurationSeen(context.Context, string) (bool, error)
 	ScrapeMetrics(context.Context) (string, error)
 	EgressConnectStats(before, after string) EgressConnectStats
+	// RelaysTCPRules reports whether the egress gateway relays TCP that is
+	// neither TLS nor HTTP when a tcp rule allows it. A gateway that does not
+	// closes it like any refused stream.
+	RelaysTCPRules() bool
 }
 
 // EgressConnectStats holds the delta of egress CONNECT connections and requests
@@ -139,7 +143,13 @@ func parseEnvoyEgressConnectMetrics(scrape string) EgressConnectStats {
 	return stats
 }
 
+// RelaysTCPRules: the Envoy egress gateway has no chain for a tcp rule yet;
+// its egress-policy module closes every stream that is neither TLS nor HTTP.
+func (envoyAtenetDataplane) RelaysTCPRules() bool { return false }
+
 type agentGatewayAtenetDataplane struct{}
+
+func (agentGatewayAtenetDataplane) RelaysTCPRules() bool { return true }
 
 func (agentGatewayAtenetDataplane) NewParkingObserver(context.Context) (ParkingObserver, error) {
 	return agentGatewayParkingObserver{}, nil
