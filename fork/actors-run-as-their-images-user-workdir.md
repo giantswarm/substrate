@@ -1,7 +1,7 @@
 ---
 id: actors-run-as-their-images-user-workdir
 fork: substrate
-theme: compat-migrations
+theme: harness-variety
 category: feature
 status: carried
 commits:
@@ -15,9 +15,20 @@ commits:
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#1906, agent-substrate/substrate#1910, agent-substrate/substrate#1918]
-  exit: 'as#1918 merged, then the re-pin onto a commit containing it; the durable-dir commit (as#1906) drops at the re-pin onto a commit containing 97de17b1'
+  exit: 'the re-pin onto a release carrying agent-substrate/substrate#1918; the durable-dir commit drops at the re-pin onto a commit containing 97de17b1'
+  class: 5
+  destination: 'agent-substrate/substrate#1918'
+  first_step: 'none; wait for agent-substrate/substrate#1918 (agent-substrate/substrate)'
+  source: 'giantswarm @ 153cdace0 0fb5235db 2ad35c9f7 2e49db3b8 6c531f74b 4cc9c694a b6b8b8358'
+  test: 'the fork gVisor e2e with a USER 65532 harness image'
+  recheck: 'each re-pin'
+  owner: unassigned
+  draft: ''
+  decision: issuecomment-6301319662
+  couplings: [harness-variety]
+  open_question: ''
 depends_on: [giantswarm/kagent-upstream:harness-run-claude-code-as-the-images-unprivileged]
-verified: 2026-10-20
+verified: 2026-10-21
 ---
 # Actors run as their image's `USER` in its `WORKDIR`
 
@@ -36,3 +47,5 @@ not ours: [agent-substrate/substrate#1918](https://github.com/agent-substrate/su
 `git cherry-pick -x` of the whole stack, in upstream's order: `f55a4de4` (upstream's `8f7eb07d`, rootfs root), with the fork-only test of a restored bundle `f4a98eb1`; `1f43f481` (`895ec3ce`, #1906); `12670632`, `3da2115b`, `136337e7`, `ab5c083e` (`1e0466df`, `fa8578de`, `5925173f`, `d41a2fc2`, #1918). `afb62e18` (agent-substrate/substrate#1910, the manifest's `CAP_DAC_OVERRIDE`) is in the pin. Adapted to the line: `ocispec.Options` keeps its `ActorUID`/`ContainerName` shape and gains only `User` and `Cwd`, paths stay in `ateompath`, and the fork's `TestPrepareOCIDirectory_RegistryRejectionIsTerminal` passes the bundle path; also [#103](https://github.com/giantswarm/substrate/pull/103) (`feat(atelet): carry the image USER and WORKDIR stack of agent-substrate/substrate#1918`), [#101](https://github.com/giantswarm/substrate/pull/101) (`fix(imagecache): carry the rootfs root fix of agent-substrate/substrate#1918`)
 
 2026-10-20: agent-substrate/substrate#1906 (merged 2026-10-16, `97de17b1`, not in the v0.5.0-alpha2 pin) covers only the durable-dir commit, and #1910 (merged 2026-09-30, `afb62e18`) is in the pin with no carried commit of its own, while the rest waits for #1918.
+
+2026-10-21: decided in the fork-reduction review of the compat-migrations theme: upstream PR (class 5), another author's: agent-substrate/substrate#1918 carries it, and the file moves to the harness-variety theme.

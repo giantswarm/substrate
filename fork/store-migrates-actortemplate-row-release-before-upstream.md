@@ -10,9 +10,20 @@ commits:
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2482]
-  exit: as#2482 decision; pre-1.0 policy risk
+  exit: 'folded at the conversion re-pin into the row conversion, which applies it before re-encoding; drops with that conversion at the following re-pin'
+  class: 6
+  destination: 'giantswarm/substrate ate-api row conversion of the conversion re-pin'
+  first_step: 'at the conversion re-pin, the row conversion applies this migration before re-encoding (giantswarm/substrate)'
+  source: 'giantswarm @ 724cc25df e43014dea; conversion: new branch'
+  test: 'the conversion lab upgrade from Substrate 1.16.3; the conversion counter reports no failed row'
+  recheck: '2026-11-03, with the conversion re-pin'
+  owner: unassigned
+  draft: ''
+  decision: issuecomment-6301319662
+  couplings: [compat-migrations]
+  open_question: ''
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-21
 ---
 # The store migrates an ActorTemplate row a release before upstream #2048 wrote when it decodes it, …
 
@@ -29,3 +40,5 @@ upstream #2048 (`715f2daa`, on the line since v1.6.0) replaced `name` with `name
 [agent-substrate/substrate#2482](https://github.com/agent-substrate/substrate/pull/2482), from the branch `upstream/trust-bundle-legacy-name` (upstream's shape, with its own copies of the unknown-field helpers; both commits). Falls away at the re-pin onto the first release that carries it
 
 [#318](https://github.com/giantswarm/substrate/pull/318) and [#333](https://github.com/giantswarm/substrate/pull/333) (the rewritten row): the fork's own commits
+
+2026-10-21: decided in the fork-reduction review of the compat-migrations theme: fork-only (class 6): the next re-pin past kagent-dev/kagent 96c40300 is the first whose Substrate carries agent-substrate/substrate#2888; the fork converts state across it instead of cutting over; the row conversion applies this read-migration to every row before re-encoding it, so no legacy row survives, and the commit leaves at that re-pin.

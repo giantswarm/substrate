@@ -9,9 +9,20 @@ commits:
 upstream:
   outcome: to-file
   refs: [agent-substrate/substrate#1839]
-  exit: line release after which no 1.3 installs remain
+  exit: 'dropped at the conversion re-pin; its stop-version (Substrate 1.16.0) is past every 1.3 installation'
+  class: 1
+  destination: ''
+  first_step: 'drop at the conversion re-pin (giantswarm/substrate)'
+  source: 'giantswarm @ 6c75b93cb; upstream/openfga-schema-adopt @ 1401113dd unused'
+  test: 'the conversion lab upgrade from Substrate 1.16.3'
+  recheck: 'the conversion re-pin'
+  owner: unassigned
+  draft: ''
+  decision: issuecomment-6301319662
+  couplings: [compat-migrations]
+  open_question: ''
 depends_on: []
-verified: 2026-10-20
+verified: 2026-10-21
 ---
 # ate-api adopts an OpenFGA schema that OpenFGA's own embedded migrations created
 
@@ -30,3 +41,5 @@ to file — prepared in the fork: branch `upstream/openfga-schema-adopt` on the 
 [#138](https://github.com/giantswarm/substrate/pull/138)
 
 2026-10-20: agent-substrate/substrate#1839 (merged 2026-09-24, `5fb129d8`, in the pin) introduced the migration this patch adopts around, not its exit, so the outcome stays to-file.
+
+2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): the conversion's stop-version, Substrate 1.16.0, is past the 1.3 to 1.4 step this adopts across.

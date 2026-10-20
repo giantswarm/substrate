@@ -10,9 +10,20 @@ commits:
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2474, giantswarm/substrate#151, giantswarm/substrate#284]
-  exit: as#2474 decision; expected decline under pre-1.0 policy
+  exit: 'ported at the conversion re-pin as its golden re-take and dropped at the following re-pin; the general case is an upstream issue on the snapshot compatibility stamp'
+  class: 6
+  destination: 'giantswarm/substrate row and snapshot conversion; agent-substrate/substrate issue on the snapshot compatibility stamp'
+  first_step: 'file the upstream issue on the snapshot compatibility stamp (agent-substrate/substrate)'
+  source: 'giantswarm @ fba71507b 88454826b; upstream/golden-layout-retake @ 165b2d371 (agent-substrate/substrate#2474)'
+  test: 'the conversion lab upgrade: every golden is taken again in the new layout'
+  recheck: '2026-11-03, with the conversion re-pin; the issue''s answer at each re-pin'
+  owner: unassigned
+  draft: issuecomment-6301320155
+  decision: issuecomment-6301319662
+  couplings: [compat-migrations]
+  open_question: ''
 depends_on: [giantswarm/substrate#151]
-verified: 2026-10-20
+verified: 2026-10-21
 ---
 # The ActorTemplate reconciler takes a golden written in an older snapshot layout again
 
@@ -31,3 +42,5 @@ the reconciler took each golden once and skipped a template with a golden tag fo
 [#282](https://github.com/giantswarm/substrate/pull/282): the fork's own commit, and [#288](https://github.com/giantswarm/substrate/pull/288): the golden actor's own create exempt from the re-take's refusal and taking no source from the recorded golden, without which the re-take refused itself on every pass and no golden was taken again
 
 2026-10-20: [#151](https://github.com/giantswarm/substrate/pull/151) (merged 2026-10-07, the line's golden-tag migration) and [#284](https://github.com/giantswarm/substrate/issues/284) (closed as completed on 2026-10-11 once agent-substrate/substrate#2474 was filed) are related work, not the exit, so the outcome stays open on #2474.
+
+2026-10-21: decided in the fork-reduction review of the compat-migrations theme: fork-only (class 6) with an upstream issue (class 4): the next re-pin past kagent-dev/kagent 96c40300 is the first whose Substrate carries agent-substrate/substrate#2888; the fork converts state across it instead of cutting over, and the re-take of goldens moves into that conversion; the general case, a golden re-taken when its compatibility stamp matches no worker, is drafted as an upstream issue.
