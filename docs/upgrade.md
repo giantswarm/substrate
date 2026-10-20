@@ -1219,6 +1219,19 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.16.1 to the next 1.16 patch
+
+- **Persisted format:** unchanged.
+- **Metrics:** `atenet_router_egress_refused_total` is gone from the
+  egress gateway's `metrics` port. It lived in atenet's egress ext_proc
+  handler, which the agentgateway data plane never calls, so it always
+  read zero. Egress refusals are counted where agentgateway makes them,
+  on `agentgateway_atenet_egress_refusals_total` on the `stats` port; an
+  alert or dashboard on the atenet counter moves to it.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
