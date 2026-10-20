@@ -25,7 +25,7 @@ A failed unmount after the persisted snapshot failed `Checkpoint`. ateapi crashe
 
 ## History
 
-not opened yet: the upstream-ready commit goes on the branch `upstream/atelet-checkpoint-keeps-snapshot-volume-busy` (mirror `main` + the change, DCO-signed)
+not opened yet: the upstream-ready commit is on the branch `upstream/atelet-checkpoint-keeps-snapshot-volume-busy` (`5864c6b5`, mirror `main` @ `e2fc0fa9` + the change, DCO-signed; `main` names the type `Atelet`, the hosts `ExternalVolumeHostPath`)
 
 [#502](https://github.com/giantswarm/substrate/pull/502): the fork's own commit, the same change on the line
 
