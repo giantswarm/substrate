@@ -1271,7 +1271,7 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
-#### 1.17.0 to 1.17.1
+#### 1.17.1 to 1.17.2
 
 - **Persisted format:** unchanged.
 - **Behavior:** atelet retries a failed unmount of an actor's external
@@ -1284,7 +1284,7 @@ it.
   an actor went to `CRASHED` and its snapshot was dropped. A
   `READ_WRITE_ONCE` volume that stays mounted still fails the checkpoint:
   the suspend detaches it from the node next.
-- **During the roll:** a suspend on a node that still runs the 1.17.0
+- **During the roll:** a suspend on a node that still runs the 1.17.1
   atelet behaves as before.
 - **Migration:** none to run.
 - **Goldens:** kept.
