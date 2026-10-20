@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1839]
   exit: line release after which no 1.3 installs remain
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # ate-api adopts an OpenFGA schema that OpenFGA's own embedded migrations created
 
@@ -28,3 +28,5 @@ ate-api adopts an OpenFGA schema that OpenFGA's own embedded migrations created 
 to file — prepared in the fork: branch `upstream/openfga-schema-adopt` on the mirror `main`: agent-substrate/substrate#1839 introduced migration 2 without adopting an existing schema, which breaks every upgrade from a release before it
 
 [#138](https://github.com/giantswarm/substrate/pull/138)
+
+2026-10-20: agent-substrate/substrate#1839 (merged 2026-09-24, `5fb129d8`, in the pin) introduced the migration this patch adopts around, not its exit, so the outcome stays to-file.

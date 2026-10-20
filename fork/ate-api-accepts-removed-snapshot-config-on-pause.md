@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#2309, agent-substrate/substrate#2542]
   exit: as#2542 decision or kagent line past 1.10.x; likely declined under pre-1.0 policy
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # ate-api accepts the removed SnapshotConfig.on_pause for a transition
 
@@ -28,3 +28,5 @@ kagent 1.10.x sets `on_pause` on every ActorTemplate it writes and compares the 
 [agent-substrate/substrate#2542](https://github.com/agent-substrate/substrate/pull/2542), open, from the branch `upstream/onpause-tolerance` on upstream `main` @ `f03327bd`; a compatibility shim for the field [#2309](https://github.com/agent-substrate/substrate/pull/2309) removed, which upstream's pre-v1.0 policy may decline
 
 [#372](https://github.com/giantswarm/substrate/pull/372): the fork's cherry-pick of the upstream pull request's two commits as one; `unmarshalStored` differs from upstream's, since the line migrates legacy rows there
+
+2026-10-20: agent-substrate/substrate#2309 (merged 2026-10-07, `44a201b3`, in the pin) is the removal this shim answers, not its exit, so the outcome stays open on #2542.

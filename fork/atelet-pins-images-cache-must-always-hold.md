@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1383, agent-substrate/substrate#463, agent-substrate/substrate#735, agent-substrate/substrate#811, agent-substrate/substrate#836]
   exit: upstream PR against as#1383
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # atelet pins images the cache must always hold
 
@@ -28,3 +28,5 @@ the eviction pass protects only placed actors' images and anything younger than 
 to file: the upstream-shaped patch is branch [`upstream/atelet-image-cache-pinned-images`](https://github.com/giantswarm/substrate/tree/upstream/atelet-image-cache-pinned-images) here (`f6757c3a` + `4c2f33ea`, on the mirror `main` @ `007eb1ee`; the messages are the pull-request text). agent-substrate/substrate#1383 (open, 2026-09-02) is this exact failure — a cold actor-image cache wedges a request-driven resume — and #811 the same shape through the sandbox-asset cache; the eviction engine (#735, #836, design #463) pins or spares nothing. A team member opens the pull request with DCO sign-off once the team has reviewed it
 
 `ba39208a`, [#21](https://github.com/giantswarm/substrate/pull/21) (rebase-merged 2026-09-12)
+
+2026-10-20: agent-substrate/substrate#735 (merged 2026-08-10, `596cfb8a`) and #836 (merged 2026-08-11, `730250dc`), both in the pin, are the eviction engine this patch extends, not its exit, so the outcome stays to-file.

@@ -11,7 +11,7 @@ upstream:
   refs: [giantswarm/substrate-credential-providers#13]
   exit: move into the plugin's config and drop the fork patch
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The Kubernetes credential provider grants namespaces selected by label
 
@@ -28,3 +28,5 @@ The Agent Platform runs each organization's agents in the organization's namespa
 to file — prepared in the fork: branch `upstream/credential-provider-namespace-selector`
 
 [#456](https://github.com/giantswarm/substrate/pull/456): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's
+
+2026-10-20: giantswarm/substrate-credential-providers#13 (merged 2026-10-19, `4c269d06`) ports the same grants to the `google-access-token` plugin only, while the bundled Kubernetes provider keeps this patch, so the outcome stays to-file.

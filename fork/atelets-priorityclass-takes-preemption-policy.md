@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#247]
   exit: kd chart PR
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # atelet's PriorityClass takes its preemption policy
 
@@ -28,3 +28,5 @@ a first install over full nodes let the atelet DaemonSet evict the cluster's own
 to prepare: the patch is upstream-shaped (a knob, default unchanged); no upstream item (agent-substrate/substrate#247 added `priorityClassName` for workers only)
 
 `768e18ed`, [#87](https://github.com/giantswarm/substrate/pull/87)
+
+2026-10-20: agent-substrate/substrate#247 (merged 2026-06-17, `962ff6b1`, in the pin) added the workers' `priorityClassName` only, not this knob, so the outcome stays to-file.
