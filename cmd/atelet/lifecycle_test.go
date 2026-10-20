@@ -39,6 +39,7 @@ import (
 	"go.ate.dev/substrate/internal/proto/ateletpb"
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 	"go.ate.dev/substrate/internal/resources"
+	"go.ate.dev/substrate/internal/volume"
 	"go.ate.dev/substrate/pkg/api/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -2163,5 +2164,126 @@ func TestCheckpointSkipsStaleCommitAndKeepsNewerLocal(t *testing.T) {
 	}
 	if _, err := os.Stat(ateletpath.LocalSnapshotDir(pluginActorUID, "pause-snap-2")); !os.IsNotExist(err) {
 		t.Errorf("stale local snapshot pause-snap-2: stat = %v, want pruned", err)
+	}
+}
+
+// TestCheckpointKeepsSnapshotWhenVolumeStaysMounted pauses an actor whose
+// external volume cannot be unmounted, and checks that the checkpoint still
+// succeeds with its snapshot, that the mount point stays, and that the next
+// activation on the node unmounts the leftover before it resets the actor's
+// directories.
+func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
+	useTempNodeDirs(t)
+	withUnmountRetry(t, 0, 0)
+	ctx := t.Context()
+
+	const (
+		atespace     = "ate-demo"
+		actorName    = "counter"
+		actorUID     = "01234567-89ab-cdef-0123-456789abcdef"
+		workerPodUID = "5f1c0d2e-3a4b-4c5d-8e9f-0a1b2c3d4e5f"
+		snapshotName = "pause-snap-1"
+	)
+
+	worker := &fakeWorker{snapshotFiles: map[string]string{"checkpoint.img": "guest-memory"}}
+	serveFakeWorker(t, worker)
+
+	host := imageVolumeTestRegistry(t)
+	image := host + "/actor:v1"
+	pinnedImage := pushTestImage(t, image, singleFileLayer(t, "bin/app", "app"))
+
+	release := newGVisorTestRelease(t)
+	plugin := &fakeWorkerPlugin{}
+	s := &Atelet{
+		workerDialer:      newWorkerDialer(1),
+		imageCache:        newImageVolumeStore(t),
+		sandboxAssetCache: newTestAssetCache(t),
+		anonGCSClient:     fakeObjectStorage{data: release.tarball},
+		systemInfoVolumes: newSystemInfoVolumeRefresher(nil, nil),
+		snapshots:         snapshottracker.New(t.Context(), nil, clock.RealClock{}),
+		volumePlugins:     map[string]volume.VolumePluginWorkerPlane{"mock-driver": plugin},
+	}
+	sandboxAssets := &ateletpb.SandboxAssets{
+		SandboxClass: "gvisor",
+		PauseImage:   pinnedImage,
+		Assets: map[string]*ateletpb.ArchAssets{
+			runtime.GOARCH: {Files: map[string]*ateletpb.AssetFile{
+				gvisorAssetName: release.proto(),
+			}},
+		},
+	}
+	spec := &ateletpb.WorkloadSpec{
+		Containers: []*ateletpb.Container{{Name: "app", Image: pinnedImage, Command: []string{"/bin/app"}}},
+		Volumes: []*ateletpb.Volume{{
+			Name: "workspace",
+			External: &ateletpb.ExternalVolumeSource{
+				StorageVolumeId: "mock-vol-1",
+				VolumeType:      "mock-driver",
+			},
+		}},
+	}
+
+	advertiseRuntime(t, s, sandboxAssets)
+	if _, err := s.Run(ctx, &ateletpb.RunRequest{
+		Atespace:              atespace,
+		ActorName:             actorName,
+		ActorUid:              actorUID,
+		ActorTemplateAtespace: "default",
+		ActorTemplateName:     "counter",
+		WorkerPodUid:          workerPodUID,
+		SandboxAssets:         sandboxAssets, SandboxRuntime: runtimeFor(t, sandboxAssets),
+		Spec: spec,
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(plugin.unmounted) != 0 {
+		t.Fatalf("Run unmounted %v on a fresh actor, want nothing", plugin.unmounted)
+	}
+
+	plugin.unmountErr = errors.New("umount: target is busy")
+	if _, err := s.Checkpoint(ctx, &ateletpb.CheckpointRequest{
+		Atespace:              atespace,
+		ActorName:             actorName,
+		ActorUid:              actorUID,
+		ActorTemplateAtespace: "default",
+		ActorTemplateName:     "counter",
+		WorkerPodUid:          workerPodUID,
+		Spec:                  spec,
+		Snapshot:              lifecycleSnapshot(actorUID, snapshotName, 1, ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY),
+		UploadConfig:          deferredUploadConfig(),
+	}); err != nil {
+		t.Fatalf("Checkpoint with a volume that stays mounted: %v, want success", err)
+	}
+	if _, err := os.Stat(filepath.Join(ateletpath.LocalSnapshotDir(actorUID, snapshotName), "checkpoint.img")); err != nil {
+		t.Fatalf("checkpoint kept no snapshot: %v", err)
+	}
+	if _, err := os.Stat(ateletpath.ExternalVolumeHostPath(actorUID, "workspace")); err != nil {
+		t.Fatalf("mount point of the volume still mounted was removed: %v", err)
+	}
+
+	plugin.unmountErr = nil
+	plugin.unmounted = nil
+	if _, err := s.Restore(ctx, &ateletpb.RestoreRequest{
+		Atespace:              atespace,
+		ActorName:             actorName,
+		ActorUid:              actorUID,
+		ActorTemplateAtespace: "default",
+		ActorTemplateName:     "counter",
+		WorkerPodUid:          workerPodUID,
+		SandboxAssets:         sandboxAssets, SandboxRuntime: runtimeFor(t, sandboxAssets),
+		Spec: spec,
+		Snapshot: &ateletpb.Snapshot{
+			SnapshotUuid: snapshotName,
+			Generation:   1,
+			Fidelity:     ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY,
+		},
+	}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if want := []string{"mock-vol-1"}; !slices.Equal(plugin.unmounted, want) {
+		t.Errorf("Restore unmounted %v before resetting the actor dirs, want %v", plugin.unmounted, want)
+	}
+	if got := worker.restored["checkpoint.img"]; got != "guest-memory" {
+		t.Errorf("restore staged %q for worker, want the pause snapshot's %q", got, "guest-memory")
 	}
 }
