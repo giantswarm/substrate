@@ -1249,6 +1249,33 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.16 to 1.17 step
+
+1.17.0 stays on upstream v0.5.0-alpha2 and serves the actor JWT mint as
+`Control.MintActorJwt`, the name agent-substrate/substrate `main`
+declares (agent-substrate/substrate#2520). Step to it from the latest
+1.16 patch with the numbered steps above; the step needs no migration
+and no snapshot reset, and conversations and durable volumes survive
+it.
+
+- **Persisted format:** unchanged. No CRD, no Postgres schema and no
+  snapshot layout differs from 1.16. `MintActorJWTRequest` and
+  `MintActorJWTResponse` are `MintActorJwtRequest` and
+  `MintActorJwtResponse`, with the same fields and numbers.
+- **ate-api contract:** the gRPC method is
+  `/ateapi.Control/MintActorJwt`. ate-api answers a call to
+  `/ateapi.Control/MintActorJWT` with `Unimplemented`, so every caller
+  of the mint moves with the server.
+- **Chart:** `images.agentgateway` must be an agentgateway line release
+  that mints through `MintActorJwt`. A release that still calls
+  `MintActorJWT` denies every request with an `actor_jwt` header source
+  with `500`.
+- **During the roll:** while ate-api-server and the egress gateway run
+  different releases, a request with an `actor_jwt` header source is
+  denied with `500`; other egress rules are unaffected.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
