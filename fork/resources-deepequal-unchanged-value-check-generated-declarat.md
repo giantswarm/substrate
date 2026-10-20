@@ -8,10 +8,10 @@ commits:
   - 'fix(resources): compare repeated message fields with proto.Equal'
 upstream:
   outcome: to-file
-  refs: [agent-substrate/substrate#231, giantswarm/substrate#234]
+  refs: [giantswarm/substrate#234]
   exit: upstream PR
 depends_on: [existing-volume-mounted-per-actor-at-sub]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # `resources.DeepEqual`, the unchanged-value check of the generated declarative validation, compares …
 
@@ -28,3 +28,5 @@ it handed the slice to `reflect.DeepEqual`, which also compares each message's i
 to file: upstream `main` has the same `DeepEqual`
 
 [#234](https://github.com/giantswarm/substrate/pull/234) (`fix(resources): compare repeated message fields with proto.Equal`)
+
+2026-10-20: agent-substrate/substrate#231 (merged 2026-06-12, a context fix in `memorypullcache`) was a wrong ref and is removed; no upstream item proposes the `proto.Equal` comparison (agent-substrate/substrate and kagent-dev/substrate searched 2026-10-20, upstream `main` keeps the same `DeepEqual`), and [#234](https://github.com/giantswarm/substrate/pull/234) (merged 2026-10-09) is the line's own pull request that carries this fix, so the outcome stays to-file.

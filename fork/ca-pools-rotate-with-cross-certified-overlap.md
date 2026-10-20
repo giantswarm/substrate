@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#932, agent-substrate/substrate#971]
   exit: upstream design issue then PR
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # CA pools rotate with a cross-certified overlap
 
@@ -28,3 +28,5 @@ the egress MITM CA could only be created, so a rotation replaced `egress-mitm-ca
 to file: the upstream-shaped patch is branch [`upstream/egress-ca-rotation`](https://github.com/giantswarm/substrate/tree/upstream/egress-ca-rotation) here (six commits from `431564c6` to `fa028bf6`, on kagent-dev/substrate `main` @ `08c930d6`, the commands in upstream's consolidated `admin.go`; DCO-signed; to be squashed into one whose message is the first commit's plus the dating and helm-e2e paragraphs). It depends on agentgateway reading both files as one pair. A team member opens the kagent-dev/substrate pull request once the team has reviewed it. No upstream item adds rotation tooling (kagent-dev/substrate and agent-substrate/substrate searched 2026-09-24; agent-substrate#932 says "rotate with overlap", #971 added `ActiveForSigning`); agent-substrate#1931/#1932 (open) report the components that load their CA pool once at startup
 
 `c8584af3` ([#68](https://github.com/giantswarm/substrate/pull/68), squash)
+
+2026-10-20: agent-substrate/substrate#971 (merged 2026-08-26, `d90e02ce`, in the pin) added `ActiveForSigning`, which the rotation builds on, not its exit, so the outcome stays to-file.

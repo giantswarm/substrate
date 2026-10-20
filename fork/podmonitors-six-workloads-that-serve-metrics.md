@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1781, kagent-dev/substrate#46]
   exit: kd#46 merged
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # PodMonitors for the six workloads that serve metrics
 
@@ -28,3 +28,5 @@ the fleet's `alloy-metrics` discovers ServiceMonitors, PodMonitors and ScrapeCon
 [kagent-dev/substrate#46](https://github.com/kagent-dev/substrate/pull/46) — **open**, carried until it merges and the next re-pin drops it. `kagent-dev/substrate` is the upstream for a chart change: `agent-substrate/substrate` packages no chart at all, and deploys from `manifests/ate-install/` with Kustomize
 
 `3fb1622a`
+
+2026-10-20: agent-substrate/substrate#1781, ours, was closed on 2026-09-21 and re-filed the same day as [kagent-dev/substrate#46](https://github.com/kagent-dev/substrate/pull/46), the exit, so the outcome stays open.

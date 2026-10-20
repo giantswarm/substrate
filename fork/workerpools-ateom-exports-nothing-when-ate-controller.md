@@ -7,11 +7,11 @@ status: carried
 commits:
   - 'fix(atecontroller): turn ateom''s exporters off without an endpoint'
 upstream:
-  outcome: open
+  outcome: merged
   refs: [agent-substrate/substrate#2189]
-  exit: as#2189 merged
+  exit: 'drops at the re-pin onto a commit containing a62e8989'
 depends_on: [go-components-honor-otel-traces-exporter-none]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # A WorkerPool's ateom exports nothing when ate-controller has no OTLP endpoint
 
@@ -28,3 +28,5 @@ the worker Deployment's comment promised "empty disables ateom telemetry entirel
 [agent-substrate/substrate#2189](https://github.com/agent-substrate/substrate/pull/2189) (open, not a draft, reviewed by JeffLuoo on 2026-10-13; with the row above), carried until it merges
 
 `fb79b373` ([#108](https://github.com/giantswarm/substrate/pull/108))
+
+2026-10-20: agent-substrate/substrate#2189, ours, merged on 2026-10-19 as `a62e8989` (not in the v0.5.0-alpha2 pin): ateworker skips its exporters without a relay or endpoint, so the patch drops at the re-pin onto a commit containing it.

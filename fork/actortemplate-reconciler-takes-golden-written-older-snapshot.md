@@ -12,7 +12,7 @@ upstream:
   refs: [agent-substrate/substrate#2474, giantswarm/substrate#151, giantswarm/substrate#284]
   exit: as#2474 decision; expected decline under pre-1.0 policy
 depends_on: [giantswarm/substrate#151]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The ActorTemplate reconciler takes a golden written in an older snapshot layout again
 
@@ -29,3 +29,5 @@ the reconciler took each golden once and skipped a template with a golden tag fo
 [agent-substrate/substrate#2474](https://github.com/agent-substrate/substrate/pull/2474) (ours, open; from branch `upstream/golden-layout-retake`, the port of both commits onto upstream `main` `29c049fc` as one commit on Actor Lifecycle v2, without the golden-tag migration of [#151](https://github.com/giantswarm/substrate/pull/151), plus one docs commit for the API guide and glossary; [#284](https://github.com/giantswarm/substrate/issues/284)). Upstream's `AGENTS.md` asks for no fallbacks for old formats before v1.0.0, so upstream may decline it; then it is carried until a release after 1.0 makes it moot
 
 [#282](https://github.com/giantswarm/substrate/pull/282): the fork's own commit, and [#288](https://github.com/giantswarm/substrate/pull/288): the golden actor's own create exempt from the re-take's refusal and taking no source from the recorded golden, without which the re-take refused itself on every pass and no golden was taken again
+
+2026-10-20: [#151](https://github.com/giantswarm/substrate/pull/151) (merged 2026-10-07, the line's golden-tag migration) and [#284](https://github.com/giantswarm/substrate/issues/284) (closed as completed on 2026-10-11 once agent-substrate/substrate#2474 was filed) are related work, not the exit, so the outcome stays open on #2474.

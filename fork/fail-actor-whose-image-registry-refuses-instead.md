@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1220, agent-substrate/substrate#1817]
   exit: re-check against ActorStatus.crash, then upstream PR
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # Fail an actor whose image the registry refuses instead of resuming it forever
 
@@ -28,3 +28,5 @@ a Harness whose `workload.image` could not be pulled never booted and was never 
 to file: the upstream-shaped patch is branch [`upstream/golden-boot-image-pull-terminal`](https://github.com/giantswarm/substrate/tree/upstream/golden-boot-image-pull-terminal) here (`4a56c0af`, the same commit on the mirror `main`; its message is the pull-request text). agent-substrate/substrate#1220 (merged 2026-09-23, after the v0.2.0-beta4 pin; the next re-pin decides whether this patch still applies or folds into it) crashes actors on every failure not marked retriable and classifies registry answers with `transport.Error.Temporary()`; its reviewer had asked for the status-based classification this patch does for the one class that is a registry's final word — the patch was written to apply on its own; the re-pin onto a release with #1220 checks whether it still does; agent-substrate/substrate#1817 (in v0.3.0-alpha1) then deleted the `ateerrors` taxonomy this patch classifies with, so the patch is reworked on alpha1's `ActorStatus.crash`. A team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it
 
 `d14cac64`, [#14](https://github.com/giantswarm/substrate/pull/14)
+
+2026-10-20: agent-substrate/substrate#1220 (merged 2026-09-23, `aae7df78`) and #1817 (merged 2026-09-23, `74bbfc52`), both in the pin, are the crash classification the patch is reworked on, which still leaves a registry refusal untagged, so the outcome stays to-file.

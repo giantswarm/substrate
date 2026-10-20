@@ -12,7 +12,7 @@ upstream:
   refs: [agent-substrate/substrate#1637, agent-substrate/substrate#1988, agent-substrate/substrate#1994]
   exit: as#1988 merged (gated); drop the ungated fork API
 depends_on: [read-write-mounts-missing-sub-path-directory, resources-deepequal-unchanged-value-check-generated-declarat, giantswarm/kagent-upstream:session-the-sessions-actor-with-its-workspace-directory]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # An existing volume mounted per actor at a sub-path
 
@@ -29,3 +29,5 @@ Sessions on one workspace each need their own directory of one read-write-many v
 follows agent-substrate/substrate#1637 (shared volumes across actors, open), in the shape proposed there (https://github.com/agent-substrate/substrate/issues/1637#issuecomment-6083442678), on top of #1988's access modes (open); upstream puts it behind the Preview gate of #1994 (open), which this line does not carry, so it is ungated here. Exit: drops at the re-pin that carries #1637's API
 
 [#234](https://github.com/giantswarm/substrate/pull/234) (`feat: mount an existing volume per actor at a sub-path`); also [#342](https://github.com/giantswarm/substrate/pull/342) (`fix(volume): publish a read-only mount with the volume's own mode`)
+
+2026-10-20: agent-substrate/substrate#1994 (merged 2026-10-15, `756bb9e1`, not in the v0.5.0-alpha2 pin) adds the Preview gate the gated shape of #1988 needs, not the exit, so the outcome stays open.

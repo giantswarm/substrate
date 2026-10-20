@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1473, giantswarm/substrate#20]
   exit: as#1473 design or upstream PR
 depends_on: [re-register-worker-whose-pod-ip-changed]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # ateom keeps re-asserting its capacity report
 
@@ -28,3 +28,5 @@ a Worker record replaced under a running ateom — the Syncer's re-registration 
 to file: the upstream-shaped patch is branch [`upstream/ateom-reassert-capacity`](https://github.com/giantswarm/substrate/tree/upstream/ateom-reassert-capacity) here (`cedac921`, on the mirror `main` @ `007eb1ee`; its message is the pull-request text; the `syncer.go` comment hunk, which annotates #20's path, is not on it). agent-substrate/substrate#1473 (open since 2026-09-04: a `RecycleWorker` RPC keeps the record of a Worker whose ateom container was replaced *because* an ateom reports its capacity once per process and a re-registered Worker would stay unschedulable) designs around the constraint this patch removes — complementary, not cherry-picked; a recycled record's re-assertion is a no-op read. No upstream issue on the capacity loss itself (searched 2026-09-12). A team member opens the pull request with DCO sign-off once the team has reviewed it. Keep at a re-pin onto a release that carries #1473: a recreated sandbox has a new IP and stays a re-registration under #20
 
 `77953308`, [#25](https://github.com/giantswarm/substrate/pull/25) (rebase-merged 2026-09-12; first release v0.0.27-gs.7)
+
+2026-10-20: [#20](https://github.com/giantswarm/substrate/pull/20) (merged 2026-09-12) is the line's re-registration this patch serves, not its exit, so the outcome stays to-file.

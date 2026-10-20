@@ -11,7 +11,7 @@ upstream:
   refs: [giantswarm/substrate#12]
   exit: kd chart PR
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # Keep the `ate.dev` CRDs when the `substrate-crds` release is uninstalled
 
@@ -28,3 +28,5 @@ the chart ships its CRDs as templates, so an uninstall of that release deleted t
 to file: the upstream-shaped patch is branch [`upstream/substrate-crds-resource-policy-keep`](https://github.com/giantswarm/substrate/tree/upstream/substrate-crds-resource-policy-keep) here (`41bd9df0`, on the mirror `main`; the pull-request text is in #12); neither kagent-dev/substrate nor agent-substrate/substrate carries or proposes the policy (searched 2026-09-11); a team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it
 
 `afdacaca` (as it is on `giantswarm` after the v0.0.29 re-pin), [#12](https://github.com/giantswarm/substrate/pull/12)
+
+2026-10-20: [#12](https://github.com/giantswarm/substrate/pull/12) (merged 2026-09-11) is the line's own pull request for this patch, not an upstream exit, so the outcome stays to-file.

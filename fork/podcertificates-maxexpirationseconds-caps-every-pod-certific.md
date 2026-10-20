@@ -11,7 +11,7 @@ upstream:
   refs: [agent-substrate/substrate#1344]
   exit: kd chart PR
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # `podCertificates.maxExpirationSeconds` caps every pod certificate the chart requests
 
@@ -28,3 +28,5 @@ the signers issue 24h and kubelet rewrites each bundle 30 min before expiry; not
 to file: the upstream-shaped patch is branch [`upstream/podcert-max-expiration`](https://github.com/giantswarm/substrate/tree/upstream/podcert-max-expiration) here (`9f12a42a`, on the mirror `main` @ `8316538f`); a team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it. No upstream item covers it (agent-substrate/substrate and kagent-dev/substrate pull requests searched 2026-09-23: agent-substrate#695 reloads the atunnel client CA per handshake, #1344 caches the CSI CA pool; neither exposes the pod certificate lifetime)
 
 `bf2728fe` ([#58](https://github.com/giantswarm/substrate/pull/58))
+
+2026-10-20: agent-substrate/substrate#1344 (merged 2026-09-15, `26c38616`, in the pin) caches the CSI CA pool and does not expose the certificate lifetime, so the outcome stays to-file.
