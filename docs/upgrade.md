@@ -1254,8 +1254,9 @@ it.
   `/ateapi.Control/MintActorJwt`. ate-api answers a call to
   `/ateapi.Control/MintActorJWT` with `Unimplemented`, so every caller
   of the mint moves with the server.
-- **Chart:** `images.agentgateway` must be an agentgateway line release
-  that mints through `MintActorJwt`. A release that still calls
+- **Chart:** `images.agentgateway` is 2.6.5 (2.6.1 before), the
+  agentgateway line release that mints through `MintActorJwt`; an
+  override must be one that does too. A release that still calls
   `MintActorJWT` denies every request with an `actor_jwt` header source
   with `500`.
 - **Metrics:** `atenet_router_egress_refused_total` is gone from the
