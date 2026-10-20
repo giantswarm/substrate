@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
@@ -58,7 +59,22 @@ func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string,
 	return nil
 }
 
+// unmountRetryWindow bounds how long unmountExternalVolumes retries a failed
+// unmount. A target is busy while anything on the node still holds a path
+// beneath it, which is often let go seconds later.
+var unmountRetryWindow = time.Minute
+
+// unmountRetryInterval is the first wait between two unmount attempts; it
+// doubles up to unmountRetryMaxInterval.
+var unmountRetryInterval = time.Second
+
+const unmountRetryMaxInterval = 10 * time.Second
+
+// unmountExternalVolumes unmounts the spec's external volumes, retrying a
+// failed unmount until unmountRetryWindow ends, and returns the failures that
+// outlast it.
 func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
+	deadline := time.Now().Add(unmountRetryWindow)
 	var errs []error
 	for _, vol := range spec.GetVolumes() {
 		ext := vol.GetExternal()
@@ -74,15 +90,59 @@ func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID strin
 			errs = append(errs, fmt.Errorf("failed to get volume plugin for %q (volume %q): %w", ext.GetVolumeType(), ext.GetStorageVolumeId(), err))
 			continue
 		}
-		if err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath, accessMode(ext)); err != nil {
-			if status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
-				slog.WarnContext(ctx, "Volume not found during unmount, assuming already unmounted", slog.String("volume_id", ext.GetStorageVolumeId()), slog.Any("error", err))
-			} else {
-				errs = append(errs, fmt.Errorf("failed to unmount volume %q from %q: %w", ext.GetStorageVolumeId(), hostPath, err))
-			}
+		if err := unmountVolumeUntil(ctx, plugin, ext, hostPath, deadline); err != nil {
+			errs = append(errs, fmt.Errorf("failed to unmount volume %q from %q: %w", ext.GetStorageVolumeId(), hostPath, err))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// unmountVolumeUntil unmounts one external volume, retrying a failure with a
+// doubling wait while the next attempt still starts before deadline and ctx
+// lasts. A volume the plugin no longer finds counts as unmounted.
+func unmountVolumeUntil(ctx context.Context, plugin volume.VolumePluginWorkerPlane, ext *ateletpb.ExternalVolumeSource, hostPath string, deadline time.Time) error {
+	wait := unmountRetryInterval
+	for {
+		err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath, accessMode(ext))
+		if err == nil {
+			return nil
+		}
+		if status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
+			slog.WarnContext(ctx, "Volume not found during unmount, assuming already unmounted", slog.String("volume_id", ext.GetStorageVolumeId()), slog.Any("error", err))
+			return nil
+		}
+		if time.Now().Add(wait).After(deadline) {
+			return err
+		}
+		slog.WarnContext(ctx, "Unmounting volume failed, retrying", slog.String("volume_id", ext.GetStorageVolumeId()), slog.String("host_path", hostPath), slog.Duration("retry_in", wait), slog.Any("error", err))
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, unmountRetryMaxInterval)
+	}
+}
+
+// unmountLeftoverVolumes unmounts the spec's external volumes whose mount
+// point outlived the actor's last checkpoint on this node, before an
+// activation resets the actor's directories: a mount point left in place
+// means its unmount had failed.
+func (s *AteomHerder) unmountLeftoverVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
+	var leftover []*ateletpb.Volume
+	for _, vol := range spec.GetVolumes() {
+		if vol.GetExternal() == nil {
+			continue
+		}
+		if _, err := os.Lstat(ateletpath.VolumeHostPath(actorUID, vol.GetName())); err == nil {
+			leftover = append(leftover, vol)
+		}
+	}
+	if len(leftover) == 0 {
+		return nil
+	}
+	slog.WarnContext(ctx, "Unmounting volumes left mounted by an earlier checkpoint", slog.String("actor_uid", actorUID), slog.Int("volumes", len(leftover)))
+	return s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: leftover})
 }
 
 // accessMode maps an external volume's access mode to the volume plugins'.
