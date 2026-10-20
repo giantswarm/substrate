@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
@@ -28,6 +29,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/volume/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func (s *AteomHerder) mountExternalVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
@@ -160,6 +162,7 @@ func unmountVolumeUntil(ctx context.Context, plugin volume.VolumePluginWorkerPla
 // activation resets the actor's directories: a mount point left in place
 // means its unmount had failed.
 func (s *AteomHerder) unmountLeftoverVolumes(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) error {
+	s.stopLeftoverSweep(actorUID)
 	var leftover []*ateletpb.Volume
 	for _, vol := range spec.GetVolumes() {
 		if vol.GetExternal() == nil {
@@ -173,7 +176,169 @@ func (s *AteomHerder) unmountLeftoverVolumes(ctx context.Context, actorUID strin
 		return nil
 	}
 	slog.WarnContext(ctx, "Unmounting volumes left mounted by an earlier checkpoint", slog.String("actor_uid", actorUID), slog.Int("volumes", len(leftover)))
-	return s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: leftover})
+	if err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: leftover}); err != nil {
+		return err
+	}
+	if err := os.Remove(leftoverVolumesPath(actorUID)); err != nil && !os.IsNotExist(err) {
+		return wrapFileSystemErr("while removing the record of leftover volumes", err)
+	}
+	return nil
+}
+
+// leftoverSweepInterval is the first wait of a sweep of volumes a checkpoint
+// left mounted; it doubles up to leftoverSweepMaxInterval.
+var leftoverSweepInterval = time.Minute
+
+const leftoverSweepMaxInterval = 15 * time.Minute
+
+// leftoverVolumesFile names the record of the volumes a checkpoint left
+// mounted, in the actor's directory, so a restarted atelet sweeps them again.
+const leftoverVolumesFile = "leftover-volumes.pb"
+
+func leftoverVolumesPath(actorUID string) string {
+	return filepath.Join(ateletpath.ActorPath(actorUID), leftoverVolumesFile)
+}
+
+// leftoverSweep is the background sweep of one actor's leftover volumes.
+type leftoverSweep struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// leftoverVolumes returns the spec's external volumes whose unmount failed in
+// err, an error of unmountExternalVolumes.
+func leftoverVolumes(actorUID string, spec *ateletpb.WorkloadSpec, err error) []*ateletpb.Volume {
+	errs := []error{err}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		errs = joined.Unwrap()
+	}
+	failed := map[string]bool{}
+	for _, e := range errs {
+		var v *volumeUnmountError
+		if errors.As(e, &v) {
+			failed[v.hostPath] = true
+		}
+	}
+	var leftover []*ateletpb.Volume
+	for _, vol := range spec.GetVolumes() {
+		if vol.GetExternal() != nil && failed[ateletpath.VolumeHostPath(actorUID, vol.GetName())] {
+			leftover = append(leftover, vol)
+		}
+	}
+	return leftover
+}
+
+// sweepLeftoverVolumes records the volumes a checkpoint left mounted and
+// keeps unmounting them in the background, with a doubling wait between the
+// attempts, until they let go; then it removes their mount points and the
+// record. The actor need not come back to this node: a suspended actor is
+// deleted without a terminate here. Its next activation or terminate on this
+// node stops the sweep first.
+func (s *AteomHerder) sweepLeftoverVolumes(ctx context.Context, actorUID string, volumes []*ateletpb.Volume) error {
+	spec := &ateletpb.WorkloadSpec{Volumes: volumes}
+	record, err := proto.Marshal(spec)
+	if err != nil {
+		return fmt.Errorf("while encoding the leftover volumes: %w", err)
+	}
+	if err := os.WriteFile(leftoverVolumesPath(actorUID), record, 0o600); err != nil {
+		return wrapFileSystemErr("while recording the leftover volumes", err)
+	}
+	s.startLeftoverSweep(ctx, actorUID, spec)
+	return nil
+}
+
+func (s *AteomHerder) startLeftoverSweep(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) {
+	s.stopLeftoverSweep(actorUID)
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	sweep := &leftoverSweep{cancel: cancel, done: make(chan struct{})}
+	s.sweepMu.Lock()
+	if s.leftoverSweeps == nil {
+		s.leftoverSweeps = map[string]*leftoverSweep{}
+	}
+	s.leftoverSweeps[actorUID] = sweep
+	s.sweepMu.Unlock()
+
+	go func() {
+		defer close(sweep.done)
+		defer s.forgetLeftoverSweep(actorUID, sweep)
+		wait := leftoverSweepInterval
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			err := s.unmountExternalVolumes(ctx, actorUID, spec)
+			if ctx.Err() != nil {
+				return
+			}
+			if err == nil {
+				removeLeftoverMountPoints(ctx, actorUID, spec)
+				slog.InfoContext(ctx, "Unmounted volumes left mounted by a checkpoint", slog.String("actor_uid", actorUID), slog.Int("volumes", len(spec.GetVolumes())))
+				return
+			}
+			wait = min(2*wait, leftoverSweepMaxInterval)
+			slog.WarnContext(ctx, "Volumes left mounted by a checkpoint still do not unmount", slog.String("actor_uid", actorUID), slog.Duration("retry_in", wait), slog.Any("err", err))
+		}
+	}()
+}
+
+// stopLeftoverSweep stops the actor's sweep, if one runs, and waits for it.
+func (s *AteomHerder) stopLeftoverSweep(actorUID string) {
+	s.sweepMu.Lock()
+	sweep := s.leftoverSweeps[actorUID]
+	delete(s.leftoverSweeps, actorUID)
+	s.sweepMu.Unlock()
+	if sweep != nil {
+		sweep.cancel()
+		<-sweep.done
+	}
+}
+
+func (s *AteomHerder) forgetLeftoverSweep(actorUID string, sweep *leftoverSweep) {
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	if s.leftoverSweeps[actorUID] == sweep {
+		delete(s.leftoverSweeps, actorUID)
+	}
+}
+
+// removeLeftoverMountPoints removes the mount points of unmounted leftover
+// volumes and their record.
+func removeLeftoverMountPoints(ctx context.Context, actorUID string, spec *ateletpb.WorkloadSpec) {
+	for _, vol := range spec.GetVolumes() {
+		if err := os.Remove(ateletpath.VolumeHostPath(actorUID, vol.GetName())); err != nil && !os.IsNotExist(err) {
+			slog.WarnContext(ctx, "Failed to remove the mount point of an unmounted leftover volume", slog.String("actor_uid", actorUID), slog.Any("err", err))
+		}
+	}
+	if err := os.Remove(leftoverVolumesPath(actorUID)); err != nil && !os.IsNotExist(err) {
+		slog.WarnContext(ctx, "Failed to remove the record of leftover volumes", slog.String("actor_uid", actorUID), slog.Any("err", err))
+	}
+}
+
+// resumeLeftoverSweeps starts a sweep for every record of leftover volumes on
+// the node, as an earlier atelet left them.
+func (s *AteomHerder) resumeLeftoverSweeps(ctx context.Context) {
+	records, err := filepath.Glob(leftoverVolumesPath("*"))
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to list records of leftover volumes", slog.Any("err", err))
+		return
+	}
+	for _, path := range records {
+		actorUID := filepath.Base(filepath.Dir(path))
+		record, err := os.ReadFile(path)
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to read a record of leftover volumes", slog.String("actor_uid", actorUID), slog.Any("err", err))
+			continue
+		}
+		spec := &ateletpb.WorkloadSpec{}
+		if err := proto.Unmarshal(record, spec); err != nil {
+			slog.WarnContext(ctx, "Failed to decode a record of leftover volumes", slog.String("actor_uid", actorUID), slog.Any("err", err))
+			continue
+		}
+		slog.InfoContext(ctx, "Sweeping volumes an earlier checkpoint left mounted", slog.String("actor_uid", actorUID), slog.Int("volumes", len(spec.GetVolumes())))
+		s.startLeftoverSweep(ctx, actorUID, spec)
+	}
 }
 
 // accessMode maps an external volume's access mode to the volume plugins'.
