@@ -1271,6 +1271,22 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.17.0 to 1.17.1
+
+- **Persisted format:** unchanged.
+- **Behavior:** atelet retries a failed unmount of an actor's external
+  volume for up to a minute at suspend, pause and terminate. Once a
+  checkpoint has persisted the snapshot, a volume that still does not
+  unmount no longer fails it: the actor is suspended with its snapshot
+  instead of crashed, and the volume's mount point stays on the node until
+  the actor's next activation or terminate there unmounts it. Before, such
+  an actor went to `CRASHED` and its snapshot was dropped.
+- **During the roll:** a suspend on a node that still runs the 1.17.0
+  atelet behaves as before.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
