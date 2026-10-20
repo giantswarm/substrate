@@ -12,6 +12,7 @@ commits:
   - 'fix(e2e): pass the atespace to the port-in-Host egress probe'
   - 'test(e2e): run the line''s agentgateway in the kind e2e'
   - 'chore(agentgateway): run 2.6.0, which counts refusals per actor'
+  - 'chore(agentgateway): run 2.6.1, which counts raw tcp refusals'
   - 'chore(chart): run the agentgateway line''s 2.3.6 in the router and egress gateway'
   - 'chore(chart): run the agentgateway line''s 2.3.5 in the router and egress gateway'
   - 'chore(chart): run the agentgateway line''s 2.3.0 in the router and egress gateway'
