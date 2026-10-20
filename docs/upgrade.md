@@ -1236,24 +1236,12 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
-#### 1.16.2 to the next 1.16 patch
-
-- **Persisted format:** unchanged.
-- **Metrics:** `atenet_router_egress_refused_total` is gone from the
-  egress gateway's `metrics` port. It lived in atenet's egress ext_proc
-  handler, which the agentgateway data plane never calls, so it always
-  read zero. Egress refusals are counted where agentgateway makes them,
-  on `agentgateway_atenet_egress_refusals_total` on the `stats` port; an
-  alert or dashboard on the atenet counter moves to it.
-- **Migration:** none to run.
-- **Goldens:** kept.
-- **Reset:** none. **Conversations lost:** none.
-
 ### The 1.16 to 1.17 step
 
 1.17.0 stays on upstream v0.5.0-alpha2 and serves the actor JWT mint as
 `Control.MintActorJwt`, the name agent-substrate/substrate `main`
-declares (agent-substrate/substrate#2520). Step to it from the latest
+declares (agent-substrate/substrate#2520), and drops atenet's egress
+refusal counter, which always read zero. Step to it from the latest
 1.16 patch with the numbered steps above; the step needs no migration
 and no snapshot reset, and conversations and durable volumes survive
 it.
@@ -1270,6 +1258,12 @@ it.
   that mints through `MintActorJwt`. A release that still calls
   `MintActorJWT` denies every request with an `actor_jwt` header source
   with `500`.
+- **Metrics:** `atenet_router_egress_refused_total` is gone from the
+  egress gateway's `metrics` port. It lived in atenet's egress ext_proc
+  handler, which the agentgateway data plane never calls, so it always
+  read zero. Egress refusals are counted where agentgateway makes them,
+  on `agentgateway_atenet_egress_refusals_total` on the `stats` port; an
+  alert or dashboard on the atenet counter moves to it.
 - **During the roll:** while ate-api-server and the egress gateway run
   different releases, a request with an `actor_jwt` header source is
   denied with `500`; other egress rules are unaffected.
