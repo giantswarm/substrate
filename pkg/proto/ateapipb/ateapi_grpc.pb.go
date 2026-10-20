@@ -46,7 +46,7 @@ const (
 	Control_UpdateActorEgressPolicy_FullMethodName    = "/ateapi.Control/UpdateActorEgressPolicy"
 	Control_DeleteActorEgressPolicy_FullMethodName    = "/ateapi.Control/DeleteActorEgressPolicy"
 	Control_GetEgressPolicyContract_FullMethodName    = "/ateapi.Control/GetEgressPolicyContract"
-	Control_MintActorJWT_FullMethodName               = "/ateapi.Control/MintActorJWT"
+	Control_MintActorJwt_FullMethodName               = "/ateapi.Control/MintActorJwt"
 	Control_MintActorCertificate_FullMethodName       = "/ateapi.Control/MintActorCertificate"
 	Control_CreateTag_FullMethodName                  = "/ateapi.Control/CreateTag"
 	Control_GetTag_FullMethodName                     = "/ateapi.Control/GetTag"
@@ -128,7 +128,7 @@ type ControlClient interface {
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
-	MintActorJWT(ctx context.Context, in *MintActorJWTRequest, opts ...grpc.CallOption) (*MintActorJWTResponse, error)
+	MintActorJwt(ctx context.Context, in *MintActorJwtRequest, opts ...grpc.CallOption) (*MintActorJwtResponse, error)
 	// Create a Substrate-issued SPIFFE certificate asserting the actor identity.
 	//
 	// SPIFFE URI: spiffe://${trustdomain}/actor/${atespace}/${actor}
@@ -343,10 +343,10 @@ func (c *controlClient) GetEgressPolicyContract(ctx context.Context, in *GetEgre
 	return out, nil
 }
 
-func (c *controlClient) MintActorJWT(ctx context.Context, in *MintActorJWTRequest, opts ...grpc.CallOption) (*MintActorJWTResponse, error) {
+func (c *controlClient) MintActorJwt(ctx context.Context, in *MintActorJwtRequest, opts ...grpc.CallOption) (*MintActorJwtResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(MintActorJWTResponse)
-	err := c.cc.Invoke(ctx, Control_MintActorJWT_FullMethodName, in, out, cOpts...)
+	out := new(MintActorJwtResponse)
+	err := c.cc.Invoke(ctx, Control_MintActorJwt_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -693,7 +693,7 @@ type ControlServer interface {
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
-	MintActorJWT(context.Context, *MintActorJWTRequest) (*MintActorJWTResponse, error)
+	MintActorJwt(context.Context, *MintActorJwtRequest) (*MintActorJwtResponse, error)
 	// Create a Substrate-issued SPIFFE certificate asserting the actor identity.
 	//
 	// SPIFFE URI: spiffe://${trustdomain}/actor/${atespace}/${actor}
@@ -817,8 +817,8 @@ func (UnimplementedControlServer) DeleteActorEgressPolicy(context.Context, *Dele
 func (UnimplementedControlServer) GetEgressPolicyContract(context.Context, *GetEgressPolicyContractRequest) (*EgressPolicyContract, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetEgressPolicyContract not implemented")
 }
-func (UnimplementedControlServer) MintActorJWT(context.Context, *MintActorJWTRequest) (*MintActorJWTResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method MintActorJWT not implemented")
+func (UnimplementedControlServer) MintActorJwt(context.Context, *MintActorJwtRequest) (*MintActorJwtResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintActorJwt not implemented")
 }
 func (UnimplementedControlServer) MintActorCertificate(context.Context, *MintActorCertificateRequest) (*MintActorCertificateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintActorCertificate not implemented")
@@ -1162,20 +1162,20 @@ func _Control_GetEgressPolicyContract_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Control_MintActorJWT_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MintActorJWTRequest)
+func _Control_MintActorJwt_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MintActorJwtRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ControlServer).MintActorJWT(ctx, in)
+		return srv.(ControlServer).MintActorJwt(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Control_MintActorJWT_FullMethodName,
+		FullMethod: Control_MintActorJwt_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ControlServer).MintActorJWT(ctx, req.(*MintActorJWTRequest))
+		return srv.(ControlServer).MintActorJwt(ctx, req.(*MintActorJwtRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1762,8 +1762,8 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Control_GetEgressPolicyContract_Handler,
 		},
 		{
-			MethodName: "MintActorJWT",
-			Handler:    _Control_MintActorJWT_Handler,
+			MethodName: "MintActorJwt",
+			Handler:    _Control_MintActorJwt_Handler,
 		},
 		{
 			MethodName: "MintActorCertificate",

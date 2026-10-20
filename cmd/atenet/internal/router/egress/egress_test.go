@@ -184,10 +184,10 @@ type egressMockClient struct {
 	// closed, so a test can hold several callers on one fetch.
 	policyGate chan struct{}
 
-	// The nth MintActorJWT call returns "jwt-<n>", expiring
+	// The nth MintActorJwt call returns "jwt-<n>", expiring
 	// expiration_seconds from now. mintErr, when set, is returned instead.
 	mintCalls atomic.Int32
-	lastMint  atomic.Pointer[ateapipb.MintActorJWTRequest]
+	lastMint  atomic.Pointer[ateapipb.MintActorJwtRequest]
 	mintErr   error
 }
 
@@ -216,13 +216,13 @@ func (m *egressMockClient) GetActorEgressPolicy(ctx context.Context, _ *ateapipb
 	return m.policy, nil
 }
 
-func (m *egressMockClient) MintActorJWT(_ context.Context, req *ateapipb.MintActorJWTRequest, _ ...grpc.CallOption) (*ateapipb.MintActorJWTResponse, error) {
+func (m *egressMockClient) MintActorJwt(_ context.Context, req *ateapipb.MintActorJwtRequest, _ ...grpc.CallOption) (*ateapipb.MintActorJwtResponse, error) {
 	n := m.mintCalls.Add(1)
 	m.lastMint.Store(req)
 	if m.mintErr != nil {
 		return nil, m.mintErr
 	}
-	return &ateapipb.MintActorJWTResponse{
+	return &ateapipb.MintActorJwtResponse{
 		ActorJwt:  fmt.Sprintf("jwt-%d", n),
 		ExpiresAt: timestamppb.New(time.Now().Add(time.Duration(req.GetExpirationSeconds()) * time.Second)),
 	}, nil

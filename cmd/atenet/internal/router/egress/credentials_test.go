@@ -538,13 +538,13 @@ func TestActorJWTInjection(t *testing.T) {
 			if h0.GetAppendAction() != corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD {
 				t.Errorf("append action = %v, want OVERWRITE_IF_EXISTS_OR_ADD", h0.GetAppendAction())
 			}
-			want := &ateapipb.MintActorJWTRequest{
+			want := &ateapipb.MintActorJwtRequest{
 				Actor:             &ateapipb.ObjectRef{Atespace: testEgressAtespace, Name: testEgressActor},
 				Audiences:         []string{"https://api.example.com"},
 				ExpirationSeconds: 900,
 			}
 			if got := client.lastMint.Load(); !proto.Equal(got, want) {
-				t.Errorf("MintActorJWT request = %v, want %v", got, want)
+				t.Errorf("MintActorJwt request = %v, want %v", got, want)
 			}
 		})
 	}
@@ -562,7 +562,7 @@ func TestActorJWTInjectionSkippedWithoutHeader(t *testing.T) {
 		t.Errorf("got %d injected headers, want 0", len(got))
 	}
 	if calls := client.mintCalls.Load(); calls != 0 {
-		t.Errorf("MintActorJWT calls = %d, want 0", calls)
+		t.Errorf("MintActorJwt calls = %d, want 0", calls)
 	}
 }
 

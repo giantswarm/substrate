@@ -6121,8 +6121,8 @@ func (x *GetTagRequest) GetTag() *ObjectRef {
 	return nil
 }
 
-// Request message for MintActorJWT.
-type MintActorJWTRequest struct {
+// Request message for MintActorJwt.
+type MintActorJwtRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The actor for which the JWT should be issued.
 	//
@@ -6148,20 +6148,20 @@ type MintActorJWTRequest struct {
 	sizeCache         protoimpl.SizeCache
 }
 
-func (x *MintActorJWTRequest) Reset() {
-	*x = MintActorJWTRequest{}
+func (x *MintActorJwtRequest) Reset() {
+	*x = MintActorJwtRequest{}
 	mi := &file_ateapi_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MintActorJWTRequest) String() string {
+func (x *MintActorJwtRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MintActorJWTRequest) ProtoMessage() {}
+func (*MintActorJwtRequest) ProtoMessage() {}
 
-func (x *MintActorJWTRequest) ProtoReflect() protoreflect.Message {
+func (x *MintActorJwtRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_ateapi_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -6173,34 +6173,34 @@ func (x *MintActorJWTRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MintActorJWTRequest.ProtoReflect.Descriptor instead.
-func (*MintActorJWTRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use MintActorJwtRequest.ProtoReflect.Descriptor instead.
+func (*MintActorJwtRequest) Descriptor() ([]byte, []int) {
 	return file_ateapi_proto_rawDescGZIP(), []int{80}
 }
 
-func (x *MintActorJWTRequest) GetActor() *ObjectRef {
+func (x *MintActorJwtRequest) GetActor() *ObjectRef {
 	if x != nil {
 		return x.Actor
 	}
 	return nil
 }
 
-func (x *MintActorJWTRequest) GetAudiences() []string {
+func (x *MintActorJwtRequest) GetAudiences() []string {
 	if x != nil {
 		return x.Audiences
 	}
 	return nil
 }
 
-func (x *MintActorJWTRequest) GetExpirationSeconds() int64 {
+func (x *MintActorJwtRequest) GetExpirationSeconds() int64 {
 	if x != nil {
 		return x.ExpirationSeconds
 	}
 	return 0
 }
 
-// Response message for MintActorJWT.
-type MintActorJWTResponse struct {
+// Response message for MintActorJwt.
+type MintActorJwtResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The signed actor JWT. Relying parties verify it with OpenID Connect
 	// Discovery against its issuer.
@@ -6223,20 +6223,20 @@ type MintActorJWTResponse struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *MintActorJWTResponse) Reset() {
-	*x = MintActorJWTResponse{}
+func (x *MintActorJwtResponse) Reset() {
+	*x = MintActorJwtResponse{}
 	mi := &file_ateapi_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *MintActorJWTResponse) String() string {
+func (x *MintActorJwtResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*MintActorJWTResponse) ProtoMessage() {}
+func (*MintActorJwtResponse) ProtoMessage() {}
 
-func (x *MintActorJWTResponse) ProtoReflect() protoreflect.Message {
+func (x *MintActorJwtResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_ateapi_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -6248,19 +6248,19 @@ func (x *MintActorJWTResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use MintActorJWTResponse.ProtoReflect.Descriptor instead.
-func (*MintActorJWTResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use MintActorJwtResponse.ProtoReflect.Descriptor instead.
+func (*MintActorJwtResponse) Descriptor() ([]byte, []int) {
 	return file_ateapi_proto_rawDescGZIP(), []int{81}
 }
 
-func (x *MintActorJWTResponse) GetActorJwt() string {
+func (x *MintActorJwtResponse) GetActorJwt() string {
 	if x != nil {
 		return x.ActorJwt
 	}
 	return ""
 }
 
-func (x *MintActorJWTResponse) GetExpiresAt() *timestamppb.Timestamp {
+func (x *MintActorJwtResponse) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
 	}
@@ -9230,11 +9230,11 @@ const file_ateapi_proto_rawDesc = "" +
 	"\aversion\x18\x01 \x01(\tR\aversion\"4\n" +
 	"\rGetTagRequest\x12#\n" +
 	"\x03tag\x18\x01 \x01(\v2\x11.ateapi.ObjectRefR\x03tag\"\x8b\x01\n" +
-	"\x13MintActorJWTRequest\x12'\n" +
+	"\x13MintActorJwtRequest\x12'\n" +
 	"\x05actor\x18\x05 \x01(\v2\x11.ateapi.ObjectRefR\x05actor\x12\x1c\n" +
 	"\taudiences\x18\x01 \x03(\tR\taudiences\x12-\n" +
 	"\x12expiration_seconds\x18\b \x01(\x03R\x11expirationSeconds\"s\n" +
-	"\x14MintActorJWTResponse\x12 \n" +
+	"\x14MintActorJwtResponse\x12 \n" +
 	"\tactor_jwt\x18\x01 \x01(\tB\x03\x80\x01\x01R\bactorJwt\x129\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa3\x01\n" +
@@ -9435,7 +9435,7 @@ const file_ateapi_proto_rawDesc = "" +
 	"\x17UpdateActorEgressPolicy\x12&.ateapi.UpdateActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12Y\n" +
 	"\x17DeleteActorEgressPolicy\x12&.ateapi.DeleteActorEgressPolicyRequest\x1a\x14.ateapi.EgressPolicy\"\x00\x12a\n" +
 	"\x17GetEgressPolicyContract\x12&.ateapi.GetEgressPolicyContractRequest\x1a\x1c.ateapi.EgressPolicyContract\"\x00\x12K\n" +
-	"\fMintActorJWT\x12\x1b.ateapi.MintActorJWTRequest\x1a\x1c.ateapi.MintActorJWTResponse\"\x00\x12c\n" +
+	"\fMintActorJwt\x12\x1b.ateapi.MintActorJwtRequest\x1a\x1c.ateapi.MintActorJwtResponse\"\x00\x12c\n" +
 	"\x14MintActorCertificate\x12#.ateapi.MintActorCertificateRequest\x1a$.ateapi.MintActorCertificateResponse\"\x00\x124\n" +
 	"\tCreateTag\x12\x18.ateapi.CreateTagRequest\x1a\v.ateapi.Tag\"\x00\x12.\n" +
 	"\x06GetTag\x12\x15.ateapi.GetTagRequest\x1a\v.ateapi.Tag\"\x00\x12?\n" +
@@ -9575,8 +9575,8 @@ var file_ateapi_proto_goTypes = []any{
 	(*GetEgressPolicyContractRequest)(nil),     // 85: ateapi.GetEgressPolicyContractRequest
 	(*EgressPolicyContract)(nil),               // 86: ateapi.EgressPolicyContract
 	(*GetTagRequest)(nil),                      // 87: ateapi.GetTagRequest
-	(*MintActorJWTRequest)(nil),                // 88: ateapi.MintActorJWTRequest
-	(*MintActorJWTResponse)(nil),               // 89: ateapi.MintActorJWTResponse
+	(*MintActorJwtRequest)(nil),                // 88: ateapi.MintActorJwtRequest
+	(*MintActorJwtResponse)(nil),               // 89: ateapi.MintActorJwtResponse
 	(*MintActorCertificateRequest)(nil),        // 90: ateapi.MintActorCertificateRequest
 	(*MintActorCertificateResponse)(nil),       // 91: ateapi.MintActorCertificateResponse
 	(*ListTagsRequest)(nil),                    // 92: ateapi.ListTagsRequest
@@ -9737,8 +9737,8 @@ var file_ateapi_proto_depIdxs = []int32{
 	33,  // 109: ateapi.DeleteActorEgressPolicyRequest.actor:type_name -> ateapi.ObjectRef
 	97,  // 110: ateapi.DeleteActorEgressPolicyRequest.options:type_name -> ateapi.DeleteOptions
 	33,  // 111: ateapi.GetTagRequest.tag:type_name -> ateapi.ObjectRef
-	33,  // 112: ateapi.MintActorJWTRequest.actor:type_name -> ateapi.ObjectRef
-	135, // 113: ateapi.MintActorJWTResponse.expires_at:type_name -> google.protobuf.Timestamp
+	33,  // 112: ateapi.MintActorJwtRequest.actor:type_name -> ateapi.ObjectRef
+	135, // 113: ateapi.MintActorJwtResponse.expires_at:type_name -> google.protobuf.Timestamp
 	33,  // 114: ateapi.MintActorCertificateRequest.actor:type_name -> ateapi.ObjectRef
 	31,  // 115: ateapi.ListTagsResponse.tags:type_name -> ateapi.Tag
 	31,  // 116: ateapi.CreateTagRequest.tag:type_name -> ateapi.Tag
@@ -9802,7 +9802,7 @@ var file_ateapi_proto_depIdxs = []int32{
 	83,  // 174: ateapi.Control.UpdateActorEgressPolicy:input_type -> ateapi.UpdateActorEgressPolicyRequest
 	84,  // 175: ateapi.Control.DeleteActorEgressPolicy:input_type -> ateapi.DeleteActorEgressPolicyRequest
 	85,  // 176: ateapi.Control.GetEgressPolicyContract:input_type -> ateapi.GetEgressPolicyContractRequest
-	88,  // 177: ateapi.Control.MintActorJWT:input_type -> ateapi.MintActorJWTRequest
+	88,  // 177: ateapi.Control.MintActorJwt:input_type -> ateapi.MintActorJwtRequest
 	90,  // 178: ateapi.Control.MintActorCertificate:input_type -> ateapi.MintActorCertificateRequest
 	94,  // 179: ateapi.Control.CreateTag:input_type -> ateapi.CreateTagRequest
 	87,  // 180: ateapi.Control.GetTag:input_type -> ateapi.GetTagRequest
@@ -9849,7 +9849,7 @@ var file_ateapi_proto_depIdxs = []int32{
 	15,  // 221: ateapi.Control.UpdateActorEgressPolicy:output_type -> ateapi.EgressPolicy
 	15,  // 222: ateapi.Control.DeleteActorEgressPolicy:output_type -> ateapi.EgressPolicy
 	86,  // 223: ateapi.Control.GetEgressPolicyContract:output_type -> ateapi.EgressPolicyContract
-	89,  // 224: ateapi.Control.MintActorJWT:output_type -> ateapi.MintActorJWTResponse
+	89,  // 224: ateapi.Control.MintActorJwt:output_type -> ateapi.MintActorJwtResponse
 	91,  // 225: ateapi.Control.MintActorCertificate:output_type -> ateapi.MintActorCertificateResponse
 	31,  // 226: ateapi.Control.CreateTag:output_type -> ateapi.Tag
 	31,  // 227: ateapi.Control.GetTag:output_type -> ateapi.Tag
