@@ -1293,6 +1293,25 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.17.2 to 1.17.3
+
+- **Persisted format:** unchanged.
+- **Behavior:** once an actor's external volumes are unmounted at
+  terminate, a volume directory that is still busy, a mount that outlived
+  its unmount (such as one a crash left stacked under the actor's
+  remount), no longer fails the terminate: atelet detaches every mount
+  left under it lazily and removes it. One that still cannot be removed
+  is left in place and logged, with the actor's `volumes` directory, and
+  the rest of the actor's directory is reclaimed. Before, the terminate
+  failed with `device or resource busy` on every retry, and the actor and
+  its Session could not be deleted.
+- **During the roll:** a terminate on a node that still runs the 1.17.2
+  atelet behaves as before; once the node runs 1.17.3, a retried delete
+  of a stuck actor goes through.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
