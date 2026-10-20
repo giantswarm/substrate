@@ -512,6 +512,17 @@ agentlab's defaults (giantswarm/agentlab#229), and retagger's
 - **micro-VM assets** (kata, cloud-hypervisor, virtiofsd): assembled by `hack/microvm-assets/assemble.sh` for the
   e2e suites; the platform does not run the micro-VM sandbox class.
 
+## Before you carry a patch
+
+A carried patch needs a placement and an upstream exit, and its ledger file under `fork/` records both: the
+placement in `## Reason` and `upstream.outcome`, the exit in `upstream.exit`. Place it by the first class that
+holds: drop (nothing consumes it), upstream already has it (name the mechanism and its configuration), platform
+(a Giant Swarm product choice, in the agent-platform charts, substrate-credential-providers or our own images),
+upstream issue (a generic gap that needs design), upstream pull request (a small generic fix), fork-only (a named
+reason and a dated exit). Before a new field, flag, RPC or schema, look for an upstream mechanism or an
+established standard first. The full rule is Team Bumblebee's *Upstream placement* section, kept in its internal
+plans repository.
+
 ## Contributing
 
 - **Upstream first, prepared here.** Every behavioural change is prepared for upstream
