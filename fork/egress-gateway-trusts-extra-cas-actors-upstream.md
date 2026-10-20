@@ -9,9 +9,9 @@ commits:
 upstream:
   outcome: to-file
   refs: []
-  exit: kd chart PR
+  exit: "kagent-dev/substrate chart PR merged: drop; unreviewed on 2026-11-17: the lab mounts its own bundle and the file drops (no production installation needs it, checked 2026-10-20)"
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The egress gateway trusts extra CAs on the actors' upstream HTTPS
 
@@ -28,3 +28,5 @@ the egress gateway terminates the actors' TLS and dials the upstream itself with
 to file — prepared in the fork: branch [`upstream/atenet-egress-upstream-trust`](https://github.com/giantswarm/substrate/tree/upstream/atenet-egress-upstream-trust) here (`175664c9`, on the mirror `main` @ `bf51a996`; its message is the pull-request text). A team member opens the kagent-dev/substrate pull request with DCO sign-off once the team has reviewed it
 
 [#92](https://github.com/giantswarm/substrate/pull/92)
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 5 upstream PR, capped (136 lines, acceptance uncertain), fallback class 3 (lab only); destination kagent-dev/substrate, an issue then the chart PR; first step the issue, kagent-dev/substrate; branch `upstream/atenet-egress-upstream-trust` @ `175664c9f`; test `atenet_egress_upstream_trust_test.yaml` and the lab's serving test; depends on no theme; re-check 2026-11-17; owner unassigned; draft: internal issue 38652, comment 6301544635 and comment 6301545100.

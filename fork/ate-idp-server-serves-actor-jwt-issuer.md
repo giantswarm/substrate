@@ -5,7 +5,7 @@ theme: credential-injection
 category: feature
 status: carried
 commits:
-  - Add ate-idp-server to serve the discovery document and key set for actor JWTs
+  - 'Add ate-idp-server to serve the discovery document and key set for actor JWTs'
   - 'feat(chart): serve the actor-JWT issuer with ate-idp-server'
   - 'chore(manifests): render ate-idp-server from the chart'
   - 'ci(fork): build and publish the ate-idp-server image'
@@ -13,9 +13,9 @@ commits:
 upstream:
   outcome: drops-at-repin
   refs: [agent-substrate/substrate#2099]
-  exit: re-pin onto kd v0.6.0-alpha3 or later; prepared chart branch superseded
+  exit: "re-pin onto kagent-dev/substrate v0.6.0-alpha3 or later (ate-idp-server and its chart template are upstream)"
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # ate-idp-server serves the actor-JWT issuer
 
@@ -32,3 +32,5 @@ Without it nothing published the issuer's key set, so no relying party (an MCP g
 the server is upstream's `08779062` ([agent-substrate/substrate#2099](https://github.com/agent-substrate/substrate/pull/2099), merged 2026-10-16, in kagent-dev/substrate v0.6.0-alpha3, not in v0.5.0-alpha4) and leaves at the first re-pin that contains it; the chart's Deployment and `idp` Service: kagent-dev/substrate `main` renders `charts/substrate/templates/ate-idp-server.yaml` since `8cdb6963` (2026-10-18, in v0.6.0-alpha3), so the branch prepared in the fork, `upstream/helm-ate-idp-server`, is superseded and the chart half leaves at the same re-pin
 
 [#472](https://github.com/giantswarm/substrate/pull/472): `git cherry-pick -x` of `08779062` (the module path adapted, only its ate-idp-server entry of `docs/metrics/substrate.yaml`), the chart's `ate-idp-server` and the line's image of it
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 2 upstream has it; destination agent-substrate/substrate#2099 (`08779062`) and kagent-dev/substrate `8cdb6963`; first step none; branch none; test the chart's `idp_test.yaml` upstream; owner unassigned.

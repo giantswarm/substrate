@@ -8,8 +8,8 @@ commits:
   - 'localca: rotate a CA pool with cross-certified overlap'
 upstream:
   outcome: to-file
-  refs: [agent-substrate/substrate#932, agent-substrate/substrate#971]
-  exit: upstream design issue then PR
+  refs: [agent-substrate/substrate#932, agent-substrate/substrate#971, agent-substrate/substrate#1931]
+  exit: "upstream ships rotation commands for the CA pools (agent-substrate/substrate#1931, the follow-on #971 announced): drop; re-check each re-pin; if #1931 is idle at the re-pin after 2026-11-17, the prepared comment is posted"
 depends_on: []
 verified: 2026-10-20
 ---
@@ -30,3 +30,5 @@ to file: the upstream-shaped patch is branch [`upstream/egress-ca-rotation`](htt
 `c8584af3` ([#68](https://github.com/giantswarm/substrate/pull/68), squash)
 
 2026-10-20: agent-substrate/substrate#971 (merged 2026-08-26, `d90e02ce`, in the pin) added `ActiveForSigning`, which the rotation builds on, not its exit, so the outcome stays to-file.
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 4 upstream issue; destination agent-substrate/substrate#1931 (assigned upstream), the first upstream step `add-ca`, `activate-ca` and `remove-ca` mirroring the JWT-pool commands (`cmd/kubectl-ate/internal/cmd/admin.go:168-245`); first step none until #1931 moves; branch `upstream/egress-ca-rotation` @ `fa028bf67` (six commits, to be squashed and cut to the commands); test `TestEgressMITMCARotation`; depends on no theme; owner unassigned; draft: internal issue 38652, comment 6301547059.

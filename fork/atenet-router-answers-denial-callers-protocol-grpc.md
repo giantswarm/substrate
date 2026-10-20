@@ -9,9 +9,9 @@ commits:
 upstream:
   outcome: to-file
   refs: []
-  exit: upstream PR; not on the line's production ingress path (agentgateway dataplane)
+  exit: "filed low priority from the prepared branch when a slot frees; the commit leaves the giantswarm branch at the next re-pin whatever the PR's state (the Envoy dataplane is not on this line's path)"
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The atenet router answers a denial in the caller's protocol
 
@@ -28,3 +28,5 @@ a gRPC caller of a held actor (one whose lease another operation holds, answered
 to file: the upstream-shaped patch is branch [`upstream/atenet-grpc-denial-code`](https://github.com/giantswarm/substrate/tree/upstream/atenet-grpc-denial-code) here (`0a91139b`, on the mirror `main`); agent-substrate/substrate `main` (`296e329a`, 2026-10-08) still answers every denial as `text/plain` and no upstream issue or pull request covers it (searched 2026-10-08); a team member opens the agent-substrate/substrate pull request with DCO sign-off once the team has reviewed it
 
 `giantswarm`: [#200](https://github.com/giantswarm/substrate/pull/200)
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 5 upstream PR, low priority, uncarried at the next re-pin; destination agent-substrate/substrate; first step the PR when a slot frees; branch `upstream/atenet-grpc-denial-code` @ `0a91139b8`; test `TestIngressDenialProtocol`; depends on no theme; owner unassigned; draft: internal issue 38652, comment 6301546603.
