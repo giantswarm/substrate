@@ -32,3 +32,5 @@ not opened yet: the upstream-ready change is on the branch `upstream/atelet-chec
 [#502](https://github.com/giantswarm/substrate/pull/502): the fork's own commit, the same change on the line
 
 [#503](https://github.com/giantswarm/substrate/pull/503): the same commit on `release-1.16`, a `git cherry-pick -x` for `v1.16.4`
+
+[#509](https://github.com/giantswarm/substrate/pull/509): the sweep of the volumes a checkpoint left mounted on `release-1.16`, a `git cherry-pick -x` of the line's commit for `v1.16.5`
