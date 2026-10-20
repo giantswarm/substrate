@@ -2602,6 +2602,35 @@ service WorkerService {
   // node. Returns FAILED_PRECONDITION or INVALID_ARGUMENT when the report
   // conflicts with the record; don't retry.
   rpc ReportActorSnapshotState(ReportActorSnapshotStateRequest) returns (ReportActorSnapshotStateResponse);
+
+  // ListGoneActors names the Actors, of those the request lists by UID, that
+  // the control plane holds no record of: deleted, or never created. atelet
+  // asks about the per-actor directories on its node, so it can reclaim the
+  // ones an Actor deleted while it had no node left behind: such a delete
+  // runs no terminate on the node the Actor last ran on.
+  //
+  // An Actor in any state, assigned to any Worker or to none, is not gone.
+  // The answer is positive only: a UID it does not name is one the caller
+  // must keep, and an error answers for none of them.
+  //
+  // atelet calls this with its own client certificate, as it does for
+  // RegisterWorker.
+  rpc ListGoneActors(ListGoneActorsRequest) returns (ListGoneActorsResponse);
+}
+
+message ListGoneActorsRequest {
+  // The UIDs of the Actors to look up.
+  //
+  // +k8s:required
+  // +k8s:maxItems=256
+  // +k8s:listType=set
+  // +k8s:eachVal=+k8s:format=k8s-uuid
+  repeated string actor_uids = 1;
+}
+
+message ListGoneActorsResponse {
+  // The requested UIDs no Actor carries.
+  repeated string gone_actor_uids = 1;
 }
 
 message RegisterWorkerRequest {

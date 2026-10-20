@@ -100,6 +100,10 @@ type Interface interface {
 	// validation before the write.
 	UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition Precondition, mutate func(toUpdate *ateapipb.Actor) error) (*ateapipb.Actor, error)
 
+	// ListExistingActorUIDs returns the UIDs, of actorUIDs, that an actor in
+	// any atespace carries.
+	ListExistingActorUIDs(ctx context.Context, actorUIDs []string) ([]string, error)
+
 	// Removes an actor and returns the deleted resource. Returns ErrNotFound if
 	// missing, or ErrUIDConflict/ErrVersionConflict if precondition does not
 	// describe the actor the caller observed.

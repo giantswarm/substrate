@@ -220,6 +220,11 @@ func (s *ServiceImpl) GetActor(ctx context.Context, actorRef resources.ActorRef)
 	return s.store.GetActor(ctx, actorRef)
 }
 
+// Pass-through.
+func (s *ServiceImpl) ListExistingActorUIDs(ctx context.Context, actorUIDs []string) ([]string, error) {
+	return s.store.ListExistingActorUIDs(ctx, actorUIDs)
+}
+
 func (s *RPCService) ListActors(ctx context.Context, req *ateapipb.ListActorsRequest) (*ateapipb.ListActorsResponse, error) {
 	if errs := apivalidation.ValidateListActorsRequest(ctx, req); len(errs) > 0 {
 		return nil, resources.ToAPIError(errs)

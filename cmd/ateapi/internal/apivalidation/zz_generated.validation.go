@@ -5290,6 +5290,55 @@ func Validate_ListAtespacesRequest(
 	return errs
 }
 
+// Validate_ListGoneActorsRequest validates an instance of ListGoneActorsRequest according
+// to declarative validation rules in the API schema.
+func Validate_ListGoneActorsRequest(
+	ctx context.Context, op operation.Operation, fldPath *field.Path,
+	obj, oldObj *ateapipb.ListGoneActorsRequest) (errs field.ErrorList) {
+
+	{ // field ateapipb.ListGoneActorsRequest.ActorUids
+		fn := func(
+			fldPath *field.Path,
+			obj, oldObj []string,
+			oldValueCorrelated bool) (errs field.ErrorList) {
+			// don't revalidate unchanged data
+			if oldValueCorrelated && op.Type == operation.Update {
+				if ateDeepEqual(obj, oldObj) {
+					return nil
+				}
+			}
+			// call field-attached validations
+			earlyReturn := false
+			if e := validate.MaxItems(ctx, op, fldPath, obj, oldObj, 256).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if e := validate.RequiredSlice(ctx, op, fldPath, obj, oldObj).MarkShortCircuit(); len(e) != 0 {
+				errs = append(errs, e...)
+				earlyReturn = true
+			}
+			if earlyReturn {
+				return // do not proceed
+			}
+			if e := validate.EachValSliceVal(ctx, op, fldPath, obj, oldObj, validate.DirectEqual, nil, validate.UUID); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			// lists with set semantics require unique values
+			if e := validate.ValSliceUnique(ctx, op, fldPath, obj, oldObj, validate.DirectEqual); len(e) != 0 {
+				errs = append(errs, e...)
+			}
+			return
+		}
+		oldVal := safe.Field(oldObj,
+			func(oldObj *ateapipb.ListGoneActorsRequest) []string {
+				return oldObj.ActorUids
+			})
+		errs = append(errs, fn(fldPath.Child("actor_uids"), obj.ActorUids, oldVal, oldObj != nil)...)
+	}
+
+	return errs
+}
+
 // Validate_ListOptions validates an instance of ListOptions according
 // to declarative validation rules in the API schema.
 func Validate_ListOptions(

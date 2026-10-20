@@ -246,6 +246,9 @@ func main() {
 	if err := validateImageCacheGCFlags(); err != nil {
 		serverboot.Fatal(ctx, "Invalid image cache GC flags", err)
 	}
+	if err := validateActorDirGCFlags(); err != nil {
+		serverboot.Fatal(ctx, "Invalid actor dir GC flags", err)
+	}
 	imageCache, err := imagecache.New(*imageCacheDir,
 		imagecache.WithKeychain(imageCredsKeychain),
 		imagecache.WithLocalhostRegistryReplacement(*localhostRegistryReplacement),
@@ -355,7 +358,13 @@ func main() {
 			serverboot.Fatal(ctx, "Failed to create ateapi client", err)
 		}
 		defer ateapiConn.Close()
-		reporter = &trackerReporter{workers: ateapipb.NewWorkerServiceClient(ateapiConn)}
+		workers := ateapipb.NewWorkerServiceClient(ateapiConn)
+		reporter = &trackerReporter{workers: workers}
+		if *actorDirGCPeriod > 0 {
+			go newActorDirGC(workers).Run(ctx)
+		}
+	} else {
+		slog.WarnContext(ctx, "With no control-plane client, the actor dir GC does not run")
 	}
 
 	// The snapshot tracker's workers get a context of their own, cancelled only
