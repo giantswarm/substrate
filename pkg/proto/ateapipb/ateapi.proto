@@ -79,7 +79,7 @@ service Control {
   // Create a Substrate-issued JWT asserting the actor identity.
   //
   // * Called by the egress gateway when actor JWT injection is configured for outbound requests.
-  rpc MintActorJWT(MintActorJWTRequest) returns (MintActorJWTResponse) {}
+  rpc MintActorJwt(MintActorJwtRequest) returns (MintActorJwtResponse) {}
 
   // Create a Substrate-issued SPIFFE certificate asserting the actor identity.
   //
@@ -2016,8 +2016,8 @@ message GetTagRequest {
   ObjectRef tag = 1;
 }
 
-// Request message for MintActorJWT.
-message MintActorJWTRequest {
+// Request message for MintActorJwt.
+message MintActorJwtRequest {
   // The actor for which the JWT should be issued.
   //
   // Must be a valid actor that currently exists according to the actor store.
@@ -2042,8 +2042,8 @@ message MintActorJWTRequest {
   int64 expiration_seconds = 8;
 }
 
-// Response message for MintActorJWT.
-message MintActorJWTResponse {
+// Response message for MintActorJwt.
+message MintActorJwtResponse {
   // The signed actor JWT. Relying parties verify it with OpenID Connect
   // Discovery against its issuer.
   //

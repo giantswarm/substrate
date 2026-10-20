@@ -6383,13 +6383,13 @@ func Validate_MintActorCertificateRequest(
 	return errs
 }
 
-// Validate_MintActorJWTRequest validates an instance of MintActorJWTRequest according
+// Validate_MintActorJwtRequest validates an instance of MintActorJwtRequest according
 // to declarative validation rules in the API schema.
-func Validate_MintActorJWTRequest(
+func Validate_MintActorJwtRequest(
 	ctx context.Context, op operation.Operation, fldPath *field.Path,
-	obj, oldObj *ateapipb.MintActorJWTRequest) (errs field.ErrorList) {
+	obj, oldObj *ateapipb.MintActorJwtRequest) (errs field.ErrorList) {
 
-	{ // field ateapipb.MintActorJWTRequest.Actor
+	{ // field ateapipb.MintActorJwtRequest.Actor
 		fn := func(
 			fldPath *field.Path,
 			obj, oldObj *ateapipb.ObjectRef,
@@ -6414,13 +6414,13 @@ func Validate_MintActorJWTRequest(
 			return
 		}
 		oldVal := safe.Field(oldObj,
-			func(oldObj *ateapipb.MintActorJWTRequest) *ateapipb.ObjectRef {
+			func(oldObj *ateapipb.MintActorJwtRequest) *ateapipb.ObjectRef {
 				return oldObj.Actor
 			})
 		errs = append(errs, fn(fldPath.Child("actor"), obj.Actor, oldVal, oldObj != nil)...)
 	}
 
-	{ // field ateapipb.MintActorJWTRequest.Audiences
+	{ // field ateapipb.MintActorJwtRequest.Audiences
 		fn := func(
 			fldPath *field.Path,
 			obj, oldObj []string,
@@ -6457,13 +6457,13 @@ func Validate_MintActorJWTRequest(
 			return
 		}
 		oldVal := safe.Field(oldObj,
-			func(oldObj *ateapipb.MintActorJWTRequest) []string {
+			func(oldObj *ateapipb.MintActorJwtRequest) []string {
 				return oldObj.Audiences
 			})
 		errs = append(errs, fn(fldPath.Child("audiences"), obj.Audiences, oldVal, oldObj != nil)...)
 	}
 
-	{ // field ateapipb.MintActorJWTRequest.ExpirationSeconds
+	{ // field ateapipb.MintActorJwtRequest.ExpirationSeconds
 		fn := func(
 			fldPath *field.Path,
 			obj, oldObj *int64,
@@ -6492,7 +6492,7 @@ func Validate_MintActorJWTRequest(
 			return
 		}
 		oldVal := safe.Field(oldObj,
-			func(oldObj *ateapipb.MintActorJWTRequest) *int64 {
+			func(oldObj *ateapipb.MintActorJwtRequest) *int64 {
 				return &oldObj.ExpirationSeconds
 			})
 		errs = append(errs, fn(fldPath.Child("expiration_seconds"), &obj.ExpirationSeconds, oldVal, oldObj != nil)...)
