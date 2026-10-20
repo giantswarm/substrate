@@ -4,11 +4,13 @@ fork: substrate
 theme: new-rpcs
 category: feature
 status: dropped
-commits: []
+commits:
+  - 'feat(atenet): count egress refusals by actor template and reason'
+  - 'fix(atenet): drop the egress refusal counter no deployed data plane calls'
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2527]
-  exit: not carried; the line's egress gateway runs agentgateway, which counts refusals itself
+  exit: not carried; the two commits cancel out and both leave at the next re-pin, the line's egress gateway runs agentgateway, which counts refusals itself
 depends_on: [podmonitors-six-workloads-that-serve-metrics]
 verified: 2026-10-20
 ---
