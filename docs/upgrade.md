@@ -1236,7 +1236,7 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
-#### 1.16.2 to the next 1.16 patch
+#### 1.16.2 to 1.16.3
 
 - **Persisted format:** unchanged.
 - **Metrics:** `atenet_router_egress_refused_total` is gone from the
@@ -1245,6 +1245,22 @@ entries in one roll.
   read zero. Egress refusals are counted where agentgateway makes them,
   on `agentgateway_atenet_egress_refusals_total` on the `stats` port; an
   alert or dashboard on the atenet counter moves to it.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.16.3 to 1.16.4
+
+- **Persisted format:** unchanged.
+- **Behavior:** atelet retries a failed unmount of an actor's external
+  volume for up to a minute at suspend, pause and terminate. Once a
+  checkpoint has persisted the snapshot, a volume that still does not
+  unmount no longer fails it: the actor is suspended with its snapshot
+  instead of crashed, and the volume's mount point stays on the node until
+  the actor's next activation or terminate there unmounts it. Before, such
+  an actor went to `CRASHED` and its snapshot was dropped.
+- **During the roll:** a suspend on a node that still runs the 1.16.3
+  atelet behaves as before.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
