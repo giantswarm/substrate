@@ -7,6 +7,7 @@ status: carried
 commits:
   - 'fix(atelet): keep a persisted checkpoint whose volume stays mounted'
   - 'fix(atelet): keep the snapshot only when a shared volume stays mounted'
+  - 'fix(atelet): sweep the volumes a checkpoint left mounted'
 upstream:
   outcome: to-file
   refs: []
@@ -18,7 +19,7 @@ verified: 2026-10-20
 
 ## Change
 
-`unmountExternalVolumes` retries a failed unmount with a doubling wait for up to a minute within the caller's context, for `Checkpoint` and `Terminate` alike. Once `Checkpoint` has persisted the snapshot, a shared volume (`READ_WRITE_MANY` or `READ_ONLY_MANY`, which other nodes may mount meanwhile) that still does not unmount is logged, its mount point is left in place and the checkpoint succeeds; a `READ_WRITE_ONCE` volume that stays mounted still fails it, since the suspend detaches that volume from the node next. `Run` and `Restore` first unmount every external volume whose mount point survived an earlier checkpoint on the node.
+`unmountExternalVolumes` retries a failed unmount with a doubling wait for up to a minute within the caller's context, for `Checkpoint` and `Terminate` alike. Once `Checkpoint` has persisted the snapshot, a shared volume (`READ_WRITE_MANY` or `READ_ONLY_MANY`, which other nodes may mount meanwhile) that still does not unmount is logged, its mount point is left in place and the checkpoint succeeds, and a background sweep keeps unmounting it (first after a minute, then doubling up to 15 minutes) and removes its mount point once it lets go, since a suspended actor is deleted without a terminate on the node; its record `leftover-volumes.pb` in the actor's directory resumes the sweep after an atelet restart; a `READ_WRITE_ONCE` volume that stays mounted still fails it, since the suspend detaches that volume from the node next. `Run`, `Restore` and `Terminate` first stop the actor's sweep, and `Run` and `Restore` unmount every external volume whose mount point survived an earlier checkpoint on the node.
 
 ## Reason
 
