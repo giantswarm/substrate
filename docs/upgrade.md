@@ -1293,6 +1293,26 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.17.2 to 1.17.3
+
+- **Persisted format:** unchanged.
+- **Behavior:** atelet mounts `/var/lib/ate` with `HostToContainer`
+  propagation, as the worker pods do. Before, atelet held a private copy
+  of every external volume mounted when it started; the copy outlived the
+  CSI driver's `NodeUnpublishVolume`, kept the volume's mount point busy,
+  and the terminate of that actor failed with `device or resource busy` on
+  every retry, so its Session could not be deleted. The roll restarts
+  every atelet, which drops the copies of volumes the node has already
+  unmounted: a stuck delete goes through on its next retry. A volume
+  directory that still cannot be removed at terminate no longer fails it:
+  atelet logs it and leaves it in place with the actor's `volumes`
+  directory, and reclaims the rest of the actor's directory.
+- **During the roll:** a terminate on a node that still runs the 1.17.2
+  atelet behaves as before.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
