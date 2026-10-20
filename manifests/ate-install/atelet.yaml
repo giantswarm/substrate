@@ -307,6 +307,11 @@ spec:
         volumeMounts:
         - name: ate-base
           mountPath: /var/lib/ate
+          # HostToContainer: the CSI node plugin publishes actors' external volumes under this
+          # directory. A private copy of those mounts, taken when atelet starts, would outlive
+          # NodeUnpublishVolume and keep the volume's mount point busy, so the actor could never
+          # be terminated while that atelet runs. The worker pods mount it the same way.
+          mountPropagation: HostToContainer
         - name: objectstore-plugin
           mountPath: /run/objectstore-plugin
         - name: podidentity
