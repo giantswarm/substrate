@@ -827,14 +827,65 @@ func TestTerminateWithoutSandboxRecord(t *testing.T) {
 }
 
 // TestCheckpointKeepsSnapshotWhenVolumeStaysMounted pauses an actor whose
-// external volume cannot be unmounted, and checks that the checkpoint still
-// succeeds with its snapshot, that the mount point stays, and that the next
-// activation on the node unmounts the leftover before it resets the actor's
-// directories.
+// shared external volume cannot be unmounted, and checks that the checkpoint
+// still succeeds with its snapshot, that the mount point stays, and that the
+// next activation on the node unmounts the leftover before it resets the
+// actor's directories.
 func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
+	ctx := t.Context()
+	c := newBusyVolumeCheckpoint(t, ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY)
+
+	if _, err := c.s.Checkpoint(ctx, c.checkpoint); err != nil {
+		t.Fatalf("Checkpoint with a shared volume that stays mounted: %v, want success", err)
+	}
+	if _, err := os.Stat(filepath.Join(ateletpath.LocalSnapshotDir(c.actorUID, c.snapshotName), "checkpoint.img")); err != nil {
+		t.Fatalf("checkpoint kept no snapshot: %v", err)
+	}
+	hostPath := ateletpath.VolumeHostPath(c.actorUID, "workspace")
+	if _, err := os.Stat(hostPath); err != nil {
+		t.Fatalf("mount point of the volume still mounted was removed: %v", err)
+	}
+
+	c.plugin.unmountErr = nil
+	c.plugin.unmounted = nil
+	if _, err := c.s.Restore(ctx, c.restore); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if want := []string{"mock-vol-1"}; !slices.Equal(c.plugin.unmounted, want) {
+		t.Errorf("Restore unmounted %v before resetting the actor dirs, want %v", c.plugin.unmounted, want)
+	}
+	if got := c.ateom.restored["checkpoint.img"]; got != "guest-memory" {
+		t.Errorf("restore staged %q for ateom, want the pause snapshot's %q", got, "guest-memory")
+	}
+}
+
+// TestCheckpointFailsWhenReadWriteOnceVolumeStaysMounted pauses an actor whose
+// ReadWriteOnce external volume cannot be unmounted, and checks that the
+// checkpoint fails: the suspend detaches that volume from the node next.
+func TestCheckpointFailsWhenReadWriteOnceVolumeStaysMounted(t *testing.T) {
+	c := newBusyVolumeCheckpoint(t, ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_ONCE)
+
+	if _, err := c.s.Checkpoint(t.Context(), c.checkpoint); err == nil {
+		t.Fatal("Checkpoint with a ReadWriteOnce volume that stays mounted succeeded, want an error")
+	}
+}
+
+// busyVolumeCheckpoint is a running actor with one external volume of the
+// given access mode whose unmount fails, and the requests to pause and resume
+// it.
+type busyVolumeCheckpoint struct {
+	s                      *AteomHerder
+	ateom                  *fakeAteom
+	plugin                 *fakeWorkerPlugin
+	actorUID, snapshotName string
+	checkpoint             *ateletpb.CheckpointRequest
+	restore                *ateletpb.RestoreRequest
+}
+
+func newBusyVolumeCheckpoint(t *testing.T, mode ateletpb.VolumeAccessMode) *busyVolumeCheckpoint {
+	t.Helper()
 	useTempNodeDirs(t)
 	withUnmountRetry(t, 0, 0)
-	ctx := t.Context()
 
 	const (
 		atespace     = "ate-demo"
@@ -879,11 +930,12 @@ func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
 			Source: &ateletpb.Volume_External{External: &ateletpb.ExternalVolumeSource{
 				StorageVolumeId: "mock-vol-1",
 				VolumeType:      "mock-driver",
+				AccessMode:      mode,
 			}},
 		}},
 	}
 
-	if _, err := s.Run(ctx, &ateletpb.RunRequest{
+	if _, err := s.Run(t.Context(), &ateletpb.RunRequest{
 		Atespace:              atespace,
 		ActorName:             actorName,
 		ActorUid:              actorUID,
@@ -898,55 +950,42 @@ func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
 	if len(plugin.unmounted) != 0 {
 		t.Fatalf("Run unmounted %v on a fresh actor, want nothing", plugin.unmounted)
 	}
-
 	plugin.unmountErr = errors.New("umount: target is busy")
-	if _, err := s.Checkpoint(ctx, &ateletpb.CheckpointRequest{
-		Atespace:              atespace,
-		ActorName:             actorName,
-		ActorUid:              actorUID,
-		ActorTemplateAtespace: "default",
-		ActorTemplateName:     "counter",
-		TargetAteomUid:        ateomUID,
-		Spec:                  spec,
-		Scope:                 ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
-		Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
-		Config: &ateletpb.CheckpointRequest_LocalConfig{
-			LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
-		},
-	}); err != nil {
-		t.Fatalf("Checkpoint with a volume that stays mounted: %v, want success", err)
-	}
-	if _, err := os.Stat(filepath.Join(ateletpath.LocalSnapshotDir(actorUID, snapshotName), "checkpoint.img")); err != nil {
-		t.Fatalf("checkpoint kept no snapshot: %v", err)
-	}
-	hostPath := ateletpath.VolumeHostPath(actorUID, "workspace")
-	if _, err := os.Stat(hostPath); err != nil {
-		t.Fatalf("mount point of the volume still mounted was removed: %v", err)
-	}
 
-	plugin.unmountErr = nil
-	plugin.unmounted = nil
-	if _, err := s.Restore(ctx, &ateletpb.RestoreRequest{
-		Atespace:              atespace,
-		ActorName:             actorName,
-		ActorUid:              actorUID,
-		ActorTemplateAtespace: "default",
-		ActorTemplateName:     "counter",
-		TargetAteomUid:        ateomUID,
-		SandboxAssets:         sandboxAssets,
-		Spec:                  spec,
-		Scope:                 ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
-		Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
-		Config: &ateletpb.RestoreRequest_LocalConfig{
-			LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
+	return &busyVolumeCheckpoint{
+		s:            s,
+		ateom:        ateom,
+		plugin:       plugin,
+		actorUID:     actorUID,
+		snapshotName: snapshotName,
+		checkpoint: &ateletpb.CheckpointRequest{
+			Atespace:              atespace,
+			ActorName:             actorName,
+			ActorUid:              actorUID,
+			ActorTemplateAtespace: "default",
+			ActorTemplateName:     "counter",
+			TargetAteomUid:        ateomUID,
+			Spec:                  spec,
+			Scope:                 ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
+			Config: &ateletpb.CheckpointRequest_LocalConfig{
+				LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
+			},
 		},
-	}); err != nil {
-		t.Fatalf("Restore: %v", err)
-	}
-	if want := []string{"mock-vol-1"}; !slices.Equal(plugin.unmounted, want) {
-		t.Errorf("Restore unmounted %v before resetting the actor dirs, want %v", plugin.unmounted, want)
-	}
-	if got := ateom.restored["checkpoint.img"]; got != "guest-memory" {
-		t.Errorf("restore staged %q for ateom, want the pause snapshot's %q", got, "guest-memory")
+		restore: &ateletpb.RestoreRequest{
+			Atespace:              atespace,
+			ActorName:             actorName,
+			ActorUid:              actorUID,
+			ActorTemplateAtespace: "default",
+			ActorTemplateName:     "counter",
+			TargetAteomUid:        ateomUID,
+			SandboxAssets:         sandboxAssets,
+			Spec:                  spec,
+			Scope:                 ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
+			Config: &ateletpb.RestoreRequest_LocalConfig{
+				LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: snapshotName},
+			},
+		},
 	}
 }

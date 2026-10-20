@@ -91,10 +91,41 @@ func (s *AteomHerder) unmountExternalVolumes(ctx context.Context, actorUID strin
 			continue
 		}
 		if err := unmountVolumeUntil(ctx, plugin, ext, hostPath, deadline); err != nil {
-			errs = append(errs, fmt.Errorf("failed to unmount volume %q from %q: %w", ext.GetStorageVolumeId(), hostPath, err))
+			errs = append(errs, &volumeUnmountError{volumeID: ext.GetStorageVolumeId(), hostPath: hostPath, shared: accessMode(ext) != volume.ReadWriteOnce, err: err})
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// volumeUnmountError is an external volume that stayed mounted.
+type volumeUnmountError struct {
+	volumeID, hostPath string
+	// shared is set for an access mode other nodes may mount the volume in
+	// meanwhile, so detaching it from this node is no step of its own.
+	shared bool
+	err    error
+}
+
+func (e *volumeUnmountError) Error() string {
+	return fmt.Sprintf("failed to unmount volume %q from %q: %v", e.volumeID, e.hostPath, e.err)
+}
+
+func (e *volumeUnmountError) Unwrap() error { return e.err }
+
+// onlySharedVolumesStayMounted reports whether every failure of
+// unmountExternalVolumes in err is a shared volume that stayed mounted.
+func onlySharedVolumesStayMounted(err error) bool {
+	errs := []error{err}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		errs = joined.Unwrap()
+	}
+	for _, e := range errs {
+		var v *volumeUnmountError
+		if !errors.As(e, &v) || !v.shared {
+			return false
+		}
+	}
+	return len(errs) > 0
 }
 
 // unmountVolumeUntil unmounts one external volume, retrying a failure with a
