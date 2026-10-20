@@ -1254,11 +1254,14 @@ entries in one roll.
 - **Persisted format:** unchanged.
 - **Behavior:** atelet retries a failed unmount of an actor's external
   volume for up to a minute at suspend, pause and terminate. Once a
-  checkpoint has persisted the snapshot, a volume that still does not
-  unmount no longer fails it: the actor is suspended with its snapshot
+  checkpoint has persisted the snapshot, a shared volume (`READ_WRITE_MANY`
+  or `READ_ONLY_MANY`, an existing volume) that still does not unmount no
+  longer fails it: the actor is suspended with its snapshot
   instead of crashed, and the volume's mount point stays on the node until
   the actor's next activation or terminate there unmounts it. Before, such
-  an actor went to `CRASHED` and its snapshot was dropped.
+  an actor went to `CRASHED` and its snapshot was dropped. A
+  `READ_WRITE_ONCE` volume that stays mounted still fails the checkpoint:
+  the suspend detaches it from the node next.
 - **During the roll:** a suspend on a node that still runs the 1.16.3
   atelet behaves as before.
 - **Migration:** none to run.
