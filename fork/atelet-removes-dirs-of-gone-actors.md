@@ -25,4 +25,4 @@ A new `WorkerService.ListGoneActors`, served to an atelet's own client certifica
 
 ## History
 
-not opened yet: the upstream-ready change is on the branch `upstream/atelet-actor-dir-gc`.
+not opened yet: the upstream-ready change is on the branch `upstream/atelet-actor-dir-gc` (`0d59c18d`, mirror `main` @ `e2fc0fa9`, DCO-signed; `main` names the volume paths `ExternalVolumeHostPath`, and its `ServiceImpl` takes a pass-through of the new store method). `main` has no sweep of leftover volumes, so the branch skips no actor for one.
