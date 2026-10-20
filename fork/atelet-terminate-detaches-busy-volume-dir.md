@@ -25,6 +25,6 @@ An actor that crashed while an external volume stayed mounted, under a release b
 
 ## History
 
-not opened yet: the upstream-ready change is on the branch `upstream/atelet-terminate-detaches-busy-volume-dir`
+not opened yet: the upstream-ready change is on the branch `upstream/atelet-terminate-detaches-busy-volume-dir` (`9c6232f4`, mirror `main` @ `e2fc0fa9`, DCO-signed; `main` names the volume paths `ExternalVolumeMountsDir` and `ExternalVolumeHostPath`, and the commit splits `resetActorStateDirs` out of `resetActorDirs` there)
 
 [#515](https://github.com/giantswarm/substrate/pull/515): the fork's own commit on the line
