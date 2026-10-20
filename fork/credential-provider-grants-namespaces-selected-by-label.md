@@ -7,9 +7,9 @@ status: carried
 commits:
   - 'feat(credential-provider): grant namespaces selected by label'
 upstream:
-  outcome: to-file
-  refs: [giantswarm/substrate-credential-providers#13]
-  exit: move into the plugin's config and drop the fork patch
+  outcome: open
+  refs: [agent-substrate/substrate#2877, agent-substrate/substrate#2959, giantswarm/substrate-credential-providers#13]
+  exit: as#2877 and as#2959 merge, then the re-pin onto a commit containing them drops the patch
 depends_on: []
 verified: 2026-10-20
 ---
@@ -30,3 +30,5 @@ to file — prepared in the fork: branch `upstream/credential-provider-namespace
 [#456](https://github.com/giantswarm/substrate/pull/456): the fork's `git cherry-pick -x` of the upstream-ready commit, with the chart README and values rows resolved against the line's
 
 2026-10-20: giantswarm/substrate-credential-providers#13 (merged 2026-10-19, `4c269d06`) ports the same grants to the `google-access-token` plugin only, while the bundled Kubernetes provider keeps this patch, so the outcome stays to-file.
+
+2026-10-20: filed upstream as [agent-substrate/substrate#2877](https://github.com/agent-substrate/substrate/pull/2877) (opened 2026-10-19, the `ownNamespaceSelector` policy) and [agent-substrate/substrate#2959](https://github.com/agent-substrate/substrate/pull/2959) (opened 2026-10-20, the policy reload without a restart that #2877's review asked for), so the outcome moves from to-file to open.

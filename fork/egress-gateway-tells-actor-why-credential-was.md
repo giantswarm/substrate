@@ -8,10 +8,10 @@ commits:
   - 'feat(atenet): tell the actor why a credential was refused'
 upstream:
   outcome: open
-  refs: [agent-substrate/substrate#2555, agentgateway/agentgateway#3875]
-  exit: as#2555 resolved upstream, then agentgateway#3875
+  refs: [agent-substrate/substrate#2555, agent-substrate/substrate#2706, agentgateway/agentgateway#3875]
+  exit: as#2706 (the atenet half of as#2555) merges, then agentgateway#3875
 depends_on: [giantswarm/agentgateway-upstream:a-credential-providers-failure-is-answered-by-its-class]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The egress gateway tells the actor why a credential was refused
 
@@ -28,3 +28,5 @@ kagent's caller credential provider refuses for reasons the actor can act on (no
 [agent-substrate/substrate#2555](https://github.com/agent-substrate/substrate/issues/2555) (open, 2026-10-13) asks upstream for the classes; ericcurtin took the Substrate side on 2026-10-15 (`credentials.go`, tests, doc table, the `FetchSecret` contract; the config-error row waits until 500 vs 502 is settled); the agentgateway half is agentgateway/agentgateway#3875 (draft)
 
 `feat/credential-provider-errors`; merged as [#112](https://github.com/giantswarm/substrate/pull/112) (`feat(atenet): tell the actor why a credential was refused`)
+
+2026-10-20: the Substrate side is [agent-substrate/substrate#2706](https://github.com/agent-substrate/substrate/pull/2706) (ericcurtin, opened 2026-10-15, "Fixes #2555"): provider `Internal`, `Unknown`, `Unimplemented` and an unusable credential answer 502, `ResourceExhausted` 503, `InvalidArgument` stays 403; the outcome stays open on it.
