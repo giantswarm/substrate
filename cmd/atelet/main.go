@@ -221,6 +221,9 @@ func main() {
 	if err := validateImageCacheGCFlags(); err != nil {
 		serverboot.Fatal(ctx, "Invalid image cache GC flags", err)
 	}
+	if err := validateActorDirGCFlags(); err != nil {
+		serverboot.Fatal(ctx, "Invalid actor dir GC flags", err)
+	}
 	imageCache, err := imagecache.New(*imageCacheDir,
 		imagecache.WithKeychain(imageCredsKeychain),
 		imagecache.WithLocalhostRegistryReplacement(*localhostRegistryReplacement),
@@ -359,7 +362,7 @@ func main() {
 		grpc.UnaryInterceptor(ateinterceptors.InternalServerUnaryInterceptor),
 	}
 	if *grpcInsecure {
-		slog.WarnContext(ctx, "Serving atelet gRPC without transport security")
+		slog.WarnContext(ctx, "Serving atelet gRPC without transport security; with no control-plane client, the actor dir GC does not run")
 	} else {
 		tlsCfg, err := ateletServerTLSConfig(*grpcServerCredBundle, *clientCACerts)
 		if err != nil {
@@ -406,10 +409,14 @@ func main() {
 		if err := os.Chmod(nodepath.AteomSupportSocket, 0o600); err != nil {
 			serverboot.Fatal(ctx, "Failed to restrict credential broker socket", err)
 		}
+		workers := ateapipb.NewWorkerServiceClient(ateapiConn)
 		ateomFacingSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(ateomFacingTLS)))
 		ateletpb.RegisterAteomSupportServer(ateomFacingSrv, &ateomSupportServer{
-			workers: ateapipb.NewWorkerServiceClient(ateapiConn),
+			workers: workers,
 		})
+		if *actorDirGCPeriod > 0 {
+			go newActorDirGC(workers).Run(ctx)
+		}
 		go func() {
 			if err := ateomFacingSrv.Serve(ateomFacingLis); err != nil {
 				serverboot.Fatal(ctx, "Failed to serve credential broker", err)
