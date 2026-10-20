@@ -1219,6 +1219,23 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.16.1 to 1.16.2
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs between the two tags.
+- **Chart:** `images.agentgateway` is 2.6.1 (2.6.0 before). An actor's
+  stream that sends nothing before the egress gateway's protocol detection
+  times out, or that closes first (a server-first protocol such as SSH, a
+  connect-only probe), is decided by the actor's `tcp` rules: a refused one
+  is counted on `agentgateway_atenet_egress_refusals_total` with
+  `scheme="tcp"`, an allowed one is relayed. Before, such a stream was
+  closed without a decision and nothing was counted. No value changes.
+- **During the roll:** such streams are decided once the egress gateway
+  runs 2.6.1.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
