@@ -8,10 +8,20 @@ commits:
   - 'ci: pin setup-helm and the Helm version in helm-e2e'
 upstream:
   outcome: to-file
-  refs: []
-  exit: kd PR
+  refs: [kagent-dev/substrate#86]
+  exit: 'the Helm version pull request merged; the Substrate re-pin onto a kagent-dev/substrate commit carrying it drops the commit'
+  class: 5
+  destination: 'kagent-dev/substrate helm-e2e.yaml and helm-verify.yaml: a version input on azure/setup-helm; the SHA pin half is upstream since kagent-dev/substrate#86 (9d1968a9)'
+  first_step: 'open a pull request on kagent-dev/substrate from the source branch'
+  source: 'upstream/helm-version-pin@fd43d8446 (on kagent-dev/substrate main 6383ea118, +4); upstream/helm-e2e-pin-setup-helm@5b47d3578 is retired (it conflicts with #86)'
+  test: 'the helm-e2e and helm-verify logs show Helm v4.3.1; azure/setup-helm v4.3.1 without a version falls back to v3.18.4 when its latest-version lookup fails (src/run.ts:13,49-59)'
+  recheck: '2026-11-17, then each Substrate re-pin'
+  owner: unassigned
+  draft: issuecomment-6301362157
+  decision: issuecomment-6301358702
+  couplings: [compat-migrations]
 depends_on: []
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # helm-e2e pins `azure/setup-helm` to its v4.3.1 release by commit and installs Helm v4.3.0 on every …
 
@@ -28,3 +38,5 @@ the action ran without a version and installed whatever Helm it resolved that da
 to file: the upstream-shaped patch is branch [`upstream/helm-e2e-pin-setup-helm`](https://github.com/giantswarm/substrate/tree/upstream/helm-e2e-pin-setup-helm) here (`5b47d357`, on kagent-dev/substrate `main` @ `9c4b1fb5`, DCO-signed; its message is the pull-request text). kagent-dev/substrate's own helm-e2e carries the same unpinned step; agent-substrate/substrate has no helm-e2e. A team member opens the kagent-dev/substrate pull request. Falls away at the re-pin onto the first release that carries it
 
 [#275](https://github.com/giantswarm/substrate/pull/275): `git cherry-pick -x` of `5b47d357`, adapted to the line's indentation
+
+2026-10-20: placed by the T16 ci-publish-infra theme review (the decision comment is `upstream.decision` on the theme issue): the SHA pin is upstream (kagent-dev/substrate#86, `9d1968a9`); the Helm version goes upstream as its own pull request; the commit rides the Substrate conversion re-pin of the compat-migrations theme.

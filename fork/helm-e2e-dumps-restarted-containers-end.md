@@ -9,9 +9,18 @@ commits:
 upstream:
   outcome: to-file
   refs: []
-  exit: kd PR
-depends_on: []
-verified: 2026-10-19
+  exit: 'the dump pull request merged, then the Substrate re-pin drops the commit; fork-only fallback on the same date as kagent-dev/substrate#71'
+  class: 5
+  destination: 'kagent-dev/substrate helm-e2e.yaml, the Dump diagnostics on failure step (lines 156-163 at 6383ea118)'
+  first_step: 'open a pull request on kagent-dev/substrate from the source branch once kagent-dev/substrate#71 merges'
+  source: 'upstream/helm-e2e-dump-previous@11bfb4132 (on 6383ea118, +10; reads each restarted container''s previous log by name, where the line''s commit probes --all-containers)'
+  test: 'restart an ate-system container mid-suite and fail a lane: the dump prints its termination reason, exit code and previous log, and the Warning events'
+  recheck: 2026-11-17
+  owner: unassigned
+  draft: issuecomment-6301363794
+  decision: issuecomment-6301358702
+depends_on: [helm-e2e-lanes-run-whatever-an-earlier-lane-did]
+verified: 2026-10-20
 ---
 # helm-e2e's failure dump names a restarted container's end
 
@@ -28,3 +37,5 @@ A component that restarts mid-suite (the node's atelet, by a crash or an OOM kil
 to file: kagent-dev/substrate's helm-e2e carries the same dump step; agent-substrate/substrate has no helm-e2e. Falls away at the re-pin onto the first release that carries it
 
 [#362](https://github.com/giantswarm/substrate/pull/362)
+
+2026-10-20: placed by the T16 ci-publish-infra theme review (the decision comment is `upstream.decision` on the theme issue): upstream PR on kagent-dev/substrate after #71.
