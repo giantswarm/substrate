@@ -1033,7 +1033,7 @@ func TestRemoveActorDirsReclaimsTheRoot(t *testing.T) {
 		t.Fatalf("writing sandbox assets file: %v", err)
 	}
 
-	if err := removeActorDirs(actorUID); err != nil {
+	if err := removeActorDirs(t.Context(), actorUID); err != nil {
 		t.Fatalf("removeActorDirs: %v", err)
 	}
 
@@ -1050,11 +1050,12 @@ func TestRemoveActorDirsReclaimsTheRoot(t *testing.T) {
 }
 
 // TestRemoveActorDirsKeepsPopulatedVolume checks that removing the root does
-// not defeat the mount safety resetActorDirs provides: a volume directory with
-// contents means the unmount did not take, and deleting it would take the
-// mounted volume's data rather than the actor's.
+// not take a mounted volume's data rather than the actor's: a volume directory
+// that is still populated once its mounts are detached is left in place with
+// the volumes dir around it, and the terminate does not fail on it.
 func TestRemoveActorDirsKeepsPopulatedVolume(t *testing.T) {
 	useTempNodeDirs(t)
+	withDetachMountsUnder(t, func(string) error { return nil })
 	const actorUID = "actor-uid-1"
 
 	stillMounted := filepath.Join(ateletpath.ExternalVolumeHostPath(actorUID, "data"), "payload")
@@ -1064,17 +1065,74 @@ func TestRemoveActorDirsKeepsPopulatedVolume(t *testing.T) {
 	if err := os.WriteFile(stillMounted, []byte("volume contents"), 0o600); err != nil {
 		t.Fatalf("writing volume contents: %v", err)
 	}
-
-	err := removeActorDirs(actorUID)
-	if err == nil {
-		t.Fatal("removeActorDirs succeeded with a populated volume dir, want an error")
+	if err := os.WriteFile(ateletpath.ActorSandboxAssetsFile(actorUID), []byte("{}"), 0o600); err != nil {
+		t.Fatalf("writing sandbox assets file: %v", err)
 	}
-	if strings.Contains(err.Error(), "%w") {
-		t.Errorf("removeActorDirs error %q has a literal %%w", err)
+
+	if err := removeActorDirs(t.Context(), actorUID); err != nil {
+		t.Fatalf("removeActorDirs: %v", err)
 	}
 	if _, err := os.Stat(stillMounted); err != nil {
 		t.Errorf("removeActorDirs deleted the contents of a volume that was still populated: %v", err)
 	}
+	entries, err := os.ReadDir(ateletpath.ActorPath(actorUID))
+	if err != nil {
+		t.Fatalf("reading actor dir: %v", err)
+	}
+	var left []string
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if want := []string{filepath.Base(ateletpath.ExternalVolumeMountsDir(actorUID))}; !slices.Equal(left, want) {
+		t.Errorf("actor dir entries = %v, want only %v", left, want)
+	}
+}
+
+// TestRemoveActorDirsDetachesBusyVolume checks that a volume directory still
+// busy after its volume's unmount, a mount that outlived it, is detached and
+// removed with the rest of the actor's tree, while an empty one is removed
+// without a detach.
+func TestRemoveActorDirsDetachesBusyVolume(t *testing.T) {
+	useTempNodeDirs(t)
+	const actorUID = "actor-uid-1"
+
+	busy := ateletpath.ExternalVolumeHostPath(actorUID, "workspace-mirrors")
+	empty := ateletpath.ExternalVolumeHostPath(actorUID, "workspace")
+	// A file under the mount point stands for the mount: rmdir fails until
+	// the detach takes it away.
+	staleMount := filepath.Join(busy, "mirror")
+	for _, dir := range []string{busy, empty} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("creating volume dir: %v", err)
+		}
+	}
+	if err := os.WriteFile(staleMount, []byte("mounted"), 0o600); err != nil {
+		t.Fatalf("writing mount stand-in: %v", err)
+	}
+	var detached []string
+	withDetachMountsUnder(t, func(dir string) error {
+		detached = append(detached, dir)
+		return os.Remove(staleMount)
+	})
+
+	if err := removeActorDirs(t.Context(), actorUID); err != nil {
+		t.Fatalf("removeActorDirs: %v", err)
+	}
+	if want := []string{busy}; !slices.Equal(detached, want) {
+		t.Errorf("detached %v, want %v", detached, want)
+	}
+	if _, err := os.Stat(ateletpath.ActorPath(actorUID)); !os.IsNotExist(err) {
+		t.Errorf("actor dir survived removeActorDirs: stat err = %v", err)
+	}
+}
+
+// withDetachMountsUnder replaces the lazy detach of a volume dir's mounts for
+// the duration of the test.
+func withDetachMountsUnder(t *testing.T, detach func(string) error) {
+	t.Helper()
+	orig := detachMountsUnder
+	detachMountsUnder = detach
+	t.Cleanup(func() { detachMountsUnder = orig })
 }
 
 func TestResetDir(t *testing.T) {

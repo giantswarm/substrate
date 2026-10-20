@@ -1682,7 +1682,7 @@ func (s *Atelet) Terminate(ctx context.Context, req *ateletpb.TerminateRequest) 
 	}
 
 	// Reclaim the actor's directories on the node
-	if err := removeActorDirs(actorUID); err != nil {
+	if err := removeActorDirs(ctx, actorUID); err != nil {
 		return nil, fmt.Errorf("failed to remove actor directories during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
 	}
 
@@ -2049,6 +2049,33 @@ func (d *WorkerDialer) DialWorkerPod(ctx context.Context, podUID string) (*grpc.
 // resetActorDirs empties the actor's directories and leaves them in place for
 // its next activation. Use removeActorDirs when the actor will not come back.
 func resetActorDirs(actorUID string) error {
+	if err := resetActorStateDirs(actorUID); err != nil {
+		return err
+	}
+
+	// Do not call RemoveAll on volume directories in case the unmount failed.
+	// We do not want to delete mount content.
+	volumesDir := ateletpath.ExternalVolumeMountsDir(actorUID)
+	entries, err := os.ReadDir(volumesDir)
+	if err != nil && !os.IsNotExist(err) {
+		return wrapFileSystemErr("while reading volumes dir", err)
+	}
+	for _, entry := range entries {
+		volPath := filepath.Join(volumesDir, entry.Name())
+		if err := os.Remove(volPath); err != nil {
+			return wrapFileSystemErr("while removing volume dir", err)
+		}
+	}
+	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
+		return wrapFileSystemErr("while creating volumes dir", err)
+	}
+
+	return nil
+}
+
+// resetActorStateDirs is resetActorDirs without the volumes dir: it leaves
+// the mount points of external volumes as they are.
+func resetActorStateDirs(actorUID string) error {
 	// Explicitly leave runsc logs dir untouched.
 
 	// RemoveAllWritable, not os.RemoveAll: the bundle's upper dir can hold
@@ -2074,24 +2101,6 @@ func resetActorDirs(actorUID string) error {
 	if err := resetDir("system-info volume roots dir", ateletpath.SystemInfoVolumeRootsDir(actorUID), os.RemoveAll, 0o755); err != nil {
 		return err
 	}
-
-	// Do not call RemoveAll on volume directories in case the unmount failed.
-	// We do not want to delete mount content.
-	volumesDir := ateletpath.ExternalVolumeMountsDir(actorUID)
-	entries, err := os.ReadDir(volumesDir)
-	if err != nil && !os.IsNotExist(err) {
-		return wrapFileSystemErr("while reading volumes dir", err)
-	}
-	for _, entry := range entries {
-		volPath := filepath.Join(volumesDir, entry.Name())
-		if err := os.Remove(volPath); err != nil {
-			return wrapFileSystemErr("while removing volume dir", err)
-		}
-	}
-	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
-		return wrapFileSystemErr("while creating volumes dir", err)
-	}
-
 	return nil
 }
 
@@ -2148,17 +2157,79 @@ func resetDir(what, dir string, remove func(string) error, mode os.FileMode) err
 
 // removeActorDirs reclaims the actor's whole directory tree, root included:
 // nothing else on the node deletes it, and no later activation will look here.
+// It runs once the actor's external volumes are unmounted.
 //
-// resetActorDirs runs first for the care a blanket RemoveAll lacks. It refuses
-// to proceed while a volume directory is still populated, so a failed unmount
-// cannot become a deletion of the mount's contents, and it can remove a bundle
+// A volume directory is only ever removed empty, so a mount that outlived its
+// unmount cannot become a deletion of the mount's contents. One that stays
+// busy is detached lazily and removed; one that still cannot be removed is
+// left in place, logged, with the volumes dir around it, and the rest of the
+// actor's tree goes. resetActorStateDirs runs first: it can remove a bundle
 // upper dir carrying an image's read-only modes.
-func removeActorDirs(actorUID string) error {
-	if err := resetActorDirs(actorUID); err != nil {
+func removeActorDirs(ctx context.Context, actorUID string) error {
+	if err := resetActorStateDirs(actorUID); err != nil {
 		return err
+	}
+	if orphans := removeVolumeDirs(ctx, actorUID); len(orphans) > 0 {
+		slog.WarnContext(ctx, "Leaving the volume dirs of a terminated actor that cannot be removed", slog.String("actor_uid", actorUID), slog.Any("volume_dirs", orphans))
+		return removeAllExcept(ateletpath.ActorPath(actorUID), ateletpath.ExternalVolumeMountsDir(actorUID))
 	}
 	if err := os.RemoveAll(ateletpath.ActorPath(actorUID)); err != nil {
 		return wrapFileSystemErr("while deleting actor dir", err)
+	}
+	return nil
+}
+
+// detachMountsUnder lazily detaches every mount at or below a directory.
+var detachMountsUnder = imagecache.UnmountAllUnder
+
+// removeVolumeDirs removes the actor's volume directories and returns those
+// that cannot be removed. A directory that is not empty after its volume's
+// unmount still holds a mount (a stale one, or one stacked under the mount
+// the unmount took, such as a crashed actor leaves): every mount at or below
+// it is detached, then the removal is tried once more.
+func removeVolumeDirs(ctx context.Context, actorUID string) []string {
+	volumesDir := ateletpath.ExternalVolumeMountsDir(actorUID)
+	entries, err := os.ReadDir(volumesDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read the volumes dir of a terminated actor", slog.String("actor_uid", actorUID), slog.Any("err", err))
+		return []string{volumesDir}
+	}
+	var orphans []string
+	for _, entry := range entries {
+		volPath := filepath.Join(volumesDir, entry.Name())
+		if os.Remove(volPath) == nil {
+			continue
+		}
+		if err := detachMountsUnder(volPath); err != nil {
+			slog.WarnContext(ctx, "Failed to detach the mounts left under a volume dir", slog.String("actor_uid", actorUID), slog.String("volume_dir", volPath), slog.Any("err", err))
+		}
+		if err := os.Remove(volPath); err != nil {
+			slog.WarnContext(ctx, "Volume dir of a terminated actor stays in place", slog.String("actor_uid", actorUID), slog.String("volume_dir", volPath), slog.Any("err", err))
+			orphans = append(orphans, volPath)
+			continue
+		}
+		slog.WarnContext(ctx, "Detached a mount that outlived its volume's unmount", slog.String("actor_uid", actorUID), slog.String("volume_dir", volPath))
+	}
+	return orphans
+}
+
+// removeAllExcept removes every entry of dir but keep.
+func removeAllExcept(dir, keep string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return wrapFileSystemErr("while reading actor dir", err)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if path == keep {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return wrapFileSystemErr("while deleting actor dir", err)
+		}
 	}
 	return nil
 }
