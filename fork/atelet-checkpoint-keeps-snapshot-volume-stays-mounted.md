@@ -28,3 +28,5 @@ A failed unmount after the persisted snapshot failed `Checkpoint`. ateapi crashe
 not opened yet: the upstream-ready commit goes on the branch `upstream/atelet-checkpoint-keeps-snapshot-volume-busy` (mirror `main` + the change, DCO-signed)
 
 [#502](https://github.com/giantswarm/substrate/pull/502): the fork's own commit, the same change on the line
+
+[#503](https://github.com/giantswarm/substrate/pull/503): the same commit on `release-1.16`, a `git cherry-pick -x` for `v1.16.4`
