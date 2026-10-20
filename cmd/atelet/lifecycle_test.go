@@ -2167,12 +2167,12 @@ func TestCheckpointSkipsStaleCommitAndKeepsNewerLocal(t *testing.T) {
 	}
 }
 
-// TestCheckpointKeepsSnapshotWhenVolumeStaysMounted pauses an actor whose
-// external volume cannot be unmounted, and checks that the checkpoint still
-// succeeds with its snapshot, that the mount point stays, and that the next
-// activation on the node unmounts the leftover before it resets the actor's
-// directories.
-func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
+// TestCheckpointFailsWhenVolumeStaysMounted pauses an actor whose external
+// volume cannot be unmounted, and checks that the checkpoint fails, since the
+// suspend detaches the single-node-writer volume next, that the mount point
+// stays, and that the next activation on the node unmounts the leftover
+// before it resets the actor's directories.
+func TestCheckpointFailsWhenVolumeStaysMounted(t *testing.T) {
 	useTempNodeDirs(t)
 	withUnmountRetry(t, 0, 0)
 	ctx := t.Context()
@@ -2251,11 +2251,8 @@ func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
 		Spec:                  spec,
 		Snapshot:              lifecycleSnapshot(actorUID, snapshotName, 1, ateletpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY),
 		UploadConfig:          deferredUploadConfig(),
-	}); err != nil {
-		t.Fatalf("Checkpoint with a volume that stays mounted: %v, want success", err)
-	}
-	if _, err := os.Stat(filepath.Join(ateletpath.LocalSnapshotDir(actorUID, snapshotName), "checkpoint.img")); err != nil {
-		t.Fatalf("checkpoint kept no snapshot: %v", err)
+	}); err == nil {
+		t.Fatal("Checkpoint with a volume that stays mounted succeeded, want an error")
 	}
 	if _, err := os.Stat(ateletpath.ExternalVolumeHostPath(actorUID, "workspace")); err != nil {
 		t.Fatalf("mount point of the volume still mounted was removed: %v", err)

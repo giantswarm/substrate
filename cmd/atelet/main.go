@@ -1042,18 +1042,14 @@ func (s *Atelet) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRequest
 		slog.WarnContext(ctx, "failed to prune superseded local checkpoints", slog.Any("actor", actorRef), slog.Any("err", err))
 	}
 
-	// The snapshot is persisted. A volume that stays mounted fails no longer:
-	// an error now would crash the actor and drop the snapshot. Its mount
-	// point is left in place, and the actor's next activation or terminate on
-	// this node unmounts it.
+	// A volume that stays mounted still fails the checkpoint, though its
+	// snapshot is persisted: every external volume is single-node-writer, and
+	// the suspend detaches it from the node next. Keeping the snapshot is
+	// safe only for a volume other nodes may mount meanwhile, which needs
+	// shared access modes.
 	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec().GetVolumes()); err != nil {
-		slog.WarnContext(ctx, "Checkpoint persisted with external volumes still mounted", slog.Any("actor", actorRef), slog.String("actorUID", actorUID), slog.Any("err", err))
-		err = resetActorStateDirs(actorUID)
 		dCleanup += time.Since(tCleanup)
-		if err != nil {
-			return nil, fmt.Errorf("while resetting actor dirs: %w", err)
-		}
-		return &ateletpb.CheckpointResponse{State: state}, nil
+		return nil, fmt.Errorf("while unmounting external volumes: %w", err)
 	}
 
 	// Note: we do not crash the actor if resetting the directory fails.
@@ -2064,33 +2060,6 @@ func (d *WorkerDialer) DialWorkerPod(ctx context.Context, podUID string) (*grpc.
 // resetActorDirs empties the actor's directories and leaves them in place for
 // its next activation. Use removeActorDirs when the actor will not come back.
 func resetActorDirs(actorUID string) error {
-	if err := resetActorStateDirs(actorUID); err != nil {
-		return err
-	}
-
-	// Do not call RemoveAll on volume directories in case the unmount failed.
-	// We do not want to delete mount content.
-	volumesDir := ateletpath.ExternalVolumeMountsDir(actorUID)
-	entries, err := os.ReadDir(volumesDir)
-	if err != nil && !os.IsNotExist(err) {
-		return wrapFileSystemErr("while reading volumes dir", err)
-	}
-	for _, entry := range entries {
-		volPath := filepath.Join(volumesDir, entry.Name())
-		if err := os.Remove(volPath); err != nil {
-			return wrapFileSystemErr("while removing volume dir", err)
-		}
-	}
-	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
-		return wrapFileSystemErr("while creating volumes dir", err)
-	}
-
-	return nil
-}
-
-// resetActorStateDirs is resetActorDirs without the volumes dir: it leaves
-// the mount points of external volumes as they are.
-func resetActorStateDirs(actorUID string) error {
 	// Explicitly leave runsc logs dir untouched.
 
 	// RemoveAllWritable, not os.RemoveAll: the bundle's upper dir can hold
@@ -2113,7 +2082,28 @@ func resetActorStateDirs(actorUID string) error {
 	}
 	// World-readable (0o755): bind-mounted read-only into the actor, whose
 	// workload reads it through the gofer.
-	return resetDir("system-info volume roots dir", ateletpath.SystemInfoVolumeRootsDir(actorUID), os.RemoveAll, 0o755)
+	if err := resetDir("system-info volume roots dir", ateletpath.SystemInfoVolumeRootsDir(actorUID), os.RemoveAll, 0o755); err != nil {
+		return err
+	}
+
+	// Do not call RemoveAll on volume directories in case the unmount failed.
+	// We do not want to delete mount content.
+	volumesDir := ateletpath.ExternalVolumeMountsDir(actorUID)
+	entries, err := os.ReadDir(volumesDir)
+	if err != nil && !os.IsNotExist(err) {
+		return wrapFileSystemErr("while reading volumes dir", err)
+	}
+	for _, entry := range entries {
+		volPath := filepath.Join(volumesDir, entry.Name())
+		if err := os.Remove(volPath); err != nil {
+			return wrapFileSystemErr("while removing volume dir", err)
+		}
+	}
+	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
+		return wrapFileSystemErr("while creating volumes dir", err)
+	}
+
+	return nil
 }
 
 // resetSandboxAssetsDir empties the actor's sandbox assets dir for Restore
