@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
 	"github.com/agent-substrate/substrate/internal/nodepath"
@@ -44,8 +45,10 @@ type fakeWorkerPlugin struct {
 	mountErrs   map[string]error
 	unmountErr  error
 	unmountErrs map[string]error
-	unmounted   []string
-	mountCalls  []mountCall
+	// busyUnmounts fails that many unmounts as busy before the others answer.
+	busyUnmounts int
+	unmounted    []string
+	mountCalls   []mountCall
 }
 
 func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest) error {
@@ -64,6 +67,10 @@ func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolu
 
 func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, _ volume.AccessMode) error {
 	f.unmounted = append(f.unmounted, volumeID)
+	if f.busyUnmounts > 0 {
+		f.busyUnmounts--
+		return errors.New("umount: target is busy")
+	}
 	if f.unmountErrs != nil {
 		if err, ok := f.unmountErrs[volumeID]; ok {
 			return err
@@ -85,7 +92,17 @@ func withTempActorsDir(t *testing.T) {
 	t.Cleanup(func() { nodepath.ActorsDir = orig })
 }
 
+// withUnmountRetry sets the unmount retry window and first interval for the
+// duration of the test.
+func withUnmountRetry(t *testing.T, window, interval time.Duration) {
+	t.Helper()
+	origWindow, origInterval := unmountRetryWindow, unmountRetryInterval
+	unmountRetryWindow, unmountRetryInterval = window, interval
+	t.Cleanup(func() { unmountRetryWindow, unmountRetryInterval = origWindow, origInterval })
+}
+
 func TestUnmountExternalVolumes(t *testing.T) {
+	withUnmountRetry(t, 0, 0)
 	ctx := context.Background()
 	actorUID := "test-actor-123"
 
@@ -169,6 +186,101 @@ func TestUnmountExternalVolumes(t *testing.T) {
 			t.Errorf("attempted unmount count = %d, want 2", len(fake.unmounted))
 		}
 	})
+
+	t.Run("busy unmount is retried", func(t *testing.T) {
+		withUnmountRetry(t, time.Minute, time.Millisecond)
+		fake := &fakeWorkerPlugin{busyUnmounts: 2}
+		s := &AteomHerder{
+			volumePlugins: map[string]volume.VolumePluginWorkerPlane{
+				"mock-driver": fake,
+			},
+		}
+
+		if err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}}); err != nil {
+			t.Fatalf("unmountExternalVolumes failed: %v, want the third attempt to succeed", err)
+		}
+		if want := []string{"mock-vol-1", "mock-vol-1", "mock-vol-1"}; !cmp.Equal(fake.unmounted, want) {
+			t.Errorf("unmount attempts = %v, want %v", fake.unmounted, want)
+		}
+	})
+
+	t.Run("busy unmount fails once the window ends", func(t *testing.T) {
+		withUnmountRetry(t, 50*time.Millisecond, 20*time.Millisecond)
+		fake := &fakeWorkerPlugin{unmountErr: errors.New("umount: target is busy")}
+		s := &AteomHerder{
+			volumePlugins: map[string]volume.VolumePluginWorkerPlane{
+				"mock-driver": fake,
+			},
+		}
+
+		err := s.unmountExternalVolumes(ctx, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}})
+		if !errors.Is(err, fake.unmountErr) {
+			t.Fatalf("unmountExternalVolumes error = %v, want the busy unmount", err)
+		}
+		if n := len(fake.unmounted); n < 2 {
+			t.Errorf("unmount attempts = %d, want a retry within the window", n)
+		}
+	})
+
+	t.Run("canceled context stops the retries", func(t *testing.T) {
+		withUnmountRetry(t, 2*time.Hour, time.Hour)
+		fake := &fakeWorkerPlugin{unmountErr: errors.New("umount: target is busy")}
+		s := &AteomHerder{
+			volumePlugins: map[string]volume.VolumePluginWorkerPlane{
+				"mock-driver": fake,
+			},
+		}
+		canceled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		err := s.unmountExternalVolumes(canceled, actorUID, &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{extVol1}})
+		if !errors.Is(err, fake.unmountErr) {
+			t.Fatalf("unmountExternalVolumes error = %v, want the busy unmount", err)
+		}
+		if n := len(fake.unmounted); n != 1 {
+			t.Errorf("unmount attempts = %d, want 1", n)
+		}
+	})
+}
+
+func TestUnmountLeftoverVolumes(t *testing.T) {
+	withTempActorsDir(t)
+	withUnmountRetry(t, 0, 0)
+	ctx := context.Background()
+	actorUID := "test-actor-leftover"
+
+	external := func(name, id string) *ateletpb.Volume {
+		return &ateletpb.Volume{
+			Name: name,
+			Source: &ateletpb.Volume_External{External: &ateletpb.ExternalVolumeSource{
+				StorageVolumeId: id,
+				VolumeType:      "mock-driver",
+			}},
+		}
+	}
+	spec := &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{
+		external("left", "mock-vol-left"),
+		external("gone", "mock-vol-gone"),
+		{Name: "durable", Source: &ateletpb.Volume_DurableDir{DurableDir: &ateletpb.DurableDirVolume{}}},
+	}}
+	if err := os.MkdirAll(ateletpath.VolumeHostPath(actorUID, "left"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	fake := &fakeWorkerPlugin{}
+	s := &AteomHerder{volumePlugins: map[string]volume.VolumePluginWorkerPlane{"mock-driver": fake}}
+	if err := s.unmountLeftoverVolumes(ctx, actorUID, spec); err != nil {
+		t.Fatalf("unmountLeftoverVolumes: %v", err)
+	}
+	if want := []string{"mock-vol-left"}; !cmp.Equal(fake.unmounted, want) {
+		t.Errorf("unmounted %v, want only the volume whose mount point is left: %v", fake.unmounted, want)
+	}
+
+	fake.unmounted = nil
+	fake.unmountErr = errors.New("umount: target is busy")
+	if err := s.unmountLeftoverVolumes(ctx, actorUID, spec); !errors.Is(err, fake.unmountErr) {
+		t.Errorf("unmountLeftoverVolumes error = %v, want the failed unmount", err)
+	}
 }
 
 func TestMountExternalVolumes(t *testing.T) {
