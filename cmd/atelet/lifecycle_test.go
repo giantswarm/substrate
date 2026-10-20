@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/trustbundle"
@@ -833,6 +834,7 @@ func TestTerminateWithoutSandboxRecord(t *testing.T) {
 // actor's directories.
 func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
 	ctx := t.Context()
+	withLeftoverSweepInterval(t, time.Hour)
 	c := newBusyVolumeCheckpoint(t, ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY)
 
 	if _, err := c.s.Checkpoint(ctx, c.checkpoint); err != nil {
@@ -844,6 +846,9 @@ func TestCheckpointKeepsSnapshotWhenVolumeStaysMounted(t *testing.T) {
 	hostPath := ateletpath.VolumeHostPath(c.actorUID, "workspace")
 	if _, err := os.Stat(hostPath); err != nil {
 		t.Fatalf("mount point of the volume still mounted was removed: %v", err)
+	}
+	if _, err := os.Stat(leftoverVolumesPath(c.actorUID)); err != nil {
+		t.Fatalf("checkpoint recorded no leftover volumes to sweep: %v", err)
 	}
 
 	c.plugin.unmountErr = nil
