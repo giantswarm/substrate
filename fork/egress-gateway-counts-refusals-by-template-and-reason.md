@@ -32,4 +32,4 @@ When carried, the reason was: the only metric of an egress refusal was the gatew
 
 [#351](https://github.com/giantswarm/substrate/pull/351): the fork's cherry-pick of the upstream commit, resolved against the line's `validateActor` (RUNNING or RESUMING) and `handleRequest`, which has no WebSocket refusal
 
-[#492](https://github.com/giantswarm/substrate/pull/492): dropped from the line ([#486](https://github.com/giantswarm/substrate/issues/486)); the counter, its attribute and registry entries return to upstream's
+[#494](https://github.com/giantswarm/substrate/pull/494): dropped from the line ([#486](https://github.com/giantswarm/substrate/issues/486)); the counter, its attribute and registry entries return to upstream's
