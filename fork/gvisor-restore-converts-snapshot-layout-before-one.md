@@ -9,9 +9,20 @@ commits:
 upstream:
   outcome: open
   refs: [agent-substrate/substrate#2462, agent-substrate/substrate#2472]
-  exit: as#2472 decision; expected decline (pre-1.0)
+  exit: 'dropped at the conversion re-pin; the conversion restores an old-layout paused actor by a cold boot with its files'
+  class: 1
+  destination: ''
+  first_step: 'drop at the conversion re-pin (giantswarm/substrate)'
+  source: 'giantswarm @ 030a9eac0; upstream/convert-legacy-durable-layout @ ff24f25c1 (agent-substrate/substrate#2472)'
+  test: 'the conversion lab upgrade: a paused gVisor actor cold-boots with its /data'
+  recheck: 'the conversion re-pin'
+  owner: unassigned
+  draft: ''
+  decision: issuecomment-6301319662
+  couplings: [compat-migrations]
+  open_question: ''
 depends_on: [gvisor-restore-refuses-snapshot-layout-before-one]
-verified: 2026-10-19
+verified: 2026-10-21
 ---
 # A gVisor restore converts a snapshot in the layout before one tar per durable volume instead of …
 
@@ -28,3 +39,5 @@ the refusal kept an actor from running with an empty `/data`, but every actor su
 [agent-substrate/substrate#2472](https://github.com/agent-substrate/substrate/pull/2472) (ours, open; from branch `upstream/convert-legacy-durable-layout`, the fork commit on top of [agent-substrate/substrate#2462](https://github.com/agent-substrate/substrate/pull/2462)'s, gVisor only). Upstream's `AGENTS.md` asks for no fallbacks for old formats before v1.0.0, so upstream may decline it; then it is carried until a release after 1.0 makes it moot. Falls away with the refusal's row
 
 [#277](https://github.com/giantswarm/substrate/pull/277): the fork's own commit on top of the refusal's; the micro-VM ateom of the line still writes and reads the single `durable-dir.tar` and needs no conversion
+
+2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): the per-volume tar layout it converts into is gone upstream, and the conversion's cold boot with files covers the old layouts.
