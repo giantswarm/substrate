@@ -8,9 +8,9 @@ commits:
   - 'feat(credential-provider): grant namespaces selected by label'
 upstream:
   outcome: open
-  refs: [agent-substrate/substrate#2877, agent-substrate/substrate#2959, giantswarm/substrate-credential-providers#13]
-  exit: as#2877 and as#2959 merge, then the re-pin onto a commit containing them drops the patch
-depends_on: []
+  refs: [agent-substrate/substrate#2876, agent-substrate/substrate#2877, agent-substrate/substrate#2959, agent-substrate/substrate#2543, giantswarm/substrate-credential-providers#13]
+  exit: 'allowedNamespaceSelector at the re-pin past as#2543 (d2b975099, golden actors in the template atespace); ownNamespaceSelector at the re-pin that carries the grant mechanism upstream picks on as#2876 after as#2959 (as#2877 closes then), or, if as#2876 is declined or unanswered by 2026-11-17, at the next re-pin with an out-of-tree Kubernetes Secrets provider in substrate-credential-providers serving class k8s.io'
+depends_on: [agent-substrate/substrate#2876, agent-substrate/substrate#2543]
 verified: 2026-10-20
 ---
 # The Kubernetes credential provider grants namespaces selected by label
@@ -32,3 +32,5 @@ to file — prepared in the fork: branch `upstream/credential-provider-namespace
 2026-10-20: giantswarm/substrate-credential-providers#13 (merged 2026-10-19, `4c269d06`) ports the same grants to the `google-access-token` plugin only, while the bundled Kubernetes provider keeps this patch, so the outcome stays to-file.
 
 2026-10-20: filed upstream as [agent-substrate/substrate#2877](https://github.com/agent-substrate/substrate/pull/2877) (opened 2026-10-19, the `ownNamespaceSelector` policy) and [agent-substrate/substrate#2959](https://github.com/agent-substrate/substrate/pull/2959) (opened 2026-10-20, the policy reload without a restart that #2877's review asked for), so the outcome moves from to-file to open.
+
+2026-10-20: decided on giantswarm/giantswarm#38661 after EItanya's review of agent-substrate/substrate#2877 (reload first, the selector too specific, the RBAC shape to a security reviewer, the provider API the path for needs the bundled provider does not meet): the `ate-golden` half leaves at the re-pin past agent-substrate/substrate#2543, the tenant-grant half waits for upstream's direction on agent-substrate/substrate#2876 with an out-of-tree provider as the fallback dated 2026-11-17; `tenants.organizations.enabled` stays on internal installations until the #2543 re-pin.
