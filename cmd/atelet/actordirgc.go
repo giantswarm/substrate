@@ -63,7 +63,7 @@ type actorDirGC struct {
 	period  time.Duration
 	dryRun  bool
 	// remove reclaims one actor's directory; removeActorDirs outside tests.
-	remove func(actorUID string) error
+	remove func(ctx context.Context, actorUID string) error
 }
 
 func newActorDirGC(workers goneActorLister) *actorDirGC {
@@ -121,7 +121,7 @@ func (gc *actorDirGC) pass(ctx context.Context) int {
 				continue
 			}
 			slog.InfoContext(ctx, "Actor dir GC: removing the directory of an actor gone from the control plane", slog.String("actor_uid", actorUID), slog.String("dir", dir))
-			if err := gc.remove(actorUID); err != nil {
+			if err := gc.remove(ctx, actorUID); err != nil {
 				slog.WarnContext(ctx, "Actor dir GC: failed to remove the directory of a gone actor; what is left stays in place", slog.String("actor_uid", actorUID), slog.String("dir", dir), slog.Any("err", err))
 				failed++
 				continue
