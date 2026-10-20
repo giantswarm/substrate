@@ -43,7 +43,6 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/atenet/internal/router/egress/actorjwt"
 	"github.com/agent-substrate/substrate/cmd/atenet/internal/router/extproc"
-	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/egresspolicy"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -94,10 +93,6 @@ type Handler struct {
 	// its ate-secret:// credential URIs); a credential URI naming another
 	// provider is refused.
 	providerName string
-	// metrics counts the refusals; nil counts nothing.
-	metrics *Metrics
-	// templates names the template of each actor a refusal is counted for.
-	templates *actorTemplates
 }
 
 // New builds the egress handler. actorIdentityRoots is the egress listener's
@@ -117,14 +112,7 @@ func New(apiClient ateapipb.ControlClient, actorIdentityRoots *x509.CertPool, po
 		actorJWTs:          actorjwt.New(apiClient),
 		provider:           provider,
 		providerName:       providerName,
-		templates:          newActorTemplates(),
 	}
-}
-
-// WithMetrics makes h count the requests it refuses on m, and returns h.
-func (h *Handler) WithMetrics(m *Metrics) *Handler {
-	h.metrics = m
-	return h
 }
 
 func (h *Handler) Direction() extproc.Direction { return extproc.DirectionEgress }
@@ -161,8 +149,8 @@ func (h *Handler) handleConnect(ctx context.Context, md *extproc.RequestMetadata
 	// No roots means the gateway cannot authenticate anyone. Fail closed, and
 	// as 503 rather than 403: this is our misconfiguration, not the actor's.
 	if h.actorIdentityRoots == nil {
-		return extproc.Result{}, h.refused(ctx, resources.ActorRef{}, ateattr.EgressRefusalUnavailable,
-			extproc.NewReqError(envoy_type.StatusCode_ServiceUnavailable, "egress unavailable: no actor-identity CA configured"))
+		return extproc.Result{}, extproc.NewReqError(envoy_type.StatusCode_ServiceUnavailable,
+			"egress unavailable: no actor-identity CA configured")
 	}
 
 	actorRef, err := h.authenticateActorCertificate(md)
@@ -172,8 +160,8 @@ func (h *Handler) handleConnect(ctx context.Context, md *extproc.RequestMetadata
 		// specific reason rides along as the wrapped cause, which only the
 		// server-side log below reads.
 		slog.WarnContext(ctx, "egress denied: actor certificate rejected", slog.Any("err", err))
-		return extproc.Result{}, h.refused(ctx, resources.ActorRef{}, ateattr.EgressRefusalUnauthenticated,
-			extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, "egress denied: invalid actor certificate"))
+		return extproc.Result{}, extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err,
+			"egress denied: invalid actor certificate")
 	}
 
 	// For a CONNECT the :authority is the actor's original destination
@@ -189,8 +177,7 @@ func (h *Handler) handleConnect(ctx context.Context, md *extproc.RequestMetadata
 	dest, err := egresspolicy.NormalizeAuthority(md.Host)
 	if err != nil || !dest.IP.IsValid() || dest.Port == 0 {
 		slog.WarnContext(ctx, "egress denied: CONNECT authority is not an IP:port", slog.Any("actor", ref), slog.String("leg", leg), slog.String("authority", md.Host), slog.Any("err", err))
-		return extproc.Result{}, h.refused(ctx, ref, ateattr.EgressRefusalBadDestination,
-			extproc.NewReqError(envoy_type.StatusCode_Forbidden, deniedBody))
+		return extproc.Result{}, extproc.NewReqError(envoy_type.StatusCode_Forbidden, deniedBody)
 	}
 
 	// This also warms the cache for the requests inside the tunnel, and
@@ -259,18 +246,15 @@ func (h *Handler) lookupPolicy(ctx context.Context, leg string, ref resources.Ac
 		return nil, extproc.WrapReqError(envoy_type.StatusCode_RequestTimeout, err, "egress request canceled")
 	case errors.Is(err, errNoPolicy):
 		slog.WarnContext(ctx, "egress denied: actor has no egress policy", slog.Any("actor", ref), slog.String("leg", leg))
-		return nil, h.refused(ctx, ref, ateattr.EgressRefusalNoPolicy,
-			extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, deniedBody))
+		return nil, extproc.WrapReqError(envoy_type.StatusCode_Forbidden, err, deniedBody)
 	case err != nil:
 		// The control plane failed, not the actor: 503, and nothing is cached.
 		slog.ErrorContext(ctx, "egress policy lookup failed", slog.Any("actor", ref), slog.String("leg", leg), slog.Any("err", err))
-		return nil, h.refused(ctx, ref, ateattr.EgressRefusalUnavailable,
-			extproc.WrapReqError(envoy_type.StatusCode_ServiceUnavailable, err, "egress unavailable: policy lookup failed"))
+		return nil, extproc.WrapReqError(envoy_type.StatusCode_ServiceUnavailable, err, "egress unavailable: policy lookup failed")
 	case policy.RuleCount() == 0:
 		// Can authorize nothing, so the same posture as having no policy.
 		slog.WarnContext(ctx, "egress denied: actor's egress policy has no rules", slog.Any("actor", ref), slog.String("leg", leg))
-		return nil, h.refused(ctx, ref, ateattr.EgressRefusalNoPolicy,
-			extproc.NewReqError(envoy_type.StatusCode_Forbidden, deniedBody))
+		return nil, extproc.NewReqError(envoy_type.StatusCode_Forbidden, deniedBody)
 	}
 	return policy, nil
 }
@@ -287,18 +271,8 @@ func (h *Handler) validateActor(ctx context.Context, actorRef resources.ActorRef
 		Actor: &ateapipb.ObjectRef{Atespace: actorRef.Atespace, Name: actorRef.Name},
 	})
 	if err != nil {
-		denial := mapEgressIdentityError(actorRef.Atespace, actorRef.Name, err)
-		if ctx.Err() != nil {
-			// The caller gave up mid-lookup: not a decision.
-			return denial
-		}
-		reason := ateattr.EgressRefusalUnavailable
-		if status.Code(err) == codes.NotFound {
-			reason = ateattr.EgressRefusalUnknownActor
-		}
-		return h.refused(ctx, actorRef, reason, denial)
+		return mapEgressIdentityError(actorRef.Atespace, actorRef.Name, err)
 	}
-	h.templates.remember(actorRef, actor.GetActorTemplate())
 
 	// The actor performing egress must be placed on a worker. RUNNING is the
 	// steady state; RESUMING is the workload booting or restoring on the
@@ -319,8 +293,8 @@ func (h *Handler) validateActor(ctx context.Context, actorRef resources.ActorRef
 			slog.String("actor", actorRef.Name),
 			slog.String("state", state.String()),
 			slog.String("destination", destination))
-		return h.refused(ctx, actorRef, ateattr.EgressRefusalActorNotRunning, extproc.NewReqError(envoy_type.StatusCode_Forbidden,
-			"egress denied: actor %q/%q is %s, not placed on a worker", actorRef.Atespace, actorRef.Name, state))
+		return extproc.NewReqError(envoy_type.StatusCode_Forbidden,
+			"egress denied: actor %q/%q is %s, not placed on a worker", actorRef.Atespace, actorRef.Name, state)
 	}
 }
 

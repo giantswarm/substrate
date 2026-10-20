@@ -163,7 +163,6 @@ func TestKeySpellings(t *testing.T) {
 		{SnapshotScopeKey, "ate.snapshot.scope"},
 		{SnapshotPhaseKey, "ate.snapshot.phase"},
 		{ImageCacheOutcomeKey, "ate.imagecache.outcome"},
-		{EgressRefusalReasonKey, "ate.egress.refusal.reason"},
 		{SchedulerOutcomeKey, "ate.scheduler.outcome"},
 		{ErrorTypeKey, "error.type"},
 		{OTLPRelayKey, "ate.otlp.relay"},
