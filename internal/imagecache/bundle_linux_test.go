@@ -317,6 +317,47 @@ func TestSetupBundleRootfs_MountAndUnmount(t *testing.T) {
 	}
 }
 
+// A mount point that holds a stale mount stacked under another, one of them
+// kept busy by an open file, is emptied by UnmountAllUnder without touching the
+// mounted data: a terminated actor's volume dir then removes. Needs
+// CAP_SYS_ADMIN.
+func TestUnmountAllUnder_StackedBusyMounts(t *testing.T) {
+	roottest.Require(t, "mount/unmount")
+	source := t.TempDir()
+	payload := filepath.Join(source, "payload")
+	if err := os.WriteFile(payload, []byte("volume data"), 0o600); err != nil {
+		t.Fatalf("writing payload: %v", err)
+	}
+	volDir := filepath.Join(t.TempDir(), "volumes", "workspace-mirrors")
+	if err := os.MkdirAll(volDir, 0o755); err != nil {
+		t.Fatalf("creating volume dir: %v", err)
+	}
+	for range 2 {
+		if err := unix.Mount(source, volDir, "", unix.MS_BIND, ""); err != nil {
+			t.Fatalf("bind mount: %v", err)
+		}
+	}
+	t.Cleanup(func() { _ = UnmountAllUnder(volDir) })
+	busy, err := os.Open(filepath.Join(volDir, "payload"))
+	if err != nil {
+		t.Fatalf("opening a file under the mount: %v", err)
+	}
+	defer busy.Close()
+	if err := os.Remove(volDir); !errors.Is(err, unix.EBUSY) {
+		t.Fatalf("removing the mounted volume dir: err = %v, want EBUSY", err)
+	}
+
+	if err := UnmountAllUnder(volDir); err != nil {
+		t.Fatalf("UnmountAllUnder: %v", err)
+	}
+	if err := os.Remove(volDir); err != nil {
+		t.Errorf("removing the volume dir after UnmountAllUnder: %v", err)
+	}
+	if got, err := os.ReadFile(payload); err != nil || string(got) != "volume data" {
+		t.Errorf("mounted data after the detach = %q (%v), want it untouched", got, err)
+	}
+}
+
 // Regression test for the mount(2) single-page option-string cap: a lowerdir
 // chain whose joined paths exceed one page (~34 digest-derived layers) used
 // to fail with a bare EINVAL. The fsconfig lowerdir+ path has no aggregate
