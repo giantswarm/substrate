@@ -777,11 +777,15 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRe
 	}
 	dPersist = time.Since(tPersist)
 
-	// The snapshot is persisted. A volume that stays mounted fails no longer:
-	// an error now would crash the actor and drop the snapshot. Its mount
-	// point is left in place, and the actor's next activation or terminate on
-	// this node unmounts it.
+	// The snapshot is persisted. A shared volume that stays mounted fails no
+	// longer: an error now would crash the actor and drop the snapshot. Its
+	// mount point is left in place, and the actor's next activation or
+	// terminate on this node unmounts it. A ReadWriteOnce volume still fails
+	// the checkpoint: the suspend detaches it from the node next.
 	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
+		if !onlySharedVolumesStayMounted(err) {
+			return nil, fmt.Errorf("while unmounting external volumes: %w", err)
+		}
 		slog.WarnContext(ctx, "Checkpoint persisted with external volumes still mounted", slog.Any("actor", actorRef), slog.String("actorUID", actorUID), slog.Any("err", err))
 		if err := resetActorStateDirs(actorUID); err != nil {
 			return nil, fmt.Errorf("while resetting actor dirs: %w", err)
