@@ -42,7 +42,7 @@ patches:
         path: /spec/template/spec/containers/0
         value:
           name: agentgateway
-          image: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.5.0@sha256:e48f9d4f2811f45e22a9530273b9e8b3832da2ae7eb6c541f5dcd9dbad81ac2c
+          image: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.6.0@sha256:52c5816b933880ca3d45a213f96efb08e4d6a7fb1824667267ae4fa1d9c9734b
           args:
           - -f
           - /etc/agentgateway/config.yaml
@@ -118,7 +118,7 @@ patches:
         path: /spec/template/spec/containers/0
         value:
           name: agentgateway
-          image: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.5.0@sha256:e48f9d4f2811f45e22a9530273b9e8b3832da2ae7eb6c541f5dcd9dbad81ac2c
+          image: gsoci.azurecr.io/giantswarm/agentgateway-upstream/agentgateway:2.6.0@sha256:52c5816b933880ca3d45a213f96efb08e4d6a7fb1824667267ae4fa1d9c9734b
           args:
           - -f
           - /etc/agentgateway/config.yaml
