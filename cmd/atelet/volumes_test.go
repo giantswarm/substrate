@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,6 +43,8 @@ type mountCall struct {
 }
 
 type fakeWorkerPlugin struct {
+	// mu guards the fields a background sweep reads and writes.
+	mu          sync.Mutex
 	mountErr    error
 	mountErrs   map[string]error
 	unmountErr  error
@@ -52,6 +56,8 @@ type fakeWorkerPlugin struct {
 }
 
 func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.mountCalls = append(f.mountCalls, mountCall{
 		volumeID:   req.VolumeID,
 		targetPath: req.TargetPath,
@@ -66,6 +72,8 @@ func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolu
 }
 
 func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, _ volume.AccessMode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.unmounted = append(f.unmounted, volumeID)
 	if f.busyUnmounts > 0 {
 		f.busyUnmounts--
@@ -80,6 +88,12 @@ func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, t
 }
 
 var _ volume.VolumePluginWorkerPlane = (*fakeWorkerPlugin)(nil)
+
+func (f *fakeWorkerPlugin) unmountedVolumes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.unmounted)
+}
 
 // withTempActorsDir redirects nodepath.ActorsDir at a temp dir for the
 // duration of the test. Every path derived from ActorsDir moves with it,
@@ -99,6 +113,160 @@ func withUnmountRetry(t *testing.T, window, interval time.Duration) {
 	origWindow, origInterval := unmountRetryWindow, unmountRetryInterval
 	unmountRetryWindow, unmountRetryInterval = window, interval
 	t.Cleanup(func() { unmountRetryWindow, unmountRetryInterval = origWindow, origInterval })
+}
+
+// withLeftoverSweepInterval sets the first wait of a leftover volumes sweep
+// for the duration of the test.
+func withLeftoverSweepInterval(t *testing.T, interval time.Duration) {
+	t.Helper()
+	orig := leftoverSweepInterval
+	leftoverSweepInterval = interval
+	t.Cleanup(func() { leftoverSweepInterval = orig })
+}
+
+// waitSweepsDone waits until s runs no leftover volumes sweep.
+func waitSweepsDone(t *testing.T, s *AteomHerder) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s.sweepMu.Lock()
+		running := len(s.leftoverSweeps)
+		s.sweepMu.Unlock()
+		if running == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d leftover volumes sweeps still running", running)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestLeftoverVolumesSweep(t *testing.T) {
+	ctx := context.Background()
+	const actorUID = "test-actor-sweep"
+	shared := &ateletpb.Volume{Name: "workspace", Source: &ateletpb.Volume_External{External: &ateletpb.ExternalVolumeSource{
+		StorageVolumeId: "vol-shared",
+		VolumeType:      "mock-driver",
+		AccessMode:      ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY,
+	}}}
+	other := &ateletpb.Volume{Name: "mirrors", Source: &ateletpb.Volume_External{External: &ateletpb.ExternalVolumeSource{
+		StorageVolumeId: "vol-other",
+		VolumeType:      "mock-driver",
+		AccessMode:      ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY,
+	}}}
+	spec := &ateletpb.WorkloadSpec{Volumes: []*ateletpb.Volume{shared, other}}
+	busy := errors.New("umount: target is busy")
+
+	// leave mounts both volumes' mount points and fails the shared one's
+	// unmount, as a checkpoint whose shared volume stays mounted does, and
+	// returns the volumes left mounted.
+	leave := func(t *testing.T, s *AteomHerder, fake *fakeWorkerPlugin) []*ateletpb.Volume {
+		t.Helper()
+		for _, vol := range spec.GetVolumes() {
+			if err := os.MkdirAll(ateletpath.VolumeHostPath(actorUID, vol.GetName()), 0o750); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fake.unmountErrs = map[string]error{"vol-shared": busy}
+		err := s.unmountExternalVolumes(ctx, actorUID, spec)
+		if !onlySharedVolumesStayMounted(err) {
+			t.Fatalf("unmountExternalVolumes error = %v, want the shared volume left mounted", err)
+		}
+		leftover := leftoverVolumes(actorUID, spec, err)
+		if len(leftover) != 1 || leftover[0].GetName() != "workspace" {
+			t.Fatalf("leftoverVolumes = %v, want the workspace volume alone", leftover)
+		}
+		return leftover
+	}
+
+	t.Run("unmounts once the volume lets go", func(t *testing.T) {
+		withTempActorsDir(t)
+		withUnmountRetry(t, 0, 0)
+		withLeftoverSweepInterval(t, time.Millisecond)
+		fake := &fakeWorkerPlugin{}
+		s := &AteomHerder{volumePlugins: map[string]volume.VolumePluginWorkerPlane{"mock-driver": fake}}
+		leftover := leave(t, s, fake)
+
+		fake.mu.Lock()
+		fake.unmounted = nil
+		fake.mu.Unlock()
+		if err := s.sweepLeftoverVolumes(ctx, actorUID, leftover); err != nil {
+			t.Fatalf("sweepLeftoverVolumes: %v", err)
+		}
+		// The sweep keeps trying while the volume stays busy.
+		for len(fake.unmountedVolumes()) < 3 {
+			time.Sleep(time.Millisecond)
+		}
+		if _, err := os.Stat(leftoverVolumesPath(actorUID)); err != nil {
+			t.Fatalf("record of the leftover volumes missing while the volume stays busy: %v", err)
+		}
+
+		fake.mu.Lock()
+		fake.unmountErrs = nil
+		fake.mu.Unlock()
+		waitSweepsDone(t, s)
+		if _, err := os.Stat(leftoverVolumesPath(actorUID)); !os.IsNotExist(err) {
+			t.Errorf("record of the leftover volumes survived the sweep: %v", err)
+		}
+		if _, err := os.Stat(ateletpath.VolumeHostPath(actorUID, "workspace")); !os.IsNotExist(err) {
+			t.Errorf("mount point of the swept volume survived the sweep: %v", err)
+		}
+		if _, err := os.Stat(ateletpath.VolumeHostPath(actorUID, "mirrors")); err != nil {
+			t.Errorf("the sweep touched the mount point of a volume that had unmounted: %v", err)
+		}
+		for _, id := range fake.unmountedVolumes() {
+			if id != "vol-shared" {
+				t.Errorf("the sweep unmounted %q, want the leftover vol-shared alone", id)
+			}
+		}
+	})
+
+	t.Run("an activation stops it and unmounts the leftover itself", func(t *testing.T) {
+		withTempActorsDir(t)
+		withUnmountRetry(t, 0, 0)
+		withLeftoverSweepInterval(t, time.Hour)
+		fake := &fakeWorkerPlugin{}
+		s := &AteomHerder{volumePlugins: map[string]volume.VolumePluginWorkerPlane{"mock-driver": fake}}
+		if err := s.sweepLeftoverVolumes(ctx, actorUID, leave(t, s, fake)); err != nil {
+			t.Fatalf("sweepLeftoverVolumes: %v", err)
+		}
+
+		fake.unmountErrs = nil
+		if err := s.unmountLeftoverVolumes(ctx, actorUID, spec); err != nil {
+			t.Fatalf("unmountLeftoverVolumes: %v", err)
+		}
+		if len(s.leftoverSweeps) != 0 {
+			t.Errorf("sweeps left running after the activation: %v", s.leftoverSweeps)
+		}
+		if _, err := os.Stat(leftoverVolumesPath(actorUID)); !os.IsNotExist(err) {
+			t.Errorf("record of the leftover volumes survived the activation's unmount: %v", err)
+		}
+	})
+
+	t.Run("a restarted atelet resumes it from the record", func(t *testing.T) {
+		withTempActorsDir(t)
+		withUnmountRetry(t, 0, 0)
+		withLeftoverSweepInterval(t, time.Hour)
+		fake := &fakeWorkerPlugin{}
+		s := &AteomHerder{volumePlugins: map[string]volume.VolumePluginWorkerPlane{"mock-driver": fake}}
+		if err := s.sweepLeftoverVolumes(ctx, actorUID, leave(t, s, fake)); err != nil {
+			t.Fatalf("sweepLeftoverVolumes: %v", err)
+		}
+		s.stopLeftoverSweep(actorUID)
+
+		leftoverSweepInterval = time.Millisecond
+		fake.unmountErrs = nil
+		restarted := &AteomHerder{volumePlugins: map[string]volume.VolumePluginWorkerPlane{"mock-driver": fake}}
+		restarted.resumeLeftoverSweeps(ctx)
+		waitSweepsDone(t, restarted)
+		if _, err := os.Stat(leftoverVolumesPath(actorUID)); !os.IsNotExist(err) {
+			t.Errorf("record of the leftover volumes survived the resumed sweep: %v", err)
+		}
+		if _, err := os.Stat(ateletpath.VolumeHostPath(actorUID, "workspace")); !os.IsNotExist(err) {
+			t.Errorf("mount point of the swept volume survived the resumed sweep: %v", err)
+		}
+	})
 }
 
 func TestUnmountExternalVolumes(t *testing.T) {
