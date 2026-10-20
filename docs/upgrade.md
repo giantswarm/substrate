@@ -1268,6 +1268,21 @@ entries in one roll.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.16.4 to 1.16.5
+
+- **Persisted format:** unchanged.
+- **Behavior:** a shared volume a checkpoint left mounted no longer waits
+  for the actor's next activation or terminate on the node, which a
+  suspended actor never sends: atelet keeps unmounting it in the
+  background, first after a minute, then with a doubling wait of up to 15
+  minutes, and removes its mount point once it lets go. A record in the
+  actor's directory resumes that after an atelet restart.
+- **During the roll:** a mount a 1.16.4 atelet left behind has no record and
+  stays until the actor's next activation or terminate on the node.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
