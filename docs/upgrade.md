@@ -1194,6 +1194,31 @@ conversations and durable volumes survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.16
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.15 straight to a 1.16 patch is the 1.15 to 1.16 step and the patch
+entries in one roll.
+
+#### 1.16.0 to 1.16.1
+
+- **Persisted format:** unchanged. No proto field, no CRD, no Postgres
+  schema and no snapshot layout differs between the two tags.
+- **Chart:** `images.agentgateway` is 2.6.0 (2.5.0 before), which counts
+  each destination an actor's egress policy refuses on
+  `agentgateway_atenet_egress_refusals_total` on the egress gateway's
+  `stats` port, labeled by the actor (`ate_atespace`, `ate_actor_name`),
+  `scheme`, `host` and `port`. The series are bounded: an actor's
+  destinations beyond 16 read `host="other"`, all series beyond 4096 read
+  `ate_actor_name="other"`, and a series idle for an hour is dropped. The
+  `atenet-egress` PodMonitor already scrapes the port; no value changes.
+- **During the roll:** refusals are counted once the egress gateway runs
+  2.6.0.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
