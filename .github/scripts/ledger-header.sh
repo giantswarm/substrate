@@ -34,7 +34,10 @@
 # `upstream.exit` is set unless the outcome is merged or none. The body
 # keeps a `## History` section and no `- **Status:**`, `- **Upstream:**` or
 # `- **Our commit:**` bullet and no carried-commit table: the header is the
-# only place state lives. No subject is named by two files.
+# only place state lives. No subject is named by two files. The header must
+# also parse as YAML: mikefarah yq v4, preinstalled on the GitHub-hosted
+# Ubuntu runners, reads it, so a quoting mistake the line rules above accept
+# still fails.
 #
 # With --complete, every non-merge commit between the merge base of HEAD and
 # <upstream-ref> (the mirror of upstream `main`) and HEAD whose subject no
@@ -57,6 +60,11 @@ if [ "$#" -gt 0 ]; then
 fi
 if [ ! -d "$dir" ]; then
   echo "$dir: not a directory" >&2
+  exit 64
+fi
+
+if ! command -v yq >/dev/null 2>&1; then
+  echo "yq (mikefarah yq v4) is required to parse the headers" >&2
   exit 64
 fi
 
@@ -177,6 +185,11 @@ for f in "$dir"/*.md; do
   printf '%s\n' "$out" | grep -v -e '^PROBLEMS=' -e '^SUBJECT=' | sed "s|^|$f: |" >&2 || true
   [ -z "$count" ] && count=1
   problems=$((problems + count))
+  if [ "$(head -n 1 "$f")" = --- ] && [ "$(grep -c '^---$' "$f")" -ge 2 ] &&
+    ! err=$(yq --front-matter=extract 'true' "$f" 2>&1 >/dev/null); then
+    echo "$f: header: not valid YAML: $(printf '%s\n' "$err" | sed "s|^Error: bad file '[^']*': ||")" >&2
+    problems=$((problems + 1))
+  fi
 done
 
 # A subject named by two files.

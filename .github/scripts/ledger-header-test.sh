@@ -110,6 +110,7 @@ case_ "a subject named twice" 1 "twice.md" "$(third | sed "s/^id: third-row$/id:
 case_ "no History section" 1 "no-history.md" "$(third | sed 's/^id: third-row$/id: no-history/; /^## History/,$d')" "no ## History section"
 case_ "a Status bullet" 1 "bullet.md" "$(third | sed 's/^id: third-row$/id: bullet/; s/^# A good row$/# A good row\n\n- **Status:** carried/')" "repeats the header"
 case_ "a carried-commit table" 1 "table.md" "$(third | sed 's/^id: third-row$/id: table/; s/^# A good row$/# A good row\n\n| Carried commit (subject) | Why | Upstream |\n|---|---|---|\n| `x` | y | z |/')" "table repeats the header"
+case_ "a subject the YAML quoting ends early" 1 "bad-quote.md" "$(third | sed "s/^id: third-row\$/id: bad-quote/; s/^  - 'fix(x).*/  - 'fix(x): the line's subject'/")" "not valid YAML"
 
 # complete_ <name> <want exit code> <ledger text for a-change.md> <EXEMPT text> [text the output must name]
 complete_() {
