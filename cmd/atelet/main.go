@@ -531,6 +531,9 @@ func (s *AteomHerder) Run(ctx context.Context, req *ateletpb.RunRequest) (resp *
 	}
 
 	s.systemInfoVolumes.Deregister(actorUID)
+	if err := s.unmountLeftoverVolumes(ctx, actorUID, req.GetSpec()); err != nil {
+		return nil, fmt.Errorf("while unmounting leftover volumes: %w", err)
+	}
 	if err := resetActorDirs(actorUID); err != nil {
 		return nil, fmt.Errorf("while resetting actor dirs: %w", err)
 	}
@@ -774,8 +777,16 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRe
 	}
 	dPersist = time.Since(tPersist)
 
+	// The snapshot is persisted. A volume that stays mounted fails no longer:
+	// an error now would crash the actor and drop the snapshot. Its mount
+	// point is left in place, and the actor's next activation or terminate on
+	// this node unmounts it.
 	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
-		return nil, fmt.Errorf("while unmounting external volumes: %w", err)
+		slog.WarnContext(ctx, "Checkpoint persisted with external volumes still mounted", slog.Any("actor", actorRef), slog.String("actorUID", actorUID), slog.Any("err", err))
+		if err := resetActorStateDirs(actorUID); err != nil {
+			return nil, fmt.Errorf("while resetting actor dirs: %w", err)
+		}
+		return &ateletpb.CheckpointResponse{}, nil
 	}
 
 	// Note: we do not crash the actor if resetting the directory fails.
@@ -1144,6 +1155,9 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	// Not crashing the actor, because terminal errors here indicate problems with atelet,
 	// node or the disk itself.
 	s.systemInfoVolumes.Deregister(actorUID)
+	if err := s.unmountLeftoverVolumes(ctx, actorUID, req.GetSpec()); err != nil {
+		return nil, fmt.Errorf("while unmounting leftover volumes: %w", err)
+	}
 	if err := resetActorDirs(actorUID); err != nil {
 		return nil, fmt.Errorf("while resetting actor dirs: %w", err)
 	}
@@ -2012,6 +2026,33 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 // resetActorDirs empties the actor's directories and leaves them in place for
 // its next activation. Use removeActorDirs when the actor will not come back.
 func resetActorDirs(actorUID string) error {
+	if err := resetActorStateDirs(actorUID); err != nil {
+		return err
+	}
+
+	// Do not call RemoveAll on volume directories in case the unmount failed.
+	// We do not want to delete mount content.
+	volumesDir := ateletpath.VolumesDir(actorUID)
+	entries, err := os.ReadDir(volumesDir)
+	if err != nil && !os.IsNotExist(err) {
+		return wrapFileSystemErr("while reading volumes dir", err)
+	}
+	for _, entry := range entries {
+		volPath := filepath.Join(volumesDir, entry.Name())
+		if err := os.Remove(volPath); err != nil {
+			return wrapFileSystemErr("while removing volume dir", err)
+		}
+	}
+	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
+		return wrapFileSystemErr("while creating volumes dir", err)
+	}
+
+	return nil
+}
+
+// resetActorStateDirs is resetActorDirs without the volumes dir: it leaves
+// the mount points of external volumes as they are.
+func resetActorStateDirs(actorUID string) error {
 	// Explicitly leave runsc logs dir untouched.
 
 	// RemoveAllWritable, not os.RemoveAll: the bundle's upper dir can hold
@@ -2034,28 +2075,7 @@ func resetActorDirs(actorUID string) error {
 	}
 	// World-readable (0o755): bind-mounted read-only into the actor, whose
 	// workload reads it through the gofer.
-	if err := resetDir("system-info volume roots dir", ateletpath.SystemInfoVolumeRootsDir(actorUID), os.RemoveAll, 0o755); err != nil {
-		return err
-	}
-
-	// Do not call RemoveAll on volume directories in case the unmount failed.
-	// We do not want to delete mount content.
-	volumesDir := ateletpath.VolumesDir(actorUID)
-	entries, err := os.ReadDir(volumesDir)
-	if err != nil && !os.IsNotExist(err) {
-		return wrapFileSystemErr("while reading volumes dir", err)
-	}
-	for _, entry := range entries {
-		volPath := filepath.Join(volumesDir, entry.Name())
-		if err := os.Remove(volPath); err != nil {
-			return wrapFileSystemErr("while removing volume dir", err)
-		}
-	}
-	if err := os.MkdirAll(volumesDir, 0o755); err != nil {
-		return wrapFileSystemErr("while creating volumes dir", err)
-	}
-
-	return nil
+	return resetDir("system-info volume roots dir", ateletpath.SystemInfoVolumeRootsDir(actorUID), os.RemoveAll, 0o755)
 }
 
 // resetDir empties dir with remove and recreates it with mode. what names the
