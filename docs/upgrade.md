@@ -1279,8 +1279,11 @@ it.
   checkpoint has persisted the snapshot, a shared volume (`READ_WRITE_MANY`
   or `READ_ONLY_MANY`, an existing volume) that still does not unmount no
   longer fails it: the actor is suspended with its snapshot
-  instead of crashed, and the volume's mount point stays on the node until
-  the actor's next activation or terminate there unmounts it. Before, such
+  instead of crashed. atelet keeps unmounting the volume in the background,
+  first after a minute, then with a doubling wait of up to 15 minutes, and
+  removes its mount point once it lets go; a record in the actor's
+  directory resumes that after an atelet restart. The actor's next
+  activation or terminate on the node unmounts it first. Before, such
   an actor went to `CRASHED` and its snapshot was dropped. A
   `READ_WRITE_ONCE` volume that stays mounted still fails the checkpoint:
   the suspend detaches it from the node next.

@@ -331,6 +331,7 @@ func main() {
 		systemInfoVolumes,
 	)
 	go systemInfoVolumes.run(ctx)
+	wmService.resumeLeftoverSweeps(ctx)
 
 	// Pre-download sandbox assets as SandboxConfigs appear/change so the first
 	// Run/Restore on this node hits the cache. Best-effort: on failure the
@@ -484,6 +485,11 @@ type AteomHerder struct {
 	volumePlugins         map[string]volume.VolumePluginWorkerPlane
 	csiDriverConfigGetter csi.CSIDriverConfigGetter
 	systemInfoVolumes     *systemInfoVolumeRefresher
+
+	// sweepMu guards leftoverSweeps, the background sweeps of volumes a
+	// checkpoint left mounted, by actor UID.
+	sweepMu        sync.Mutex
+	leftoverSweeps map[string]*leftoverSweep
 }
 
 var _ ateletpb.AteomHerderServer = (*AteomHerder)(nil)
@@ -779,9 +785,10 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRe
 
 	// The snapshot is persisted. A shared volume that stays mounted fails no
 	// longer: an error now would crash the actor and drop the snapshot. Its
-	// mount point is left in place, and the actor's next activation or
-	// terminate on this node unmounts it. A ReadWriteOnce volume still fails
-	// the checkpoint: the suspend detaches it from the node next.
+	// mount point is left in place and a background sweep keeps unmounting it,
+	// since a suspended actor may never come back to this node. A
+	// ReadWriteOnce volume still fails the checkpoint: the suspend detaches it
+	// from the node next.
 	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
 		if !onlySharedVolumesStayMounted(err) {
 			return nil, fmt.Errorf("while unmounting external volumes: %w", err)
@@ -789,6 +796,9 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *ateletpb.CheckpointRe
 		slog.WarnContext(ctx, "Checkpoint persisted with external volumes still mounted", slog.Any("actor", actorRef), slog.String("actorUID", actorUID), slog.Any("err", err))
 		if err := resetActorStateDirs(actorUID); err != nil {
 			return nil, fmt.Errorf("while resetting actor dirs: %w", err)
+		}
+		if err := s.sweepLeftoverVolumes(ctx, actorUID, leftoverVolumes(actorUID, req.GetSpec(), err)); err != nil {
+			return nil, err
 		}
 		return &ateletpb.CheckpointResponse{}, nil
 	}
@@ -1402,6 +1412,7 @@ func (s *AteomHerder) Terminate(ctx context.Context, req *ateletpb.TerminateRequ
 	s.systemInfoVolumes.Deregister(actorUID)
 
 	// Unmount external volumes
+	s.stopLeftoverSweep(actorUID)
 	if err := s.unmountExternalVolumes(ctx, actorUID, req.GetSpec()); err != nil {
 		return nil, fmt.Errorf("failed to unmount external volumes during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
 	}
