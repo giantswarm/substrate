@@ -6,6 +6,7 @@ category: pin
 status: carried
 commits:
   - 'fix(gvisor): run the 2026-09-09 nightly with the systrap stub race fix'
+  - 'fix(atelet): restore a checkpoint image on the gVisor its snapshot recorded'
 upstream:
   outcome: drops-at-repin
   refs: []
