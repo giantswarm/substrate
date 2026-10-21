@@ -1375,7 +1375,10 @@ it.
   gVisor; for a snapshot of the 2026-09-02 nightly runsc refuses it and the
   actor is crashed with its snapshot kept, so its next resume restores it
   again, on the 2026-09-02 nightly once a 1.17.5 worker takes it. Roll the
-  workers outside busy hours.
+  workers outside busy hours. Each node's atelet downloads and extracts the
+  2026-09-09 nightly once, however many actors need it first, flushing it to
+  disk as it goes; an atelet of `1.17.5-rc.3` or earlier could do it twice at
+  once and be killed at its memory limit.
 - **Migration:** none to run.
 - **Goldens:** taken again (snapshot layout 3), on the 2026-09-09 nightly. A suspend
   retried after its checkpoint completed (its atelet restarted under it) is
