@@ -46,3 +46,5 @@ first that carries both fixes, 27 commits past the 2026-09-02 one, none of them 
 
 not for upstream as such: changes the pinned gVisor nightly only. Upstream kagent-dev/substrate `main` names a later
 nightly (2026-10-17), and the pin falls away at the re-pin onto it.
+
+[#530](https://github.com/giantswarm/substrate/pull/530)
