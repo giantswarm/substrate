@@ -100,6 +100,11 @@ func (r *runsc) createArgs(containerName string, additionalArgs []string, sandbo
 			"-log", sandboxLogPath,
 			"-debug-log", sandboxLogPath,
 			"-debug-command", "boot",
+			// Probe (kagent-upstream#807): trace every signal a sandboxed
+			// process sends, and process exits, into the sandbox log.
+			"-strace",
+			"-strace-syscalls", "kill,tkill,tgkill,rt_sigqueueinfo,rt_tgsigqueueinfo,pidfd_send_signal,exit_group,prctl,execve",
+			"-strace-log-size", "256",
 		)
 	}
 	args = append(args,
