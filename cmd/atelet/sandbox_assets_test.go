@@ -16,15 +16,22 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/klauspost/compress/zstd"
@@ -315,5 +322,85 @@ func TestRestoreRuntime(t *testing.T) {
 				t.Errorf("restoreRuntime() changed the request's record")
 			}
 		})
+	}
+}
+
+// gatedObjectStorage serves data, counting opens; a read blocks until release
+// is closed, so callers that miss the cache together overlap in the fetch.
+type gatedObjectStorage struct {
+	data    []byte
+	opens   *atomic.Int32
+	release chan struct{}
+}
+
+func (g gatedObjectStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	g.opens.Add(1)
+	<-g.release
+	return io.NopCloser(bytes.NewReader(g.data)), nil
+}
+
+func (gatedObjectStorage) PutObject(_ context.Context, _, _ string, _ io.Reader) error { return nil }
+
+// TestEnsureSandboxAssetsSharesGVisorFetch covers two callers that miss the
+// cache for one gVisor release at once: they share one download and extract.
+func TestEnsureSandboxAssetsSharesGVisorFetch(t *testing.T) {
+	origDir := nodepath.StaticFilesDir
+	nodepath.StaticFilesDir = t.TempDir()
+	t.Cleanup(func() { nodepath.StaticFilesDir = origDir })
+
+	var tarball bytes.Buffer
+	zw, _ := zstd.NewWriter(&tarball) // no options, cannot fail
+	tw := tar.NewWriter(zw)
+	runsc := []byte("runsc binary")
+	if err := tw.WriteHeader(&tar.Header{Name: "runsc", Mode: 0o755, Size: int64(len(runsc)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("WriteHeader: %v", err)
+	}
+	if _, err := tw.Write(runsc); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar Close: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zstd Close: %v", err)
+	}
+
+	store := gatedObjectStorage{data: tarball.Bytes(), opens: new(atomic.Int32), release: make(chan struct{})}
+	s := &AteomHerder{anonGCSClient: store}
+	rec := &sandboxAssetsRecord{Assets: map[string]assetEntry{gvisorAssetName: {
+		URL:    "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd",
+		SHA256: fmt.Sprintf("%x", sha256.Sum256(tarball.Bytes())),
+	}}}
+
+	const callers = 2
+	var wg sync.WaitGroup
+	paths := make([]map[string]string, callers)
+	errs := make([]error, callers)
+	for i := range callers {
+		wg.Go(func() { paths[i], errs[i] = s.ensureSandboxAssets(context.Background(), rec) })
+	}
+	// Both callers are past the cache check and the first is in the download
+	// before either finishes; without the single flight each opens the object.
+	time.Sleep(200 * time.Millisecond)
+	close(store.release)
+	wg.Wait()
+
+	for i := range callers {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: ensureSandboxAssets: %v", i, errs[i])
+		}
+		if got, err := os.ReadFile(paths[i][gvisorAssetName]); err != nil || !bytes.Equal(got, runsc) {
+			t.Errorf("caller %d: runsc at %q = %q, %v; want %q", i, paths[i][gvisorAssetName], got, err, runsc)
+		}
+	}
+	if got := store.opens.Load(); got != 1 {
+		t.Errorf("object opened %d times, want 1", got)
+	}
+	entries, err := os.ReadDir(nodepath.StaticFilesDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("static-files dir holds %d entries, want the one release dir: %v", len(entries), entries)
 	}
 }
