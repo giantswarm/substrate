@@ -34,9 +34,16 @@ const (
 	// relative to the snapshot directory.
 	PerVolume int32 = 2
 
+	// GVisorNightly20260909 is PerVolume with the checkpoint image written by
+	// the gVisor nightly of 2026-09-09. runsc restores only its own build's
+	// checkpoint images; a restore runs the build its snapshot recorded, so a
+	// golden taken by an older build is taken again to start new actors on the
+	// newer one.
+	GVisorNightly20260909 int32 = 3
+
 	// Current is the layout the workers write. A change to the files a
-	// checkpoint writes, or to how a restore reads them, adds the next layout
-	// above and makes it Current, which has every golden snapshot in an older
-	// layout taken again.
-	Current = PerVolume
+	// checkpoint writes, to how a restore reads them, or to the gVisor build the
+	// SandboxConfig names adds the next layout above and makes it Current,
+	// which has every golden snapshot in an older layout taken again.
+	Current = GVisorNightly20260909
 )
