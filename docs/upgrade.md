@@ -1340,14 +1340,29 @@ it.
 #### 1.17.3 to 1.17.4
 
 - **Persisted format:** unchanged.
-- **Behavior, worker log:** a gVisor sandbox's own log reaches the worker
-  pod's log, each line labelled with the actor and
-  `ate.actor.container.name: _pause`: a few lines per boot and restore, and
-  what the sentry warns about, such as an application process it ends with
-  SIGKILL after a platform error. Before, runsc sent the sandbox's output to
-  `/dev/null`, and only the killed process's exit status was logged.
+- **Behavior, worker log:** the log of the `runsc create` that boots an
+  actor's sandbox and runsc's fatal errors reach the worker pod's log, each
+  line labelled with the actor and `ate.actor.container.name: _pause`. The
+  sentry's own log does not: runsc's `-log` carries fatal errors only, and
+  the sandbox's stderr stays `/dev/null` (1.17.5 adds the sentry's log).
 - **During the roll:** an actor booted or restored by a 1.17.3 worker logs
   as before until it next boots on a 1.17.4 worker.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.17.4 to 1.17.5
+
+- **Persisted format:** unchanged.
+- **Behavior, worker log:** a gVisor sandbox's own log reaches the worker
+  pod's log under `ate.actor.container.name: _pause`. ateom's create of the
+  pause container passes runsc `-debug-log` on the same pipe as `-log`, with
+  `-debug-command boot`, so runsc donates it to the sandbox's boot process
+  alone. The level stays runsc's default (no `-debug`): a few lines per boot
+  and restore, and what the sentry warns about, such as an application
+  process it ends with SIGKILL after a platform error, and its panics.
+- **During the roll:** an actor booted or restored by a 1.17.4 worker logs
+  as before until it next boots on a 1.17.5 worker.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
