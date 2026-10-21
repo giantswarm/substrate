@@ -1377,7 +1377,10 @@ it.
   again, on the 2026-09-02 nightly once a 1.17.5 worker takes it. Roll the
   workers outside busy hours.
 - **Migration:** none to run.
-- **Goldens:** taken again (snapshot layout 3), on the 2026-09-09 nightly.
+- **Goldens:** taken again (snapshot layout 3), on the 2026-09-09 nightly. A suspend
+  retried after its checkpoint completed (its atelet restarted under it) is
+  answered that checkpoint by ateom instead of crashing the actor, so a
+  retake under the roll does not fail its template.
 - **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE
