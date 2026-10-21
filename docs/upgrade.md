@@ -1363,8 +1363,20 @@ it.
   process it ends with SIGKILL after a platform error, and its panics.
 - **During the roll:** an actor booted or restored by a 1.17.4 worker logs
   as before until it next boots on a 1.17.5 worker.
+- **Behavior, gVisor:** the `gvisor-default` SandboxConfig names the gVisor
+  nightly of 2026-09-09, which carries the systrap fixes for a stub-thread
+  race that killed an application process with `systrap corrupted memory:
+  subprocess died` at a checkpoint or interrupt. runsc restores only its own
+  build's checkpoint images, so a full restore runs the gVisor its snapshot
+  recorded: a conversation suspended on the 2026-09-02 nightly resumes on it
+  and keeps it until it next boots fresh.
+- **During the roll:** a restore on a 1.17.4 worker runs the SandboxConfig's
+  gVisor; for a snapshot of the 2026-09-02 nightly runsc refuses it and the
+  actor is crashed with its snapshot kept, so its next resume restores it
+  again, on the 2026-09-02 nightly once a 1.17.5 worker takes it. Roll the
+  workers outside busy hours.
 - **Migration:** none to run.
-- **Goldens:** kept.
+- **Goldens:** taken again (snapshot layout 3), on the 2026-09-09 nightly.
 - **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE
