@@ -106,6 +106,7 @@ pull_through_mirror() {
   done
   echo "The mirror refused ${image} ${MIRROR_PULL_ATTEMPTS} times; pulling it from Docker Hub..." >&2
   docker pull "${image}"
+  docker tag "${image}" "${name}"
   echo "Pulled ${image} from Docker Hub."
 }
 
