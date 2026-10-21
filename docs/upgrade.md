@@ -1337,6 +1337,21 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.17.3 to 1.17.4
+
+- **Persisted format:** unchanged.
+- **Behavior, worker log:** a gVisor sandbox's own log reaches the worker
+  pod's log, each line labelled with the actor and
+  `ate.actor.container.name: _pause`: a few lines per boot and restore, and
+  what the sentry warns about, such as an application process it ends with
+  SIGKILL after a platform error. Before, runsc sent the sandbox's output to
+  `/dev/null`, and only the killed process's exit status was logged.
+- **During the roll:** an actor booted or restored by a 1.17.3 worker logs
+  as before until it next boots on a 1.17.4 worker.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
