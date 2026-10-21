@@ -17,16 +17,25 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"os"
+	"os/exec"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc/codes"
 
 	"github.com/agent-substrate/substrate/internal/actorlock"
+	"github.com/agent-substrate/substrate/internal/actorlog"
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/ocispec"
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
+	"github.com/agent-substrate/substrate/internal/resources"
 )
 
 var testActorDirs = &ateompb.ActorDirs{
@@ -145,6 +154,90 @@ func TestRestoreArgs(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("restoreArgs() = %v, want %v", got, want)
 	}
+}
+
+func TestCreateArgs(t *testing.T) {
+	r := &runsc{
+		path:      "/usr/bin/runsc",
+		actorUID:  "test-actor-123",
+		actorDirs: testActorDirs,
+	}
+	create := []string{
+		"-root", "/node/actors/test-actor-123/runsc-state",
+		"--cpu-num-from-quota",
+		"create",
+		"-bundle", "/node/actors/test-actor-123/bundle/" + ocispec.PauseContainer,
+		"-pid-file", "/node/actors/test-actor-123/pidfiles/" + ocispec.PauseContainer + ".pid",
+		ocispec.PauseContainer,
+	}
+
+	for _, tc := range []struct {
+		name       string
+		sandboxLog bool
+		want       []string
+	}{
+		{
+			name: "without a sandbox log",
+			want: append([]string{"-log-format", "json", "--alsologtostderr"}, create...),
+		},
+		{
+			name:       "with a sandbox log",
+			sandboxLog: true,
+			want:       append([]string{"-log-format", "json", "--alsologtostderr", "-log", "/proc/self/fd/3"}, create...),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := r.createArgs(ocispec.PauseContainer, nil, tc.sandboxLog); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("createArgs() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSandboxLogReachesTheActorLog proves the path runsc is told to log to:
+// what a command writes to sandboxLogPath, given the sandbox log pipe as its
+// first extra file, is logged as the actor's pause container.
+func TestSandboxLogReachesTheActorLog(t *testing.T) {
+	var out bytes.Buffer
+	done := make(chan struct{})
+	logger := actorlog.NewActorLogger(actorlog.NewSyncedWriter(&notifyWriter{w: &out, done: done}), false)
+	s := &AteomService{actorLogger: logger}
+	sandboxLog, err := s.startSandboxLog(resources.ActorAttribution{Ref: resources.ActorRef{Atespace: "default", Name: "actor-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", `echo '{"level":"warning","msg":"Unexpected SwitchToApp error"}' >>`+sandboxLogPath)
+	cmd.ExtraFiles = []*os.File{sandboxLog}
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("write to %s: %v", sandboxLogPath, err)
+	}
+	if err := sandboxLog.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the sandbox log line was not logged")
+	}
+	got := out.String()
+	for _, want := range []string{`"msg":"Unexpected SwitchToApp error"`, `"ate.actor.container.name":"` + ocispec.PauseContainer + `"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("actor log %q does not contain %s", got, want)
+		}
+	}
+}
+
+// notifyWriter closes done after its first write.
+type notifyWriter struct {
+	w    io.Writer
+	done chan struct{}
+	once sync.Once
+}
+
+func (n *notifyWriter) Write(p []byte) (int, error) {
+	written, err := n.w.Write(p)
+	n.once.Do(func() { close(n.done) })
+	return written, err
 }
 
 func TestRestoreWorkloadRejectsEmptyRestoreDir(t *testing.T) {
