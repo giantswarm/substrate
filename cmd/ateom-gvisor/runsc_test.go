@@ -183,7 +183,8 @@ func TestCreateArgs(t *testing.T) {
 		{
 			name:       "with a sandbox log",
 			sandboxLog: true,
-			want:       append([]string{"-log-format", "json", "--alsologtostderr", "-log", "/proc/self/fd/3"}, create...),
+			want: append([]string{"-log-format", "json", "--alsologtostderr",
+				"-log", "/proc/self/fd/3", "-debug-log", "/proc/self/fd/3", "-debug-command", "boot"}, create...),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

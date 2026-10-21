@@ -6,6 +6,7 @@ category: bugfix
 status: carried
 commits:
   - 'fix(ateom): keep the gVisor sandbox''s own log in the actor''s log'
+  - 'fix(ateom): give the gVisor sandbox''s boot process the debug log'
 upstream:
   outcome: to-file
   refs: []
@@ -18,10 +19,14 @@ verified: 2026-10-21
 ## Change
 
 ateom-gvisor's create of an actor's pause container, which boots the sandbox, passes runsc a log pipe as its first
-extra file and points `-log` at it (`/proc/self/fd/3`). runsc donates that log to the sandbox it boots, which keeps it
-until it exits; ateom writes every line it reads to the actor's log under the pause container's name
-(`ate.actor.container.name: _pause`), as it does for an application container's output. The sentry logs at its
-default level: a few lines per boot and restore, and what it warns about.
+extra file and points both `-log` and `-debug-log` at it (`/proc/self/fd/3`), with `-debug-command boot`. `-log`
+carries runsc's fatal errors; the debug log is what runsc donates to the sandbox's boot process, and `-debug-command
+boot` keeps it to that process, which keeps it until it exits (and dups it onto its stderr, so a sentry panic lands there
+too). ateom writes every line it reads to the actor's log under the pause container's name
+(`ate.actor.container.name: _pause`), as it does for an application container's output. The level stays runsc's
+default (no `-debug`): a few lines per boot and restore, and what the sentry warns about. `-log` alone, the first
+commit, reached only the create command's own log and fatal errors: runsc gives the boot process `--log-fd` as its
+fatal-error writer and sends its log to the debug log or nowhere.
 
 ## Reason
 
