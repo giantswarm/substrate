@@ -1,6 +1,6 @@
 module github.com/agent-substrate/substrate/tools/apitool
 
-go 1.27.2
+go 1.27.3
 
 replace github.com/agent-substrate/substrate => ../..
 
