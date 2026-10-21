@@ -81,18 +81,26 @@ func (r *runsc) shapeSpec(containerName string) error {
 const sandboxLogPath = "/proc/self/fd/3"
 
 // createArgs builds the argv for `runsc create <container>`. With sandboxLog,
-// runsc logs to the file a create passes as its first extra file, and so does
-// the sandbox the pause container's create boots: without a log file runsc
-// connects the sandbox's own output to /dev/null, which drops what the sentry
-// warns about, such as an application process it kills. Factored out so the
-// argument construction can be unit-tested without executing runsc.
+// runsc writes its fatal errors to the file a create passes as its first extra
+// file (`-log`), and the sandbox the pause container's create boots writes its
+// log there (`-debug-log`, which runsc donates to the boot process alone with
+// `-debug-command boot`): the sandbox's stderr is /dev/null and `-log` carries
+// only fatal errors, so without the debug log what the sentry warns about, such
+// as an application process it kills, is dropped. The level stays the default,
+// so the sentry logs a few lines per boot and restore and its warnings.
+// Factored out so the argument construction can be unit-tested without
+// executing runsc.
 func (r *runsc) createArgs(containerName string, additionalArgs []string, sandboxLog bool) []string {
 	args := []string{
 		"-log-format", "json",
 		"--alsologtostderr",
 	}
 	if sandboxLog {
-		args = append(args, "-log", sandboxLogPath)
+		args = append(args,
+			"-log", sandboxLogPath,
+			"-debug-log", sandboxLogPath,
+			"-debug-command", "boot",
+		)
 	}
 	args = append(args,
 		// "-debug",
