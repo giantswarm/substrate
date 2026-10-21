@@ -239,11 +239,14 @@ func TestRecordFromRequest(t *testing.T) {
 }
 
 // TestRestoreRuntime proves a restore that loads a checkpoint image runs the
-// gVisor its snapshot was captured with, and every other restore the
-// request's: runsc refuses a checkpoint image another build wrote.
+// gVisor its snapshot was captured with when that build is trusted, and every
+// other restore the request's: runsc refuses a checkpoint image another build
+// wrote, and the snapshot store never picks a binary the host runs.
 func TestRestoreRuntime(t *testing.T) {
 	newer := map[string]assetEntry{gvisorAssetName: {URL: "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd", SHA256: "newer"}}
-	older := map[string]assetEntry{gvisorAssetName: {URL: "gs://gvisor/releases/nightly/2026-09-02/x86_64/gvisor.tar.zstd", SHA256: "older"}}
+	older := map[string]assetEntry{gvisorAssetName: retainedSandboxAssets[0]}
+	forged := map[string]assetEntry{gvisorAssetName: {URL: retainedSandboxAssets[0].URL, SHA256: "forged"}}
+	elsewhere := map[string]assetEntry{gvisorAssetName: {URL: "https://example.com/gvisor.tar.zstd", SHA256: retainedSandboxAssets[0].SHA256}}
 	requested := &sandboxAssetsRecord{SandboxClass: "gvisor", PauseImage: "pause@sha256:requested", Assets: newer}
 
 	for _, tc := range []struct {
@@ -272,6 +275,24 @@ func TestRestoreRuntime(t *testing.T) {
 		{
 			name:     "a snapshot without recorded assets runs the request's",
 			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor"},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "the request's own build is trusted",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: newer},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a recorded build with another sha256 runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: forged},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a recorded build at another URL runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: elsewhere},
 			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
 			want:     newer,
 		},

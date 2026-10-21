@@ -136,22 +136,48 @@ func recordFromRequest(sa *ateletpb.SandboxAssets) (*sandboxAssetsRecord, error)
 	return rec, nil
 }
 
+// retainedSandboxAssets are the sandbox builds a SandboxConfig named before its
+// current one, kept so a snapshot they captured still restores (restoreRuntime).
+// A snapshot manifest comes from the snapshot store, so its recorded asset set
+// is run only when every entry is one of these or the request's: the store
+// never chooses a binary the atelet runs on the host.
+var retainedSandboxAssets = []assetEntry{
+	{URL: "gs://gvisor/releases/nightly/2026-09-02/x86_64/gvisor.tar.zstd", SHA256: "d547d81401461fd1c679c5c4fa0a6c2b8ef7dc3c22ce23c9e25dcc4c69cfd06f"},
+	{URL: "gs://gvisor/releases/nightly/2026-09-02/aarch64/gvisor.tar.zstd", SHA256: "a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df"},
+}
+
 // restoreRuntime returns the sandbox a restore runs: the request's, with the
 // sandbox binaries the snapshot recorded when the restore loads the snapshot's
-// checkpoint image (any scope but data, which boots the workload fresh) and the
-// snapshot is of the same sandbox class. runsc refuses a checkpoint image
-// another build wrote, so a SandboxConfig that names a newer gVisor still
-// resumes every snapshot taken before it, and the restored actor's later
-// checkpoints keep that gVisor; the template's golden moves to the newer one
-// when it is taken again.
+// checkpoint image (any scope but data, which boots the workload fresh), the
+// snapshot is of the same sandbox class, and each recorded binary is the
+// request's or a retained build (retainedSandboxAssets). runsc refuses a
+// checkpoint image another build wrote, so a SandboxConfig that names a newer
+// gVisor still resumes every snapshot taken before it, and the restored actor's
+// later checkpoints keep that gVisor; the template's golden moves to the newer
+// one when it is taken again.
 func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.SnapshotScope) *sandboxAssetsRecord {
 	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || len(snapshot.Assets) == 0 ||
-		snapshot.SandboxClass != requested.SandboxClass {
+		snapshot.SandboxClass != requested.SandboxClass || !trustedAssets(snapshot.Assets, requested.Assets) {
 		return requested
 	}
 	rec := *requested
 	rec.Assets = snapshot.Assets
 	return &rec
+}
+
+// trustedAssets reports whether every asset is one of the requested ones or a
+// retained build, by URL and sha256 both.
+func trustedAssets(assets, requested map[string]assetEntry) bool {
+	trusted := slices.Clone(retainedSandboxAssets)
+	for _, r := range requested {
+		trusted = append(trusted, r)
+	}
+	for _, a := range assets {
+		if !slices.Contains(trusted, a) {
+			return false
+		}
+	}
+	return true
 }
 
 // checkPauseImage requires a pause image for gVisor, the only sandbox class
