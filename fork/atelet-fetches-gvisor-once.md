@@ -35,6 +35,8 @@ calls.
 
 ## History
 
-not opened yet: the change is self-contained in atelet and applies to upstream as is.
+not opened yet: the upstream-ready change is on the branch `upstream/atelet-gvisor-extract-memory` (`429a9340`, mirror
+`main` @ `e2fc0fa9`, DCO-signed): the `fsync`s and the zstd decoder options only. `main` already fetches each asset once
+at a time through its `filecache.Store` single flight, so the branch carries no single flight of its own.
 
 [#533](https://github.com/giantswarm/substrate/pull/533), for [#532](https://github.com/giantswarm/substrate/issues/532)
