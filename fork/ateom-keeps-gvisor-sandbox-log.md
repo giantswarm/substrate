@@ -42,4 +42,4 @@ into the application), and that warning is what this log now carries, so the nex
 not opened yet: the upstream-ready change is on the branch `upstream/ateom-sandbox-log` (`65b4a56d`, the pin
 v0.5.0-alpha2, DCO-signed; there `StartJSONLogPipe` keeps no output tail).
 
-[#525](https://github.com/giantswarm/substrate/pull/525)
+[#525](https://github.com/giantswarm/substrate/pull/525), [#529](https://github.com/giantswarm/substrate/pull/529)
