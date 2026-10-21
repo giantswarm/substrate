@@ -26,3 +26,5 @@ GO-2026-6809, a vulnerability in `crypto/x509` of Go below 1.27.3, reached from 
 ## History
 
 not for upstream as such: changes the Go version only and falls away at the re-pin onto the first upstream commit that requires Go 1.27.3 or later
+
+[#527](https://github.com/giantswarm/substrate/pull/527)
