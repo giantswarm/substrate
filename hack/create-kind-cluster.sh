@@ -34,6 +34,9 @@ if [[ $# -gt 0 ]]; then
       echo "  DOCKER_HUB_MIRROR  URL of a pull-through cache of Docker Hub, e.g. https://mirror.gcr.io: the registry,"
       echo "                     the KVM probe and the node image are pulled through it, and the nodes' containerd"
       echo "                     resolves docker.io through it (default: none, every pull goes to Docker Hub)."
+      echo "                     A refused pull is retried, then the image comes from Docker Hub."
+      echo "  MIRROR_PULL_ATTEMPTS  Pulls through the mirror per image before Docker Hub (default: 5)."
+      echo "  MIRROR_PULL_BACKOFF   Seconds before the first retry, doubling after each (default: 10)."
       echo "  KIND_NODE_IMAGE    The node image kind runs (default: kind's own)."
       exit 0
       ;;
@@ -73,6 +76,11 @@ kind_default_node_image() {
 
 # Pulls one Docker Hub image through the mirror and tags it under its Docker
 # Hub name. A digest pins the pull; the local tag is the name in front of it.
+# The mirror's per-minute quota is shared, so a refused pull is retried with
+# backoff (MIRROR_PULL_ATTEMPTS, first wait MIRROR_PULL_BACKOFF seconds,
+# doubling); when the mirror still refuses, the image comes from Docker Hub.
+MIRROR_PULL_ATTEMPTS="${MIRROR_PULL_ATTEMPTS:-5}"
+MIRROR_PULL_BACKOFF="${MIRROR_PULL_BACKOFF:-10}"
 pull_through_mirror() {
   local image="$1" name="${1%%@*}" digest="" path
   if [[ "${image}" == *@* ]]; then
@@ -83,8 +91,22 @@ pull_through_mirror() {
     path="library/${path}"
   fi
   local mirrored="${DOCKER_HUB_MIRROR#https://}/${path}${digest:+@${digest}}"
-  docker pull "${mirrored}"
-  docker tag "${mirrored}" "${name}"
+  local attempt wait="${MIRROR_PULL_BACKOFF}"
+  for ((attempt = 1; attempt <= MIRROR_PULL_ATTEMPTS; attempt++)); do
+    if docker pull "${mirrored}"; then
+      docker tag "${mirrored}" "${name}"
+      echo "Pulled ${image} from ${DOCKER_HUB_MIRROR} (attempt ${attempt})."
+      return 0
+    fi
+    if ((attempt < MIRROR_PULL_ATTEMPTS)); then
+      echo "Pull of ${mirrored} failed (attempt ${attempt}/${MIRROR_PULL_ATTEMPTS}); retrying in ${wait}s..." >&2
+      sleep "${wait}"
+      wait=$((wait * 2))
+    fi
+  done
+  echo "The mirror refused ${image} ${MIRROR_PULL_ATTEMPTS} times; pulling it from Docker Hub..." >&2
+  docker pull "${image}"
+  echo "Pulled ${image} from Docker Hub."
 }
 
 node_image="${KIND_NODE_IMAGE}"
