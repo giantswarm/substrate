@@ -86,6 +86,11 @@ func ValidateReportActorExitRequest(ctx context.Context, req *ateapipb.ReportAct
 	return Validate_ReportActorExitRequest(ctx, op, nil, req, nil)
 }
 
+func ValidateListGoneActorsRequest(ctx context.Context, req *ateapipb.ListGoneActorsRequest) field.ErrorList {
+	op := operation.Operation{Type: operation.Create}
+	return Validate_ListGoneActorsRequest(ctx, op, nil, req, nil)
+}
+
 // validateWorkerUpdate validates a Worker against the previous stored value.
 // It is what enforces the immutable fields, which need an old value to compare
 // against.

@@ -99,6 +99,18 @@ func (p *Persistence) GetActor(ctx context.Context, actorRef resources.ActorRef)
 	return out, nil
 }
 
+func (p *Persistence) ListExistingActorUIDs(ctx context.Context, actorUIDs []string) ([]string, error) {
+	rows, err := p.pool.Query(ctx, `SELECT uid FROM actors WHERE uid = ANY($1)`, actorUIDs)
+	if err != nil {
+		return nil, fmt.Errorf("listing existing actor uids: %w", err)
+	}
+	existing, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("listing existing actor uids: %w", err)
+	}
+	return existing, nil
+}
+
 func (p *Persistence) UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(*ateapipb.Actor) error) (*ateapipb.Actor, error) {
 	if err := precondition.Validate(); err != nil {
 		return nil, err

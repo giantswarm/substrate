@@ -1309,6 +1309,23 @@ it.
   directory, and reclaims the rest of the actor's directory.
 - **During the roll:** a terminate on a node that still runs the 1.17.2
   atelet behaves as before.
+- **Behavior, actor directories:** atelet removes the directories under
+  `/var/lib/ate/actors` of actors the control plane no longer has: at
+  start, then every `--actor-dir-gc-period` (default `10m`, `0` disables
+  it). Before, only a terminate removed one, and an actor deleted while it
+  had no node (suspended, its snapshot in the store) left its directory on
+  the node it last ran on for good. atelet asks the new
+  `WorkerService.ListGoneActors` which of its directories' actors are gone
+  and removes only those, the way a terminate does, logging each directory
+  it removes; an actor in any state keeps its directory, and a call that
+  fails removes nothing. A directory whose leftover volumes are still being
+  swept is left for a later pass; a volume directory that still holds a
+  mount is left in place as at terminate, and logged again at every pass.
+  `--actor-dir-gc-dry-run` (through `atelet.extraArgs`) logs the
+  directories without removing them.
+- **During the roll, actor directories:** an atelet of 1.17.3 asking an
+  ate-api-server of 1.17.2 is answered `Unimplemented` and removes nothing
+  until the server rolls.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
