@@ -75,16 +75,25 @@ func (r *runsc) shapeSpec(containerName string) error {
 	return ocispec.Save(bundle, spec)
 }
 
-func (r *runsc) cmdCreate(ctx context.Context, out io.Writer, containerName string, additionalArgs []string) error {
-	slog.InfoContext(ctx, "About to run runsc create", slog.String("container", containerName))
+// sandboxLogPath is where runsc finds the sandbox log a create passes it: the
+// command's first extra file.
+const sandboxLogPath = "/proc/self/fd/3"
 
-	if err := r.shapeSpec(containerName); err != nil {
-		return fmt.Errorf("while shaping the OCI spec for %q: %w", containerName, err)
-	}
-
+// createArgs builds the argv for `runsc create <container>`. With sandboxLog,
+// runsc logs to the file a create passes as its first extra file, and so does
+// the sandbox the pause container's create boots: without a log file runsc
+// connects the sandbox's own output to /dev/null, which drops what the sentry
+// warns about, such as an application process it kills. Factored out so the
+// argument construction can be unit-tested without executing runsc.
+func (r *runsc) createArgs(containerName string, additionalArgs []string, sandboxLog bool) []string {
 	args := []string{
 		"-log-format", "json",
 		"--alsologtostderr",
+	}
+	if sandboxLog {
+		args = append(args, "-log", sandboxLogPath)
+	}
+	args = append(args,
 		// "-debug",
 		// "-debug-log", filepath.Join(r.actorDirs.GetRootDir(), "runsc-debug-logs", containerName) + "/",
 		// "-debug-to-user-log",
@@ -95,20 +104,31 @@ func (r *runsc) cmdCreate(ctx context.Context, out io.Writer, containerName stri
 		// sizing.ApplyToOCISpec, so the sandbox is sized to the pod's limit (runsc
 		// otherwise sizes to all host CPUs). Global flag: before the subcommand.
 		"--cpu-num-from-quota",
-	}
-	args = append(args,
 		"create",
 		"-bundle", ociBundlePath(r.actorDirs, containerName),
 		"-pid-file", pidFilePath(r.actorDirs, containerName),
 	)
-
 	args = append(args, additionalArgs...)
-	args = append(args, containerName) // Name of the container
+	return append(args, containerName) // Name of the container
+}
+
+// cmdCreate creates containerName. A non-nil sandboxLog receives runsc's log
+// and, for the pause container, the log of the sandbox its create boots.
+func (r *runsc) cmdCreate(ctx context.Context, out io.Writer, containerName string, additionalArgs []string, sandboxLog *os.File) error {
+	slog.InfoContext(ctx, "About to run runsc create", slog.String("container", containerName))
+
+	if err := r.shapeSpec(containerName); err != nil {
+		return fmt.Errorf("while shaping the OCI spec for %q: %w", containerName, err)
+	}
+
 	cmd := exec.CommandContext(
 		ctx,
 		r.path,
-		args...,
+		r.createArgs(containerName, additionalArgs, sandboxLog != nil)...,
 	)
+	if sandboxLog != nil {
+		cmd.ExtraFiles = []*os.File{sandboxLog}
+	}
 	cmd.Stdout = out
 	cmd.Stderr = out
 
