@@ -39,7 +39,7 @@ into the application), and that warning is what this log now carries, so the nex
 
 ## History
 
-not opened yet: the upstream-ready change is on the branch `upstream/ateom-sandbox-log` (`65b4a56d`, the pin
+not opened yet: the upstream-ready change is on the branch `upstream/ateom-sandbox-debug-log` (`b64df5fb`, both commits in one, the pin
 v0.5.0-alpha2, DCO-signed; there `StartJSONLogPipe` keeps no output tail).
 
 [#525](https://github.com/giantswarm/substrate/pull/525), [#529](https://github.com/giantswarm/substrate/pull/529)
