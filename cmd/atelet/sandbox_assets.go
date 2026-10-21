@@ -440,6 +440,9 @@ func (s *Atelet) downloadAnonymous(ctx context.Context, entry assetEntry, shown,
 	if got := hasher.Sum(nil); !bytes.Equal(got, wantSum) {
 		return fmt.Errorf("asset %v sha256 mismatch; got=%x want=%x", shown, got, wantSum)
 	}
+	if err := out.Sync(); err != nil { // reclaimable pages, durable before a rename
+		return wrapFileSystemErr("while syncing temp file", err)
+	}
 	if err := out.Close(); err != nil { // flush before the caller reads/renames
 		return wrapFileSystemErr("while closing temp file", err)
 	}
@@ -585,7 +588,10 @@ func extractTarArchive(ctx context.Context, tarPath, urlPath, destDir string) er
 	} else if isBz {
 		r = bzip2.NewReader(buf)
 	} else if isZst {
-		zr, err := zstd.NewReader(buf)
+		// One decoder goroutine and low-memory buffers: the extract is IO-bound
+		// and runs once per release per node, so it costs atelet little time and
+		// keeps it well under its memory limit.
+		zr, err := zstd.NewReader(buf, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
 		if err != nil {
 			return fmt.Errorf("failed to create zstd reader for %s: %w", urlPath, err)
 		}
@@ -654,6 +660,13 @@ func writeTarFile(dest string, r io.Reader, mode fs.FileMode) error {
 	}
 	if err := out.Chmod(mode); err != nil {
 		return wrapFileSystemErr("while setting tarball file mode", err)
+	}
+	// Flushed pages are reclaimable: a gVisor release writes hundreds of MiB,
+	// which as dirty page cache count against atelet's memory limit. It also
+	// keeps a crash from leaving a truncated binary behind the release's
+	// publish into the cache.
+	if err := out.Sync(); err != nil {
+		return wrapFileSystemErr("while syncing tarball file", err)
 	}
 	if err := out.Close(); err != nil {
 		return wrapFileSystemErr("while closing tarball file", err)
