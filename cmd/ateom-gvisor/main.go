@@ -376,6 +376,10 @@ type AteomService struct {
 	// deactivateActor overrides tunnel.Deactivate when set, for the sandbox
 	// watch's tests. nil means the tunnel.
 	deactivateActor func(ctx context.Context, attribution resources.ActorAttribution) error
+
+	// checkpointed answers a full checkpoint repeated by a caller that lost
+	// the first one's answer.
+	checkpointed checkpointedActors
 }
 
 var _ ateompb.AteomServer = (*AteomService)(nil)
@@ -613,6 +617,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	release, err := s.beginRPC(req.GetActorUid(), rpcRunWorkload, cancel)
@@ -772,6 +777,16 @@ func (s *AteomService) CheckpointWorkload(ctx context.Context, req *ateompb.Chec
 	// Not cancelable: a checkpoint is saving the actor's state.
 	defer s.inFlight.Add(req.GetActorUid(), rpcCheckpointWorkload, nil)()
 
+	// A full checkpoint stops the sandbox: one repeated after it, by a caller
+	// that lost its answer, is answered the checkpoint already taken.
+	if req.GetScope() == ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL && s.lookupActor(req.GetActorUid()) == nil {
+		if resp, ok := s.checkpointed.repeat(req.GetActorUid(), req.GetActorDirs().GetCheckpointDir()); ok {
+			slog.InfoContext(ctx, "Answering a repeated checkpoint with the one already taken",
+				slog.String("actorUID", req.GetActorUid()))
+			return resp, nil
+		}
+	}
+
 	if err := s.tunnel.Deactivate(ctx, ateomstats.ActorAttributionFromRequest(req)); err != nil {
 		return nil, err
 	}
@@ -864,7 +879,11 @@ func (s *AteomService) CheckpointWorkload(ctx context.Context, req *ateompb.Chec
 
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor checkpointed", attribution)
 
-	return &ateompb.CheckpointWorkloadResponse{SnapshotFiles: snapshotFiles, DataSnapshotFiles: durableFiles}, nil
+	resp := &ateompb.CheckpointWorkloadResponse{SnapshotFiles: snapshotFiles, DataSnapshotFiles: durableFiles}
+	if req.GetScope() == ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL {
+		s.checkpointed.record(req.GetActorUid(), checkpointPath, resp)
+	}
+	return resp, nil
 }
 
 // listSnapshotFiles returns the (relative) names of regular files directly under
@@ -952,6 +971,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	release, err := s.beginRPC(req.GetActorUid(), rpcRestoreWorkload, cancel)
@@ -1128,6 +1148,7 @@ func (s *AteomService) TerminateWorkload(ctx context.Context, req *ateompb.Termi
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 
 	attribution := ateomstats.ActorAttributionFromRequest(req)
 
