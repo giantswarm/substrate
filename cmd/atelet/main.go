@@ -69,6 +69,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -497,6 +498,10 @@ type AteomHerder struct {
 	// checkpoint left mounted, by actor UID.
 	sweepMu        sync.Mutex
 	leftoverSweeps map[string]*leftoverSweep
+
+	// assetFetches makes concurrent cache misses of one sandbox asset share a
+	// single download (and, for a gVisor release, a single extract).
+	assetFetches singleflight.Group
 }
 
 var _ ateletpb.AteomHerderServer = (*AteomHerder)(nil)
