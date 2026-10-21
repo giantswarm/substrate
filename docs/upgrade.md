@@ -1368,7 +1368,8 @@ it.
   race that killed an application process with `systrap corrupted memory:
   subprocess died` at a checkpoint or interrupt. runsc restores only its own
   build's checkpoint images, so a full restore runs the gVisor its snapshot
-  recorded: a conversation suspended on the 2026-09-02 nightly resumes on it
+  recorded when that is the SandboxConfig's or the retained 2026-09-02
+  build (URL and sha256 both, compiled into the atelet): a conversation suspended on the 2026-09-02 nightly resumes on it
   and keeps it until it next boots fresh.
 - **During the roll:** a restore on a 1.17.4 worker runs the SandboxConfig's
   gVisor; for a snapshot of the 2026-09-02 nightly runsc refuses it and the

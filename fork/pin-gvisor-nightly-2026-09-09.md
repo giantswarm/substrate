@@ -7,6 +7,7 @@ status: carried
 commits:
   - 'fix(gvisor): run the 2026-09-09 nightly with the systrap stub race fix'
   - 'fix(atelet): restore a checkpoint image on the gVisor its snapshot recorded'
+  - 'fix(atelet): run a recorded gVisor only if it is a trusted build'
 upstream:
   outcome: drops-at-repin
   refs: []
@@ -23,8 +24,9 @@ The `gvisor-default` SandboxConfig (`charts/substrate/templates/sandboxconfig-gv
 2026-09-09 (`release-20260831.0-24-g7c6199801fd2`), with its tarball's sha256 per architecture, in place of the nightly
 of 2026-09-02 (`release-20260824.0-120-g727c8c389c36`). runsc refuses a checkpoint image another build wrote, so the
 atelet's `restoreRuntime` (`cmd/atelet/sandbox_assets.go`) runs a restore that loads a checkpoint image (every scope but
-data) on the gVisor asset set its snapshot manifest recorded, not the SandboxConfig's: a conversation suspended on the
-2026-09-02 nightly resumes on it. `internal/snapshotlayout` adds layout 3 (`GVisorNightly20260909`) as `Current`, so
+data) on the gVisor asset set its snapshot manifest recorded, not the SandboxConfig's, when every recorded asset is the
+request's or a retained build (`retainedSandboxAssets`: the 2026-09-02 nightly, by URL and sha256), so the snapshot
+store never picks a binary the host runs: a conversation suspended on the 2026-09-02 nightly resumes on it. `internal/snapshotlayout` adds layout 3 (`GVisorNightly20260909`) as `Current`, so
 every golden is taken again and new actors start on the new nightly.
 
 ## Reason
