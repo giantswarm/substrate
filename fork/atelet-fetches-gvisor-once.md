@@ -37,4 +37,4 @@ calls.
 
 not opened yet: the change is self-contained in atelet and applies to upstream as is.
 
-[#532](https://github.com/giantswarm/substrate/issues/532)
+[#533](https://github.com/giantswarm/substrate/pull/533), for [#532](https://github.com/giantswarm/substrate/issues/532)
