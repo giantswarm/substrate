@@ -136,6 +136,24 @@ func recordFromRequest(sa *ateletpb.SandboxAssets) (*sandboxAssetsRecord, error)
 	return rec, nil
 }
 
+// restoreRuntime returns the sandbox a restore runs: the request's, with the
+// sandbox binaries the snapshot recorded when the restore loads the snapshot's
+// checkpoint image (any scope but data, which boots the workload fresh) and the
+// snapshot is of the same sandbox class. runsc refuses a checkpoint image
+// another build wrote, so a SandboxConfig that names a newer gVisor still
+// resumes every snapshot taken before it, and the restored actor's later
+// checkpoints keep that gVisor; the template's golden moves to the newer one
+// when it is taken again.
+func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.SnapshotScope) *sandboxAssetsRecord {
+	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || len(snapshot.Assets) == 0 ||
+		snapshot.SandboxClass != requested.SandboxClass {
+		return requested
+	}
+	rec := *requested
+	rec.Assets = snapshot.Assets
+	return &rec
+}
+
 // checkPauseImage requires a pause image for gVisor, the only sandbox class
 // that runs a pause container.
 func checkPauseImage(sandboxClass, pauseImage string) error {

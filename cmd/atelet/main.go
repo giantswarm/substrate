@@ -1130,8 +1130,9 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 
 	// The sandbox (binaries + pause image) that runs the restored workload
 	// comes from the request, resolved by the control plane from the
-	// ActorTemplate's SandboxConfig. The snapshot manifests only supply the
-	// files to restore and the actor identity. Resolved before any on-node
+	// ActorTemplate's SandboxConfig, except the binaries of a restore that
+	// loads a checkpoint image (restoreRuntime). The snapshot manifests supply
+	// the files to restore and the actor identity. Resolved before any on-node
 	// work so an invalid request changes nothing.
 	runtimeRec, err := recordFromRequest(req.GetSandboxAssets())
 	if err != nil {
@@ -1242,6 +1243,10 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	// The manifest is what tells a golden restore from a latest one, so the
 	// snapshot kind only becomes knowable here.
 	op.kind = restoreSnapshotKind(req, sandboxRec)
+
+	// runsc refuses a checkpoint image another build wrote, so a restore that
+	// loads one runs the sandbox binaries the snapshot was captured with.
+	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, req.GetScope())
 
 	var registration *registeredActor
 	// Undo the Register if the restore fails. The errgroup join below happens

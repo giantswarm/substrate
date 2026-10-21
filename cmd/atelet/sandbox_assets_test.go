@@ -237,3 +237,62 @@ func TestRecordFromRequest(t *testing.T) {
 		})
 	}
 }
+
+// TestRestoreRuntime proves a restore that loads a checkpoint image runs the
+// gVisor its snapshot was captured with, and every other restore the
+// request's: runsc refuses a checkpoint image another build wrote.
+func TestRestoreRuntime(t *testing.T) {
+	newer := map[string]assetEntry{gvisorAssetName: {URL: "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd", SHA256: "newer"}}
+	older := map[string]assetEntry{gvisorAssetName: {URL: "gs://gvisor/releases/nightly/2026-09-02/x86_64/gvisor.tar.zstd", SHA256: "older"}}
+	requested := &sandboxAssetsRecord{SandboxClass: "gvisor", PauseImage: "pause@sha256:requested", Assets: newer}
+
+	for _, tc := range []struct {
+		name     string
+		snapshot *sandboxAssetsRecord
+		scope    ateletpb.SnapshotScope
+		want     map[string]assetEntry
+	}{
+		{
+			name:     "full scope runs the snapshot's gVisor",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     older,
+		},
+		{
+			name:     "unspecified scope is a full restore",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			want:     older,
+		},
+		{
+			name:     "data scope boots fresh on the request's gVisor",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA,
+			want:     newer,
+		},
+		{
+			name:     "a snapshot without recorded assets runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor"},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a snapshot of another sandbox class runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "microvm", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := restoreRuntime(requested, tc.snapshot, tc.scope)
+			if diff := cmp.Diff(tc.want, got.Assets); diff != "" {
+				t.Errorf("restoreRuntime() assets (-want +got):\n%s", diff)
+			}
+			if got.PauseImage != requested.PauseImage || got.SandboxClass != requested.SandboxClass {
+				t.Errorf("restoreRuntime() = %+v, want the request's pause image and class", got)
+			}
+			if requested.Assets[gvisorAssetName].SHA256 != "newer" {
+				t.Errorf("restoreRuntime() changed the request's record")
+			}
+		})
+	}
+}
