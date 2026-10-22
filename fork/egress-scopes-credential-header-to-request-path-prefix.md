@@ -9,11 +9,11 @@ commits:
   - 'feat(ateapi): name the credential path prefix in the egress contract'
   - 'test(egress): prove a path-scoped credential cannot escape its prefix'
 upstream:
-  outcome: open
+  outcome: fork-only
   refs: [agent-substrate/substrate#2515, agent-substrate/substrate#2541]
-  exit: as#2541 decision
+  exit: "agent-substrate/substrate#2541 answered by 2026-11-17: the scheme-keyed entry accepted, the line re-seats on that commit and field 5 goes; unanswered on 2026-11-17: drops at the following re-pin, GitLab API calls as the person unsupported"
 depends_on: [ate-api-reports-egress-policy-contract-kubectl, giantswarm/agentgateway-upstream:substrate-egress-applies-credential-header-by-request-path-prefix]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # The egress gateway scopes a credential header to a request path prefix
 
@@ -34,3 +34,5 @@ One host can take different credentials on different paths: a Git server takes `
 proposed in [agent-substrate/substrate#2541](https://github.com/agent-substrate/substrate/issues/2541) (open). Upstream's maintainers call the egress API locked for GA and ask for API changes as issues first. The implementation, [agent-substrate/substrate#2515](https://github.com/agent-substrate/substrate/pull/2515) from the branch `upstream/egress-credential-path-prefix` on upstream `main` @ `c4129c94`, is a draft that waits on the issue.
 
 [#349](https://github.com/giantswarm/substrate/pull/349) (ledger: [#370](https://github.com/giantswarm/substrate/pull/370)): the fork's cherry-pick of the upstream commit, resolved against the line's `applyEffects`; the escape-case tests: [#468](https://github.com/giantswarm/substrate/pull/468)
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 6 fork-only until 2026-11-17; destination agent-substrate/substrate#2541, where the smaller scheme-keyed shape (several entries per header chosen by the prefix the request carries, no new field, no path parsing) was posted on 2026-10-20; acceptance uncertain (the API was called locked on #2515, two proto renames merged after it); no standard fits, neither dataplane has a path input; first step rework #2515 if accepted; branch `upstream/egress-credential-path-prefix` @ `35009eff8`; test `TestActorEgressCredentialInjection`; depends on no theme; owner unassigned; draft: internal issue 38652, comment 6301545833.

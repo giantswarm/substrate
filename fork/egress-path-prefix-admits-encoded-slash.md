@@ -5,14 +5,14 @@ theme: credential-injection
 category: bugfix
 status: carried
 commits:
-  - "fix(egress): a path prefix applies to a path with an encoded slash"
-  - "chore(agentgateway): run 2.5.0-rc.2, which admits an encoded slash"
+  - 'fix(egress): a path prefix applies to a path with an encoded slash'
+  - 'chore(agentgateway): run 2.5.0-rc.2, which admits an encoded slash'
 upstream:
-  outcome: to-file
-  refs: []
-  exit: goes with the path_prefix change (agent-substrate/substrate#2541)
+  outcome: fork-only
+  refs: [agent-substrate/substrate#2541]
+  exit: "with egress-scopes-credential-header-to-request-path-prefix: drops in both outcomes (the scheme-keyed entry needs no path parsing)"
 depends_on: [egress-scopes-credential-header-to-request-path-prefix, giantswarm/agentgateway-upstream:substrate-egress-path-prefix-admits-an-encoded-slash]
-verified: 2026-10-19
+verified: 2026-10-20
 ---
 # A path-prefixed credential header applies to a path with an encoded slash
 
@@ -29,3 +29,5 @@ GitLab addresses a project by its URL-encoded path (`/api/v4/projects/<group>%2F
 to file — prepared in the fork: branch `upstream/egress-path-prefix-encoded-slash` on top of `upstream/egress-credential-path-prefix`, so it goes upstream with or after the path-prefix change. Drops at the re-pin onto a commit containing it
 
 [#483](https://github.com/giantswarm/substrate/pull/483), for [#481](https://github.com/giantswarm/substrate/issues/481)
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 6 fork-only, follower of the path_prefix row; destination none of its own; first step none; branch `upstream/egress-path-prefix-encoded-slash` @ `5d054f25b`; test the encoded-slash case; depends on no theme; re-check 2026-11-17; owner unassigned.

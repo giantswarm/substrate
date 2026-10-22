@@ -5,18 +5,18 @@ theme: credential-injection
 category: feature
 status: carried
 commits:
-  - Egress policies can inject actor JWTs
+  - 'Egress policies can inject actor JWTs'
   - 'feat(egress): run the agentgateway line''s stable 2.4.0'
-  - Rename `MintActorJWTRequest.audience` to `audiences`.
+  - 'Rename `MintActorJWTRequest.audience` to `audiences`.'
   - 'feat(egress): inject actor JWTs on the agentgateway dataplane with the agentgateway line''s 2.4.0-rc.1'
   - 'test(chart): admit a release candidate of the agentgateway line as the dataplane image'
   - 'feat(egress): run the agentgateway line''s 2.4.0-rc.2, which mints through MintActorJWT'
-  - Egress gateway can mint and cache actor JWTs
+  - 'Egress gateway can mint and cache actor JWTs'
   - 'feat(ateapi): serve the actor JWT mint as Control.MintActorJwt, upstream''s name'
 upstream:
   outcome: drops-at-repin
   refs: [agent-substrate/substrate#2135, agent-substrate/substrate#2141, agent-substrate/substrate#2421, agent-substrate/substrate#2520]
-  exit: next re-pin
+  exit: "next re-pin (the three commits and the rename are upstream; the agentgateway line calls MintActorJwt since giantswarm/agentgateway-upstream#123)"
 depends_on: [giantswarm/agentgateway-upstream:the-substrate-egress-injects-a-minted-actor-jwt]
 verified: 2026-10-20
 ---
@@ -37,3 +37,5 @@ merged on agent-substrate/substrate `main`: [agent-substrate/substrate#2135](htt
 [#421](https://github.com/giantswarm/substrate/pull/421): the `git cherry-pick -x` of the three upstream commits, with the agentgateway line's `2.4.0-rc.2` as the agentgateway dataplane; [#429](https://github.com/giantswarm/substrate/pull/429) moves the dataplane to the stable `2.4.0`
 
 [#495](https://github.com/giantswarm/substrate/pull/495): the RPC and its messages renamed `MintActorJwt`, `MintActorJwtRequest` and `MintActorJwtResponse`, as agent-substrate/substrate#2520 (`68895abb`, 2026-10-13) named them on `main` (`pkg/proto/ateapipb/ateapi.proto` line 89 there). gRPC method names are case-sensitive: until then the line served `/ateapi.Control/MintActorJWT`, which upstream's callers, agentgateway#3985 among them, are answered `Unimplemented` on. The agentgateway line's egress (giantswarm/agentgateway-upstream:the-substrate-egress-injects-a-minted-actor-jwt) calls `MintActorJWT` up to `2.6.1` and moves in the same release window; the chart's `images.agentgateway` moves to its release in the Substrate release that carries the rename.
+
+2026-10-20, decided on internal issue 38652, comment 6301541135: class 2 upstream has it; destination agent-substrate/substrate#2135, #2141, #2421 and #2520; first step none; branch none; test `TestActorEgressCredentialInjection`; owner unassigned.
