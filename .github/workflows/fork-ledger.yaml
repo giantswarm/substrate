@@ -61,6 +61,16 @@ jobs:
           .github/scripts/fork-ledger-test.sh
           .github/scripts/fork-public-links-test.sh
           .github/scripts/ledger-header-test.sh
+          .github/scripts/fork-closing-keywords-test.sh
+      # A closing keyword in a description or a landed commit closes the issue
+      # it names, an upstream one included.
+      - name: No issue closed by keyword
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            jq -r '.pull_request.title, (.pull_request.body // "")' "${GITHUB_EVENT_PATH}"
+            git log --format=%B HEAD^1..HEAD^2
+          } | .github/scripts/fork-closing-keywords.sh
       - name: Every ledger file opens with a valid header, every carried commit has its file
         run: |
           git fetch --quiet --no-tags origin main:refs/remotes/origin/main
