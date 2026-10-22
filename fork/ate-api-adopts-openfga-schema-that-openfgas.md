@@ -18,7 +18,7 @@ upstream:
   recheck: 'the conversion re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [compat-migrations]
   open_question: ''
 depends_on: []
@@ -43,3 +43,5 @@ to file — prepared in the fork: branch `upstream/openfga-schema-adopt` on the 
 2026-10-20: agent-substrate/substrate#1839 (merged 2026-09-24, `5fb129d8`, in the pin) introduced the migration this patch adopts around, not its exit, so the outcome stays to-file.
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): the conversion's stop-version, Substrate 1.16.0, is past the 1.3 to 1.4 step this adopts across.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.

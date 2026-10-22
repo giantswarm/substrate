@@ -18,7 +18,7 @@ upstream:
   recheck: 'the conversion re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [compat-migrations]
   open_question: ''
 depends_on: []
@@ -43,3 +43,5 @@ kagent 1.10.x sets `on_pause` on every ActorTemplate it writes and compares the 
 2026-10-20: agent-substrate/substrate#2309 (merged 2026-10-07, `44a201b3`, in the pin) is the removal this shim answers, not its exit, so the outcome stays open on #2542.
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): no installation runs a kagent built with on_pause, field 1 is storage_location after the re-pin, and the lab client regenerates its protos before it.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.

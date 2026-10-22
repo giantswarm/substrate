@@ -18,7 +18,7 @@ upstream:
   recheck: 'the conversion re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [compat-migrations]
   open_question: ''
 depends_on: [gvisor-restore-refuses-snapshot-layout-before-one]
@@ -41,3 +41,5 @@ the refusal kept an actor from running with an empty `/data`, but every actor su
 [#277](https://github.com/giantswarm/substrate/pull/277): the fork's own commit on top of the refusal's; the micro-VM ateom of the line still writes and reads the single `durable-dir.tar` and needs no conversion
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): the per-volume tar layout it converts into is gone upstream, and the conversion's cold boot with files covers the old layouts.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.
