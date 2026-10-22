@@ -16,15 +16,22 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/google/go-cmp/cmp"
 	"github.com/klauspost/compress/zstd"
@@ -235,5 +242,165 @@ func TestRecordFromRequest(t *testing.T) {
 				t.Error("recordFromRequest succeeded, want an error")
 			}
 		})
+	}
+}
+
+// TestRestoreRuntime proves a restore that loads a checkpoint image runs the
+// gVisor its snapshot was captured with when that build is trusted, and every
+// other restore the request's: runsc refuses a checkpoint image another build
+// wrote, and the snapshot store never picks a binary the host runs.
+func TestRestoreRuntime(t *testing.T) {
+	newer := map[string]assetEntry{gvisorAssetName: {URL: "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd", SHA256: "newer"}}
+	older := map[string]assetEntry{gvisorAssetName: retainedSandboxAssets[0]}
+	forged := map[string]assetEntry{gvisorAssetName: {URL: retainedSandboxAssets[0].URL, SHA256: "forged"}}
+	elsewhere := map[string]assetEntry{gvisorAssetName: {URL: "https://example.com/gvisor.tar.zstd", SHA256: retainedSandboxAssets[0].SHA256}}
+	requested := &sandboxAssetsRecord{SandboxClass: "gvisor", PauseImage: "pause@sha256:requested", Assets: newer}
+
+	for _, tc := range []struct {
+		name     string
+		snapshot *sandboxAssetsRecord
+		scope    ateletpb.SnapshotScope
+		want     map[string]assetEntry
+	}{
+		{
+			name:     "full scope runs the snapshot's gVisor",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     older,
+		},
+		{
+			name:     "unspecified scope is a full restore",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			want:     older,
+		},
+		{
+			name:     "data scope boots fresh on the request's gVisor",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA,
+			want:     newer,
+		},
+		{
+			name:     "a snapshot without recorded assets runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor"},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "the request's own build is trusted",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: newer},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a recorded build with another sha256 runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: forged},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a recorded build at another URL runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: elsewhere},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a snapshot of another sandbox class runs the request's",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "microvm", Assets: older},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := restoreRuntime(requested, tc.snapshot, tc.scope)
+			if diff := cmp.Diff(tc.want, got.Assets); diff != "" {
+				t.Errorf("restoreRuntime() assets (-want +got):\n%s", diff)
+			}
+			if got.PauseImage != requested.PauseImage || got.SandboxClass != requested.SandboxClass {
+				t.Errorf("restoreRuntime() = %+v, want the request's pause image and class", got)
+			}
+			if requested.Assets[gvisorAssetName].SHA256 != "newer" {
+				t.Errorf("restoreRuntime() changed the request's record")
+			}
+		})
+	}
+}
+
+// gatedObjectStorage serves data, counting opens; a read blocks until release
+// is closed, so callers that miss the cache together overlap in the fetch.
+type gatedObjectStorage struct {
+	data    []byte
+	opens   *atomic.Int32
+	release chan struct{}
+}
+
+func (g gatedObjectStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	g.opens.Add(1)
+	<-g.release
+	return io.NopCloser(bytes.NewReader(g.data)), nil
+}
+
+func (gatedObjectStorage) PutObject(_ context.Context, _, _ string, _ io.Reader) error { return nil }
+
+// TestEnsureSandboxAssetsSharesGVisorFetch covers two callers that miss the
+// cache for one gVisor release at once: they share one download and extract.
+func TestEnsureSandboxAssetsSharesGVisorFetch(t *testing.T) {
+	origDir := nodepath.StaticFilesDir
+	nodepath.StaticFilesDir = t.TempDir()
+	t.Cleanup(func() { nodepath.StaticFilesDir = origDir })
+
+	var tarball bytes.Buffer
+	zw, _ := zstd.NewWriter(&tarball) // no options, cannot fail
+	tw := tar.NewWriter(zw)
+	runsc := []byte("runsc binary")
+	if err := tw.WriteHeader(&tar.Header{Name: "runsc", Mode: 0o755, Size: int64(len(runsc)), Typeflag: tar.TypeReg}); err != nil {
+		t.Fatalf("WriteHeader: %v", err)
+	}
+	if _, err := tw.Write(runsc); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar Close: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zstd Close: %v", err)
+	}
+
+	store := gatedObjectStorage{data: tarball.Bytes(), opens: new(atomic.Int32), release: make(chan struct{})}
+	s := &AteomHerder{anonGCSClient: store}
+	rec := &sandboxAssetsRecord{Assets: map[string]assetEntry{gvisorAssetName: {
+		URL:    "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd",
+		SHA256: fmt.Sprintf("%x", sha256.Sum256(tarball.Bytes())),
+	}}}
+
+	const callers = 2
+	var wg sync.WaitGroup
+	paths := make([]map[string]string, callers)
+	errs := make([]error, callers)
+	for i := range callers {
+		wg.Go(func() { paths[i], errs[i] = s.ensureSandboxAssets(context.Background(), rec) })
+	}
+	// Both callers are past the cache check and the first is in the download
+	// before either finishes; without the single flight each opens the object.
+	time.Sleep(200 * time.Millisecond)
+	close(store.release)
+	wg.Wait()
+
+	for i := range callers {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: ensureSandboxAssets: %v", i, errs[i])
+		}
+		if got, err := os.ReadFile(paths[i][gvisorAssetName]); err != nil || !bytes.Equal(got, runsc) {
+			t.Errorf("caller %d: runsc at %q = %q, %v; want %q", i, paths[i][gvisorAssetName], got, err, runsc)
+		}
+	}
+	if got := store.opens.Load(); got != 1 {
+		t.Errorf("object opened %d times, want 1", got)
+	}
+	entries, err := os.ReadDir(nodepath.StaticFilesDir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("static-files dir holds %d entries, want the one release dir: %v", len(entries), entries)
 	}
 }

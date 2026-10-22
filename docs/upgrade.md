@@ -1293,6 +1293,99 @@ it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.17.2 to 1.17.3
+
+- **Persisted format:** unchanged.
+- **Behavior:** atelet mounts `/var/lib/ate` with `HostToContainer`
+  propagation, as the worker pods do. Before, atelet held a private copy
+  of every external volume mounted when it started; the copy outlived the
+  CSI driver's `NodeUnpublishVolume`, kept the volume's mount point busy,
+  and the terminate of that actor failed with `device or resource busy` on
+  every retry, so its Session could not be deleted. The roll restarts
+  every atelet, which drops the copies of volumes the node has already
+  unmounted: a stuck delete goes through on its next retry. A volume
+  directory that still cannot be removed at terminate no longer fails it:
+  atelet logs it and leaves it in place with the actor's `volumes`
+  directory, and reclaims the rest of the actor's directory.
+- **During the roll:** a terminate on a node that still runs the 1.17.2
+  atelet behaves as before.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.17.3 to 1.17.4
+
+- **Persisted format:** unchanged.
+- **Behavior:** atelet removes the directories under
+  `/var/lib/ate/actors` of actors the control plane no longer has: at
+  start, then every `--actor-dir-gc-period` (default `10m`, `0` disables
+  it). Before, only a terminate removed one, and an actor deleted while it
+  had no node (suspended, its snapshot in the store) left its directory on
+  the node it last ran on for good. atelet asks the new
+  `WorkerService.ListGoneActors` which of its directories' actors are gone
+  and removes only those, the way a terminate does, logging each directory
+  it removes; an actor in any state keeps its directory, and a call that
+  fails removes nothing. A directory whose leftover volumes are still being
+  swept is left for a later pass; a volume directory that still holds a
+  mount is left in place as at terminate, and logged again at every pass.
+  `--actor-dir-gc-dry-run` (through `atelet.extraArgs`) logs the
+  directories without removing them.
+- **During the roll:** an atelet of 1.17.4 asking an
+  ate-api-server of 1.17.3 is answered `Unimplemented` and removes nothing
+  until the server rolls.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.17.3 to 1.17.4
+
+- **Persisted format:** unchanged.
+- **Behavior, worker log:** the log of the `runsc create` that boots an
+  actor's sandbox and runsc's fatal errors reach the worker pod's log, each
+  line labelled with the actor and `ate.actor.container.name: _pause`. The
+  sentry's own log does not: runsc's `-log` carries fatal errors only, and
+  the sandbox's stderr stays `/dev/null` (1.17.5 adds the sentry's log).
+- **During the roll:** an actor booted or restored by a 1.17.3 worker logs
+  as before until it next boots on a 1.17.4 worker.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
+#### 1.17.4 to 1.17.5
+
+- **Persisted format:** unchanged.
+- **Behavior, worker log:** a gVisor sandbox's own log reaches the worker
+  pod's log under `ate.actor.container.name: _pause`. ateom's create of the
+  pause container passes runsc `-debug-log` on the same pipe as `-log`, with
+  `-debug-command boot`, so runsc donates it to the sandbox's boot process
+  alone. The level stays runsc's default (no `-debug`): a few lines per boot
+  and restore, and what the sentry warns about, such as an application
+  process it ends with SIGKILL after a platform error, and its panics.
+- **During the roll:** an actor booted or restored by a 1.17.4 worker logs
+  as before until it next boots on a 1.17.5 worker.
+- **Behavior, gVisor:** the `gvisor-default` SandboxConfig names the gVisor
+  nightly of 2026-09-09, which carries the systrap fixes for a stub-thread
+  race that killed an application process with `systrap corrupted memory:
+  subprocess died` at a checkpoint or interrupt. runsc restores only its own
+  build's checkpoint images, so a full restore runs the gVisor its snapshot
+  recorded when that is the SandboxConfig's or the retained 2026-09-02
+  build (URL and sha256 both, compiled into the atelet): a conversation suspended on the 2026-09-02 nightly resumes on it
+  and keeps it until it next boots fresh.
+- **During the roll:** a restore on a 1.17.4 worker runs the SandboxConfig's
+  gVisor; for a snapshot of the 2026-09-02 nightly runsc refuses it and the
+  actor is crashed with its snapshot kept, so its next resume restores it
+  again, on the 2026-09-02 nightly once a 1.17.5 worker takes it. Roll the
+  workers outside busy hours. Each node's atelet downloads and extracts the
+  2026-09-09 nightly once, however many actors need it first, flushing it to
+  disk as it goes; an atelet of `1.17.5-rc.3` or earlier could do it twice at
+  once and be killed at its memory limit.
+- **Migration:** none to run.
+- **Goldens:** taken again (snapshot layout 3), on the 2026-09-09 nightly. A suspend
+  retried after its checkpoint completed (its atelet restarted under it) is
+  answered that checkpoint by ateom instead of crashing the actor, so a
+  retake under the roll does not fail its template.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]

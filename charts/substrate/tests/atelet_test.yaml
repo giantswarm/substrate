@@ -97,6 +97,18 @@ tests:
         mountPath: /var/lib/kubelet/plugins
         mountPropagation: HostToContainer
 
+- it: mounts the actors directory with HostToContainer propagation
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - contains:
+      path: spec.template.spec.containers[?(@.name == "atelet")].volumeMounts
+      content:
+        name: run-ateom
+        mountPath: /var/lib/ate
+        mountPropagation: HostToContainer
+
 - it: lets atelet preempt lower-priority pods by default
   documentSelector:
     path: kind

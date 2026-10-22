@@ -136,6 +136,50 @@ func recordFromRequest(sa *ateletpb.SandboxAssets) (*sandboxAssetsRecord, error)
 	return rec, nil
 }
 
+// retainedSandboxAssets are the sandbox builds a SandboxConfig named before its
+// current one, kept so a snapshot they captured still restores (restoreRuntime).
+// A snapshot manifest comes from the snapshot store, so its recorded asset set
+// is run only when every entry is one of these or the request's: the store
+// never chooses a binary the atelet runs on the host.
+var retainedSandboxAssets = []assetEntry{
+	{URL: "gs://gvisor/releases/nightly/2026-09-02/x86_64/gvisor.tar.zstd", SHA256: "d547d81401461fd1c679c5c4fa0a6c2b8ef7dc3c22ce23c9e25dcc4c69cfd06f"},
+	{URL: "gs://gvisor/releases/nightly/2026-09-02/aarch64/gvisor.tar.zstd", SHA256: "a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df"},
+}
+
+// restoreRuntime returns the sandbox a restore runs: the request's, with the
+// sandbox binaries the snapshot recorded when the restore loads the snapshot's
+// checkpoint image (any scope but data, which boots the workload fresh), the
+// snapshot is of the same sandbox class, and each recorded binary is the
+// request's or a retained build (retainedSandboxAssets). runsc refuses a
+// checkpoint image another build wrote, so a SandboxConfig that names a newer
+// gVisor still resumes every snapshot taken before it, and the restored actor's
+// later checkpoints keep that gVisor; the template's golden moves to the newer
+// one when it is taken again.
+func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.SnapshotScope) *sandboxAssetsRecord {
+	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || len(snapshot.Assets) == 0 ||
+		snapshot.SandboxClass != requested.SandboxClass || !trustedAssets(snapshot.Assets, requested.Assets) {
+		return requested
+	}
+	rec := *requested
+	rec.Assets = snapshot.Assets
+	return &rec
+}
+
+// trustedAssets reports whether every asset is one of the requested ones or a
+// retained build, by URL and sha256 both.
+func trustedAssets(assets, requested map[string]assetEntry) bool {
+	trusted := slices.Clone(retainedSandboxAssets)
+	for _, r := range requested {
+		trusted = append(trusted, r)
+	}
+	for _, a := range assets {
+		if !slices.Contains(trusted, a) {
+			return false
+		}
+	}
+	return true
+}
+
 // checkPauseImage requires a pause image for gVisor, the only sandbox class
 // that runs a pause container.
 func checkPauseImage(sandboxClass, pauseImage string) error {
@@ -198,6 +242,16 @@ func (s *AteomHerder) fetchAsset(ctx context.Context, entry assetEntry) (string,
 		return "", wrapFileSystemErr("while stat-ing local file", err)
 	}
 
+	return s.singleFetch(ctx, "asset-"+entry.SHA256, func(ctx context.Context) (string, error) {
+		return s.downloadAsset(ctx, entry, localPath)
+	})
+}
+
+// downloadAsset is fetchAsset's cache miss, run once per asset at a time.
+func (s *AteomHerder) downloadAsset(ctx context.Context, entry assetEntry, localPath string) (string, error) {
+	if _, err := os.Stat(localPath); err == nil { // a fetch that just finished cached it
+		return localPath, nil
+	}
 	slog.InfoContext(ctx, "Sandbox asset cache miss; downloading", slog.String("url", entry.URL), slog.String("sha256", entry.SHA256))
 	t := time.Now()
 	tmpName, err := s.downloadVerified(ctx, entry, filepath.Base(localPath)+"-download-")
@@ -236,6 +290,19 @@ func (s *AteomHerder) fetchGVisorRelease(ctx context.Context, entry assetEntry) 
 		return "", wrapFileSystemErr("while stat-ing extracted release dir", err)
 	}
 
+	return s.singleFetch(ctx, "gvisor-"+entry.SHA256, func(ctx context.Context) (string, error) {
+		return s.downloadGVisorRelease(ctx, entry, releaseDir)
+	})
+}
+
+// downloadGVisorRelease is fetchGVisorRelease's cache miss, run once per
+// release at a time: a gVisor nightly inflates to hundreds of MiB, and two
+// parallel extracts of it once pushed atelet past its memory limit.
+func (s *AteomHerder) downloadGVisorRelease(ctx context.Context, entry assetEntry, releaseDir string) (string, error) {
+	runscPath := filepath.Join(releaseDir, "runsc")
+	if _, err := os.Stat(releaseDir); err == nil { // a fetch that just finished extracted it
+		return runscPath, nil
+	}
 	slog.InfoContext(ctx, "gVisor release cache miss; downloading", slog.String("url", entry.URL), slog.String("sha256", entry.SHA256))
 	tDownload := time.Now()
 	tarball, err := s.downloadVerified(ctx, entry, filepath.Base(releaseDir)+"-download-")
@@ -271,6 +338,32 @@ func (s *AteomHerder) fetchGVisorRelease(ctx context.Context, entry assetEntry) 
 		return "", wrapFileSystemErr("while renaming extraction dir to target", err)
 	}
 	return runscPath, nil
+}
+
+// assetFetchTimeout bounds one shared asset fetch, which runs detached from
+// the callers that wait on it.
+var assetFetchTimeout = 15 * time.Minute
+
+// singleFetch runs fetch at most once per key at a time: a caller that misses
+// the cache while a fetch of the same asset is in flight waits for that
+// fetch's result instead of downloading and extracting it again. The fetch is
+// detached from the caller that started it, so one caller giving up fails no
+// other; each caller stops waiting when its own ctx ends.
+func (s *AteomHerder) singleFetch(ctx context.Context, key string, fetch func(context.Context) (string, error)) (string, error) {
+	ch := s.assetFetches.DoChan(key, func() (any, error) {
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), assetFetchTimeout)
+		defer cancel()
+		return fetch(fctx)
+	})
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return "", r.Err
+		}
+		return r.Val.(string), nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // downloadVerified streams entry.URL into a temp file in the static-files
@@ -324,6 +417,9 @@ func (s *AteomHerder) downloadVerified(ctx context.Context, entry assetEntry, tm
 		return "", fmt.Errorf("sha256 mismatch; got=%x want=%s", got, entry.SHA256)
 	}
 
+	if err := tmpFile.Sync(); err != nil { // reclaimable pages, durable before a rename
+		return "", wrapFileSystemErr("while syncing temp file", err)
+	}
 	if err := tmpFile.Close(); err != nil { // flush before the caller reads/renames
 		return "", wrapFileSystemErr("while closing temp file", err)
 	}
@@ -369,7 +465,10 @@ func extractTarArchive(ctx context.Context, tarPath, urlPath, destDir string) er
 	} else if isBz {
 		r = bzip2.NewReader(buf)
 	} else if isZst {
-		zr, err := zstd.NewReader(buf)
+		// One decoder goroutine and low-memory buffers: the extract is IO-bound
+		// and runs once per release per node, so it costs atelet little time and
+		// keeps it well under its memory limit.
+		zr, err := zstd.NewReader(buf, zstd.WithDecoderConcurrency(1), zstd.WithDecoderLowmem(true))
 		if err != nil {
 			return fmt.Errorf("failed to create zstd reader for %s: %w", urlPath, err)
 		}
@@ -438,6 +537,13 @@ func writeTarFile(dest string, r io.Reader, mode fs.FileMode) error {
 	}
 	if err := out.Chmod(mode); err != nil {
 		return wrapFileSystemErr("while setting tarball file mode", err)
+	}
+	// Flushed pages are reclaimable: a gVisor release writes hundreds of MiB,
+	// which as dirty page cache count against atelet's memory limit. It also
+	// keeps a crash from leaving a truncated binary behind the release dir's
+	// rename.
+	if err := out.Sync(); err != nil {
+		return wrapFileSystemErr("while syncing tarball file", err)
 	}
 	if err := out.Close(); err != nil {
 		return wrapFileSystemErr("while closing tarball file", err)

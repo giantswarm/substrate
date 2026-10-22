@@ -69,6 +69,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/singleflight"
 	"golang.org/x/sys/unix"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -221,6 +222,9 @@ func main() {
 	if err := validateImageCacheGCFlags(); err != nil {
 		serverboot.Fatal(ctx, "Invalid image cache GC flags", err)
 	}
+	if err := validateActorDirGCFlags(); err != nil {
+		serverboot.Fatal(ctx, "Invalid actor dir GC flags", err)
+	}
 	imageCache, err := imagecache.New(*imageCacheDir,
 		imagecache.WithKeychain(imageCredsKeychain),
 		imagecache.WithLocalhostRegistryReplacement(*localhostRegistryReplacement),
@@ -359,7 +363,7 @@ func main() {
 		grpc.UnaryInterceptor(ateinterceptors.InternalServerUnaryInterceptor),
 	}
 	if *grpcInsecure {
-		slog.WarnContext(ctx, "Serving atelet gRPC without transport security")
+		slog.WarnContext(ctx, "Serving atelet gRPC without transport security; with no control-plane client, the actor dir GC does not run")
 	} else {
 		tlsCfg, err := ateletServerTLSConfig(*grpcServerCredBundle, *clientCACerts)
 		if err != nil {
@@ -406,10 +410,14 @@ func main() {
 		if err := os.Chmod(nodepath.AteomSupportSocket, 0o600); err != nil {
 			serverboot.Fatal(ctx, "Failed to restrict credential broker socket", err)
 		}
+		workers := ateapipb.NewWorkerServiceClient(ateapiConn)
 		ateomFacingSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(ateomFacingTLS)))
 		ateletpb.RegisterAteomSupportServer(ateomFacingSrv, &ateomSupportServer{
-			workers: ateapipb.NewWorkerServiceClient(ateapiConn),
+			workers: workers,
 		})
+		if *actorDirGCPeriod > 0 {
+			go newActorDirGC(workers).Run(ctx)
+		}
 		go func() {
 			if err := ateomFacingSrv.Serve(ateomFacingLis); err != nil {
 				serverboot.Fatal(ctx, "Failed to serve credential broker", err)
@@ -490,6 +498,10 @@ type AteomHerder struct {
 	// checkpoint left mounted, by actor UID.
 	sweepMu        sync.Mutex
 	leftoverSweeps map[string]*leftoverSweep
+
+	// assetFetches makes concurrent cache misses of one sandbox asset share a
+	// single download (and, for a gVisor release, a single extract).
+	assetFetches singleflight.Group
 }
 
 var _ ateletpb.AteomHerderServer = (*AteomHerder)(nil)
@@ -1123,8 +1135,9 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 
 	// The sandbox (binaries + pause image) that runs the restored workload
 	// comes from the request, resolved by the control plane from the
-	// ActorTemplate's SandboxConfig. The snapshot manifests only supply the
-	// files to restore and the actor identity. Resolved before any on-node
+	// ActorTemplate's SandboxConfig, except the binaries of a restore that
+	// loads a checkpoint image (restoreRuntime). The snapshot manifests supply
+	// the files to restore and the actor identity. Resolved before any on-node
 	// work so an invalid request changes nothing.
 	runtimeRec, err := recordFromRequest(req.GetSandboxAssets())
 	if err != nil {
@@ -1235,6 +1248,10 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	// The manifest is what tells a golden restore from a latest one, so the
 	// snapshot kind only becomes knowable here.
 	op.kind = restoreSnapshotKind(req, sandboxRec)
+
+	// runsc refuses a checkpoint image another build wrote, so a restore that
+	// loads one runs the sandbox binaries the snapshot was captured with.
+	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, req.GetScope())
 
 	var registration *registeredActor
 	// Undo the Register if the restore fails. The errgroup join below happens
@@ -1427,7 +1444,7 @@ func (s *AteomHerder) Terminate(ctx context.Context, req *ateletpb.TerminateRequ
 	}
 
 	// Reclaim the actor's directories on the node
-	if err := removeActorDirs(actorUID); err != nil {
+	if err := removeActorDirs(ctx, actorUID); err != nil {
 		return nil, fmt.Errorf("failed to remove actor directories during terminate (actor: %s, actorUID: %s): %w", actorRef, actorUID, err)
 	}
 
@@ -2107,17 +2124,65 @@ func resetDir(what, dir string, remove func(string) error, mode os.FileMode) err
 
 // removeActorDirs reclaims the actor's whole directory tree, root included:
 // nothing else on the node deletes it, and no later activation will look here.
+// It runs once the actor's external volumes are unmounted.
 //
-// resetActorDirs runs first for the care a blanket RemoveAll lacks. It refuses
-// to proceed while a volume directory is still populated, so a failed unmount
-// cannot become a deletion of the mount's contents, and it can remove a bundle
-// upper dir carrying an image's read-only modes.
-func removeActorDirs(actorUID string) error {
-	if err := resetActorDirs(actorUID); err != nil {
+// A volume directory is only ever removed empty, so a mount that outlived its
+// unmount cannot become a deletion of the mount's contents. One that cannot be
+// removed is logged and left in place with the volumes dir around it, and the
+// rest of the actor's tree goes: the actor is gone, and a directory left
+// behind must not keep its delete from completing. resetActorStateDirs runs
+// first: it can remove a bundle upper dir carrying an image's read-only modes.
+func removeActorDirs(ctx context.Context, actorUID string) error {
+	if err := resetActorStateDirs(actorUID); err != nil {
 		return err
+	}
+	if left := removeVolumeDirs(ctx, actorUID); len(left) > 0 {
+		slog.WarnContext(ctx, "Leaving the volume dirs of a terminated actor that cannot be removed", slog.String("actor_uid", actorUID), slog.Any("volume_dirs", left))
+		return removeAllExcept(ateletpath.ActorPath(actorUID), ateletpath.VolumesDir(actorUID))
 	}
 	if err := os.RemoveAll(ateletpath.ActorPath(actorUID)); err != nil {
 		return wrapFileSystemErr("while deleting actor dir", err)
+	}
+	return nil
+}
+
+// removeVolumeDirs removes the actor's empty volume directories and returns
+// those that cannot be removed: one still populated, or busy with a mount.
+func removeVolumeDirs(ctx context.Context, actorUID string) []string {
+	volumesDir := ateletpath.VolumesDir(actorUID)
+	entries, err := os.ReadDir(volumesDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to read the volumes dir of a terminated actor", slog.String("actor_uid", actorUID), slog.Any("err", err))
+		return []string{volumesDir}
+	}
+	var left []string
+	for _, entry := range entries {
+		volPath := filepath.Join(volumesDir, entry.Name())
+		if err := os.Remove(volPath); err != nil {
+			slog.WarnContext(ctx, "Volume dir of a terminated actor stays in place", slog.String("actor_uid", actorUID), slog.String("volume_dir", volPath), slog.Any("err", err))
+			left = append(left, volPath)
+		}
+	}
+	return left
+}
+
+// removeAllExcept removes every entry of dir but keep.
+func removeAllExcept(dir, keep string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return wrapFileSystemErr("while reading actor dir", err)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		if path == keep {
+			continue
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return wrapFileSystemErr("while deleting actor dir", err)
+		}
 	}
 	return nil
 }

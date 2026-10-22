@@ -376,6 +376,10 @@ type AteomService struct {
 	// deactivateActor overrides tunnel.Deactivate when set, for the sandbox
 	// watch's tests. nil means the tunnel.
 	deactivateActor func(ctx context.Context, attribution resources.ActorAttribution) error
+
+	// checkpointed answers a full checkpoint repeated by a caller that lost
+	// the first one's answer.
+	checkpointed checkpointedActors
 }
 
 var _ ateompb.AteomServer = (*AteomService)(nil)
@@ -590,6 +594,18 @@ func validateActorDirs(actorDirs *ateompb.ActorDirs) error {
 	return nil
 }
 
+// startSandboxLog starts the pipe the actor's sandbox logs through, from the
+// pause container's create until the sandbox exits (see runsc.createArgs). Its
+// lines carry the pause container's name; the caller closes its end once the
+// create has passed it on.
+func (s *AteomService) startSandboxLog(attribution resources.ActorAttribution) (*os.File, error) {
+	pw, err := s.actorLogger.StartJSONLogPipe(attribution, ocispec.PauseContainer, nil)
+	if err != nil {
+		return nil, fmt.Errorf("while starting the sandbox log pipe: %w", err)
+	}
+	return pw, nil
+}
+
 func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkloadRequest) (resp *ateompb.RunWorkloadResponse, retErr error) {
 	if err := validateActorDirs(req.GetActorDirs()); err != nil {
 		return nil, err
@@ -601,6 +617,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	release, err := s.beginRPC(req.GetActorUid(), rpcRunWorkload, cancel)
@@ -680,8 +697,13 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 	if err := imagecache.SetupBundleRootfs(ociBundlePath(req.GetActorDirs(), ocispec.PauseContainer)); err != nil {
 		return nil, fmt.Errorf("while composing pause rootfs: %w", err)
 	}
+	sandboxLog, err := s.startSandboxLog(attribution)
+	if err != nil {
+		return nil, err
+	}
+	defer sandboxLog.Close()
 	containersToDelete = append(containersToDelete, ocispec.PauseContainer)
-	if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil); err != nil {
+	if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil, sandboxLog); err != nil {
 		return nil, fmt.Errorf("while creating pause container: %w", err)
 	}
 	if err := rcmd.cmdStart(ctx, os.Stdout, ocispec.PauseContainer); err != nil {
@@ -707,7 +729,7 @@ func (s *AteomService) RunWorkload(ctx context.Context, req *ateompb.RunWorkload
 			return nil, fmt.Errorf("while composing %q rootfs: %w", ac.GetName(), err)
 		}
 		containersToDelete = append(containersToDelete, ac.GetName())
-		if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil); err != nil {
+		if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil, nil); err != nil {
 			return nil, fmt.Errorf("while creating %q application container: %w", ac.GetName(), err)
 		}
 		if err := rcmd.cmdStart(ctx, pw, ac.GetName()); err != nil {
@@ -754,6 +776,16 @@ func (s *AteomService) CheckpointWorkload(ctx context.Context, req *ateompb.Chec
 	defer cancel()
 	// Not cancelable: a checkpoint is saving the actor's state.
 	defer s.inFlight.Add(req.GetActorUid(), rpcCheckpointWorkload, nil)()
+
+	// A full checkpoint stops the sandbox: one repeated after it, by a caller
+	// that lost its answer, is answered the checkpoint already taken.
+	if req.GetScope() == ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL && s.lookupActor(req.GetActorUid()) == nil {
+		if resp, ok := s.checkpointed.repeat(req.GetActorUid(), req.GetActorDirs().GetCheckpointDir()); ok {
+			slog.InfoContext(ctx, "Answering a repeated checkpoint with the one already taken",
+				slog.String("actorUID", req.GetActorUid()))
+			return resp, nil
+		}
+	}
 
 	if err := s.tunnel.Deactivate(ctx, ateomstats.ActorAttributionFromRequest(req)); err != nil {
 		return nil, err
@@ -847,7 +879,11 @@ func (s *AteomService) CheckpointWorkload(ctx context.Context, req *ateompb.Chec
 
 	s.actorLogger.EmitLifecycleLog(ctx, "Actor checkpointed", attribution)
 
-	return &ateompb.CheckpointWorkloadResponse{SnapshotFiles: snapshotFiles, DataSnapshotFiles: durableFiles}, nil
+	resp := &ateompb.CheckpointWorkloadResponse{SnapshotFiles: snapshotFiles, DataSnapshotFiles: durableFiles}
+	if req.GetScope() == ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL {
+		s.checkpointed.record(req.GetActorUid(), checkpointPath, resp)
+	}
+	return resp, nil
 }
 
 // listSnapshotFiles returns the (relative) names of regular files directly under
@@ -935,6 +971,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	release, err := s.beginRPC(req.GetActorUid(), rpcRestoreWorkload, cancel)
@@ -1014,11 +1051,16 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		return nil, fmt.Errorf("while composing pause rootfs: %w", err)
 	}
 
+	sandboxLog, err := s.startSandboxLog(attribution)
+	if err != nil {
+		return nil, err
+	}
+	defer sandboxLog.Close()
 	switch req.GetScope() {
 	case ateompb.SnapshotScope_SNAPSHOT_SCOPE_DATA:
 		// Create and start pause container (cold boot with durable-dir volumes restored)
 		containersToDelete = append(containersToDelete, ocispec.PauseContainer)
-		if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil); err != nil {
+		if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil, sandboxLog); err != nil {
 			return nil, fmt.Errorf("while creating pause container: %w", err)
 		}
 		if err := rcmd.cmdStart(ctx, os.Stdout, ocispec.PauseContainer); err != nil {
@@ -1027,7 +1069,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 	case ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL:
 		// Create and restore pause container
 		containersToDelete = append(containersToDelete, ocispec.PauseContainer)
-		if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil); err != nil {
+		if err := rcmd.cmdCreate(ctx, os.Stdout, ocispec.PauseContainer, nil, sandboxLog); err != nil {
 			return nil, fmt.Errorf("while creating pause container: %w", err)
 		}
 		if err := rcmd.cmdRestore(ctx, os.Stdout, ocispec.PauseContainer, checkpointDir); err != nil {
@@ -1055,7 +1097,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 		switch req.GetScope() {
 		case ateompb.SnapshotScope_SNAPSHOT_SCOPE_DATA:
 			containersToDelete = append(containersToDelete, ac.GetName())
-			if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil); err != nil {
+			if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil, nil); err != nil {
 				return nil, fmt.Errorf("while creating %q application container: %w", ac.GetName(), err)
 			}
 			if err := rcmd.cmdStart(ctx, pw, ac.GetName()); err != nil {
@@ -1063,7 +1105,7 @@ func (s *AteomService) RestoreWorkload(ctx context.Context, req *ateompb.Restore
 			}
 		case ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL:
 			containersToDelete = append(containersToDelete, ac.GetName())
-			if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil); err != nil {
+			if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil, nil); err != nil {
 				return nil, fmt.Errorf("while creating %q application container: %w", ac.GetName(), err)
 			}
 			if err := rcmd.cmdRestore(ctx, pw, ac.GetName(), checkpointDir); err != nil {
@@ -1106,6 +1148,7 @@ func (s *AteomService) TerminateWorkload(ctx context.Context, req *ateompb.Termi
 		return nil, fmt.Errorf("gave up waiting for the actor's lock: %w", ctx.Err())
 	}
 	defer s.locks.Unlock(req.GetActorUid())
+	s.checkpointed.forget(req.GetActorUid())
 
 	attribution := ateomstats.ActorAttributionFromRequest(req)
 
