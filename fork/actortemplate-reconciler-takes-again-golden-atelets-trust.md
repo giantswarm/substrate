@@ -15,10 +15,10 @@ upstream:
   first_step: 'at the conversion re-pin, the row conversion applies this migration before re-encoding (giantswarm/substrate)'
   source: 'giantswarm @ cfbdad2fd; conversion: new branch'
   test: 'the conversion lab upgrade from Substrate 1.16.3; the conversion counter reports no failed row'
-  recheck: '2026-11-03, with the conversion re-pin'
+  recheck: 'Substrate GA (agent-substrate/substrate#2004), fallback 2026-11-24, with the conversion re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [compat-migrations]
   open_question: ''
 depends_on: [giantswarm/substrate#317, store-migrates-actortemplate-row-release-before-upstream]
@@ -41,3 +41,5 @@ none: the guard's text is the line's own ([#317](https://github.com/giantswarm/s
 [#333](https://github.com/giantswarm/substrate/pull/333): the fork's own commit, on top of the migration row's
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: fork-only (class 6): the next re-pin past kagent-dev/kagent 96c40300 is the first whose Substrate carries agent-substrate/substrate#2888; the fork converts state across it instead of cutting over; the row conversion applies this read-migration to every row before re-encoding it, so no legacy row survives, and the commit leaves at that re-pin.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.

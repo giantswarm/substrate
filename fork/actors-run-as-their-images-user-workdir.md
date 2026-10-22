@@ -24,7 +24,7 @@ upstream:
   recheck: 'each re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [harness-variety]
   open_question: ''
 depends_on: [giantswarm/kagent-upstream:harness-run-claude-code-as-the-images-unprivileged]
@@ -49,3 +49,5 @@ not ours: [agent-substrate/substrate#1918](https://github.com/agent-substrate/su
 2026-10-20: agent-substrate/substrate#1906 (merged 2026-10-16, `97de17b1`, not in the v0.5.0-alpha2 pin) covers only the durable-dir commit, and #1910 (merged 2026-09-30, `afb62e18`) is in the pin with no carried commit of its own, while the rest waits for #1918.
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: upstream PR (class 5), another author's: agent-substrate/substrate#1918 carries it, and the file moves to the harness-variety theme.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.

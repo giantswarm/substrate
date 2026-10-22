@@ -15,10 +15,10 @@ upstream:
   first_step: 'drop at the conversion re-pin (giantswarm/substrate)'
   source: 'giantswarm @ 2e90412b6'
   test: 'the conversion lab upgrade: a paused gVisor actor from 1.16.3 cold-boots with its files under RLIMIT_NOFILE 1048576'
-  recheck: '2026-11-03, with the conversion re-pin'
+  recheck: 'Substrate GA (agent-substrate/substrate#2004), fallback 2026-11-24, with the conversion re-pin'
   owner: unassigned
   draft: issuecomment-6301320155
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [compat-migrations]
   open_question: ''
 depends_on: []
@@ -41,3 +41,5 @@ runsc refuses a restore whose spec carries other `Rlimits` than the checkpoint's
 [#353](https://github.com/giantswarm/substrate/pull/353) (`fix(ocispec): keep RLIMIT_NOFILE at 1024 so earlier checkpoints restore`)
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: drop (class 1): the next re-pin past kagent-dev/kagent 96c40300 is the first whose Substrate carries agent-substrate/substrate#2888; the fork converts state across it instead of cutting over, every old gVisor checkpoint cold-boots across the new layout, so the limit drops with it; the restore-validated limit is part of the upstream issue on the snapshot compatibility stamp.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.

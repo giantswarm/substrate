@@ -18,7 +18,7 @@ upstream:
   recheck: 'each re-pin'
   owner: unassigned
   draft: ''
-  decision: issuecomment-6301319662
+  decision: 'issuecomment-6301319662, amended issuecomment-6339634309'
   couplings: [golden-boot]
   open_question: ''
 depends_on: [actors-run-as-their-images-user-workdir]
@@ -41,3 +41,5 @@ not ours: [agent-substrate/substrate#2392](https://github.com/agent-substrate/su
 [#115](https://github.com/giantswarm/substrate/pull/115)
 
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: upstream PR (class 5), another author's: agent-substrate/substrate#2392 carries it with another design, and the file moves to the golden-boot theme.
+
+2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.
