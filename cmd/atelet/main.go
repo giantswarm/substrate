@@ -104,6 +104,7 @@ var (
 	// no cloud SDK compiled in, on any cloud whose nodes configure a provider.
 	imageCredentialProviderConfig = pflag.String("image-credential-provider-config", "", "Path to a kubelet CredentialProviderConfig. Its exec plugins supply image pull credentials; without it, pulls are anonymous.")
 	imageCredentialProviderBinDir = pflag.String("image-credential-provider-bin-dir", "", "Directory holding the credential provider executables named by --image-credential-provider-config. Required when that flag is set.")
+	imagePullSecretFiles          = pflag.StringArray("image-pull-secret-file", nil, "Path to a .dockerconfigjson file, the content of a kubernetes.io/dockerconfigjson Secret, whose registry credentials are tried before the credential providers'. Repeatable; read again on every pull.")
 
 	localhostRegistryReplacement = pflag.String("localhost-registry-replacement", "", "The replacement registry endpoint for localhost and/or loopback IP addresses, useful for local development. for example kind-registry:5000")
 	imageCacheDir                = pflag.String("image-cache-dir", ateletpath.ImageCacheDir, "Directory for the node-local OCI image layer cache. Must be on the volume shared with the ateom pods (the cached layers are their overlay lowerdirs), and on a disk sized for both capacity and IOPS: unpack throughput is gated by the volume's IOPS.")
@@ -119,7 +120,7 @@ var (
 	drainTimeout = pflag.Duration("drain-timeout", 5*time.Minute, "Deadline for the graceful gRPC drain on shutdown. In-flight RPCs still running past it are forcefully cancelled.")
 )
 
-var _ imagecache.CandidateKeychain = (*credentialprovider.Keychain)(nil)
+var _ imagecache.CandidateKeychain = credentialprovider.Chain(nil)
 
 func main() {
 	pflag.Parse()
@@ -204,9 +205,18 @@ func main() {
 
 	ateomDialer := newAteomDialer(256)
 
-	// Without a credential provider config, pulls are anonymous: all an
-	// unconfigured node (kind, say) can do and all a public registry needs.
-	var imageCredsKeychain authn.Keychain
+	// Image pull secrets come first, as the kubelet tries a Pod's
+	// imagePullSecrets before the node's credentials. Without either, pulls
+	// are anonymous: all an unconfigured node (kind, say) can do and all a
+	// public registry needs.
+	var imageCredsKeychains credentialprovider.Chain
+	if len(*imagePullSecretFiles) > 0 {
+		kc, err := credentialprovider.NewDockerConfig(*imagePullSecretFiles)
+		if err != nil {
+			serverboot.Fatal(ctx, "Failed to configure image pull secrets", err)
+		}
+		imageCredsKeychains = append(imageCredsKeychains, kc)
+	}
 	if *imageCredentialProviderConfig != "" {
 		if *imageCredentialProviderBinDir == "" {
 			serverboot.Fatal(ctx, "Failed to configure image pull credentials",
@@ -216,7 +226,11 @@ func main() {
 		if err != nil {
 			serverboot.Fatal(ctx, "Failed to configure image pull credentials", err)
 		}
-		imageCredsKeychain = kc
+		imageCredsKeychains = append(imageCredsKeychains, kc)
+	}
+	var imageCredsKeychain authn.Keychain
+	if len(imageCredsKeychains) > 0 {
+		imageCredsKeychain = imageCredsKeychains
 	}
 
 	if err := validateImageCacheGCFlags(); err != nil {
