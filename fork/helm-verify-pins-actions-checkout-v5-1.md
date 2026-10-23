@@ -7,21 +7,21 @@ status: carried
 commits:
   - 'ci: pin checkout, setup-helm and the Helm version in helm-verify'
 upstream:
-  outcome: to-file
-  refs: [kagent-dev/substrate#86]
-  exit: 'the Helm version and checkout pull requests merged, then the Substrate re-pin drops the commit; a declined checkout pull request makes that half fork-only, with no functional effect'
+  outcome: open
+  refs: [kagent-dev/substrate#86, kagent-dev/substrate#96]
+  exit: 'kagent-dev/substrate#96 merged takes the Helm version; the actions/checkout v5.1.0 half stays fork-only with no functional effect (not proposed: it would reverse the v4.4.0 pin #86 chose); the re-pin onto a commit carrying #96 shrinks the commit to that checkout bump'
   class: 5
-  destination: 'kagent-dev/substrate helm-verify.yaml:30-31: the Helm version with the helm-e2e row, actions/checkout v5.1.0 as its own lower-priority pull request; the SHA pins are upstream since #86'
-  first_step: 'open the checkout pull request on kagent-dev/substrate after the Helm version pull request'
-  source: 'upstream/helm-verify-checkout-v5@df92b6a48 (on 6383ea118, +1/-1); the Helm version is upstream/helm-version-pin@fd43d8446; upstream/helm-verify-pin-setup-helm@96c6557e0 is retired'
+  destination: 'kagent-dev/substrate#96 for the Helm version in helm-verify.yaml; the SHA pins are upstream since #86; actions/checkout v5.1.0 is fork-only'
+  first_step: 'a maintainer reviews kagent-dev/substrate#96 and approves its workflow runs'
+  source: 'upstream/helm-version-pin@fd43d8446 for the Helm version; upstream/helm-verify-checkout-v5@df92b6a48 is retired (checkout half not proposed); upstream/helm-verify-pin-setup-helm@96c6557e0 is retired'
   test: 'helm lint and hack/render-manifests.sh --check pass in helm-verify on Helm v4.3.1 with actions/checkout v5.1.0'
   recheck: 'each Substrate re-pin'
-  owner: unassigned
+  owner: QuentinBisson
   draft: issuecomment-6301362710
   decision: issuecomment-6301358702
   couplings: [compat-migrations]
 depends_on: [helm-e2e-pins-azure-setup-helm-v4]
-verified: 2026-10-20
+verified: 2026-10-23
 ---
 # helm-verify pins `actions/checkout` to its v5.1.0 release and `azure/setup-helm` to its v4.3.1 …
 
@@ -40,3 +40,5 @@ to file: the upstream-shaped patch is branch [`upstream/helm-verify-pin-setup-he
 [#299](https://github.com/giantswarm/substrate/pull/299): `git cherry-pick -x` of `96c6557e`
 
 2026-10-20: placed by the T16 ci-publish-infra theme review (the decision comment is `upstream.decision` on the theme issue): SHA pins upstream (kagent-dev/substrate#86); upstream's helm-verify runs `hack/render-manifests.sh --check` where the line still runs `make verify-helm-template`.
+
+2026-10-23: the Helm version rides kagent-dev/substrate#96. The actions/checkout v5.1.0 half is not proposed upstream: it would reverse the v4.4.0 pin kagent-dev/substrate#86 chose on 2026-10-20 and changes nothing functionally, so it stays fork-only.

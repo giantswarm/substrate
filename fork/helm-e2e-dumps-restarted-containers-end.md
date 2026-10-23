@@ -7,20 +7,20 @@ status: carried
 commits:
   - 'ci: dump a restarted container''s end in helm-e2e diagnostics'
 upstream:
-  outcome: to-file
-  refs: []
-  exit: 'the dump pull request merged, then the Substrate re-pin drops the commit; fork-only fallback on the same date as kagent-dev/substrate#71'
+  outcome: open
+  refs: [kagent-dev/substrate#71]
+  exit: 'kagent-dev/substrate#71 merged with the dump commit, then the Substrate re-pin drops the commit; no review by 2026-11-17 makes it fork-only fork infrastructure with #71 kept as the exit'
   class: 5
-  destination: 'kagent-dev/substrate helm-e2e.yaml, the Dump diagnostics on failure step (lines 156-163 at 6383ea118)'
-  first_step: 'open a pull request on kagent-dev/substrate from the source branch once kagent-dev/substrate#71 merges'
-  source: 'upstream/helm-e2e-dump-previous@11bfb4132 (on 6383ea118, +10; reads each restarted container''s previous log by name, where the line''s commit probes --all-containers)'
+  destination: 'kagent-dev/substrate#71, as its second commit (same workflow and job as the lanes change)'
+  first_step: 'the comment on kagent-dev/substrate#71 asking a maintainer to approve its workflow runs and review it'
+  source: 'upstream/helm-e2e-independent-lanes@51a66afaf, a cherry-pick of upstream/helm-e2e-dump-previous@11bfb4132 (+10; reads each restarted container''s previous log by name, where the line''s commit probes --all-containers)'
   test: 'restart an ate-system container mid-suite and fail a lane: the dump prints its termination reason, exit code and previous log, and the Warning events'
   recheck: 2026-11-17
-  owner: unassigned
+  owner: teemow
   draft: issuecomment-6301363794
   decision: issuecomment-6301358702
-depends_on: [helm-e2e-lanes-run-whatever-an-earlier-lane-did]
-verified: 2026-10-20
+depends_on: []
+verified: 2026-10-23
 ---
 # helm-e2e's failure dump names a restarted container's end
 
@@ -39,3 +39,5 @@ to file: kagent-dev/substrate's helm-e2e carries the same dump step; agent-subst
 [#362](https://github.com/giantswarm/substrate/pull/362)
 
 2026-10-20: placed by the T16 ci-publish-infra theme review (the decision comment is `upstream.decision` on the theme issue): upstream PR on kagent-dev/substrate after #71.
+
+2026-10-23: folded into kagent-dev/substrate#71 as its second commit (cherry-pick of `11bfb4132`) instead of a pull request of its own after #71; same workflow, same job.
