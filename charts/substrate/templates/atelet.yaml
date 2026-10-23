@@ -194,6 +194,9 @@ spec:
         - --image-credential-provider-config=/run/image-credential-provider/config.yaml
         - --image-credential-provider-bin-dir=/run/image-credential-provider/bin
 {{- end }}
+{{- range .Values.atelet.imagePullSecrets }}
+        - --image-pull-secret-file=/run/image-pull-secrets/{{ required "atelet.imagePullSecrets entries need a name" .name }}/.dockerconfigjson
+{{- end }}
         - --grpc-server-cred-bundle=/run/podidentity.podcert.ate.dev/credential-bundle.pem
         - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
         - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
@@ -311,6 +314,11 @@ spec:
 {{- end }}
           readOnly: true
 {{- end }}
+{{- range $i, $secret := .Values.atelet.imagePullSecrets }}
+        - name: image-pull-secret-{{ $i }}
+          mountPath: /run/image-pull-secrets/{{ $secret.name }}
+          readOnly: true
+{{- end }}
         # Mounted whole, never through subPath: kubelet then swaps in a
         # changed list in place.
         - name: pinned-images
@@ -347,6 +355,14 @@ spec:
           path: {{ .Values.atelet.imageCredentialProviderConfig | quote }}
           type: File
 {{- end }}
+{{- end }}
+{{- range $i, $secret := .Values.atelet.imagePullSecrets }}
+      - name: image-pull-secret-{{ $i }}
+        secret:
+          secretName: {{ $secret.name | quote }}
+          items:
+          - key: .dockerconfigjson
+            path: .dockerconfigjson
 {{- end }}
       - name: pinned-images
         configMap:
