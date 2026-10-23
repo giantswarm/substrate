@@ -1386,6 +1386,32 @@ it.
   retake under the roll does not fail its template.
 - **Reset:** none. **Conversations lost:** none.
 
+### The 1.17 to 1.18 step
+
+1.18.0 stays on upstream v0.5.0-alpha2 and lets atelet pull actor images
+with `kubernetes.io/dockerconfigjson` Secrets. Step to it from the latest
+1.17 patch with the numbered steps above; the step needs no migration, no
+snapshot reset and no manual step, and conversations and durable volumes
+survive it.
+
+- **Persisted format:** unchanged. Nothing new is stored; no CRD, no
+  Postgres schema and no snapshot layout differs from 1.17.
+- **Chart:** `atelet.imagePullSecrets` (`[{name: <secret>}]`, Secrets of
+  the release namespace) mounts each Secret read-only into atelet and
+  passes it as `--image-pull-secret-file`. Empty by default, which renders
+  the 1.17 manifests unchanged. Not to be confused with `imagePullSecrets`,
+  which pull the chart's own pods.
+- **Behavior, image pulls:** a pull secret's credentials are matched to an
+  image as the kubelet matches a Pod's `imagePullSecrets` and tried before
+  the credential providers'; a rotated Secret is read at the next pull, no
+  restart. An atelet whose pull-secret file does not parse at start-up
+  exits with the reason.
+- **During the roll:** an actor image only a pull secret can read is pulled
+  once its node's atelet runs 1.18; a 1.17 atelet still pulls it
+  anonymously or through the providers, as before.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
