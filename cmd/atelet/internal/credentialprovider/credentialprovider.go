@@ -72,14 +72,7 @@ func (k *Keychain) Resolve(target authn.Resource) (authn.Authenticator, error) {
 // ResolveContext implements authn.ContextKeychain. It returns the first
 // candidate, or authn.Anonymous if there are none.
 func (k *Keychain) ResolveContext(ctx context.Context, target authn.Resource) (authn.Authenticator, error) {
-	candidates, err := k.Candidates(ctx, target)
-	if err != nil {
-		return nil, err
-	}
-	if len(candidates) == 0 {
-		return authn.Anonymous, nil
-	}
-	return candidates[0], nil
+	return firstCandidate(k.Candidates(ctx, target))
 }
 
 // Candidates returns the credentials of all providers matching target, in the
