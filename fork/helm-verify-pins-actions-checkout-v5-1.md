@@ -12,7 +12,7 @@ upstream:
   exit: 'kagent-dev/substrate#96 merged takes the Helm version; the actions/checkout v5.1.0 half stays fork-only with no functional effect (not proposed: it would reverse the v4.4.0 pin #86 chose); the re-pin onto a commit carrying #96 shrinks the commit to that checkout bump'
   class: 5
   destination: 'kagent-dev/substrate#96 for the Helm version in helm-verify.yaml; the SHA pins are upstream since #86; actions/checkout v5.1.0 is fork-only'
-  first_step: 'mark kagent-dev/substrate#96 ready for review'
+  first_step: 'a maintainer reviews kagent-dev/substrate#96 and approves its workflow runs'
   source: 'upstream/helm-version-pin@fd43d8446 for the Helm version; upstream/helm-verify-checkout-v5@df92b6a48 is retired (checkout half not proposed); upstream/helm-verify-pin-setup-helm@96c6557e0 is retired'
   test: 'helm lint and hack/render-manifests.sh --check pass in helm-verify on Helm v4.3.1 with actions/checkout v5.1.0'
   recheck: 'each Substrate re-pin'

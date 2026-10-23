@@ -12,7 +12,7 @@ upstream:
   exit: 'kagent-dev/substrate#96 merged; the Substrate re-pin onto a kagent-dev/substrate commit carrying it drops the commit'
   class: 5
   destination: 'kagent-dev/substrate#96 (version input on azure/setup-helm in helm-e2e.yaml and helm-verify.yaml); the SHA pin half is upstream since kagent-dev/substrate#86 (9d1968a9)'
-  first_step: 'mark kagent-dev/substrate#96 ready for review'
+  first_step: 'a maintainer reviews kagent-dev/substrate#96 and approves its workflow runs'
   source: 'upstream/helm-version-pin@fd43d8446 (+4, merges cleanly on kagent-dev/substrate main); upstream/helm-e2e-pin-setup-helm@5b47d3578 is retired (it conflicts with #86)'
   test: 'the helm-e2e and helm-verify logs show Helm v4.3.1; azure/setup-helm v4.3.1 without a version falls back to v3.18.4 when its latest-version lookup fails (src/run.ts:13,49-59)'
   recheck: '2026-11-17, then each Substrate re-pin'
@@ -41,4 +41,4 @@ to file: the upstream-shaped patch is branch [`upstream/helm-e2e-pin-setup-helm`
 
 2026-10-20: placed by the T16 ci-publish-infra theme review (the decision comment is `upstream.decision` on the theme issue): the SHA pin is upstream (kagent-dev/substrate#86, `9d1968a9`); the Helm version goes upstream as its own pull request; the commit rides the Substrate conversion re-pin of the compat-migrations theme.
 
-2026-10-23: opened as kagent-dev/substrate#96 (draft) from `upstream/helm-version-pin` (`fd43d844`); Helm v4.3.1 is still the latest Helm 4 release.
+2026-10-23: opened as kagent-dev/substrate#96, ready for review, from `upstream/helm-version-pin` (`fd43d844`); Helm v4.3.1 is still the latest Helm 4 release.
