@@ -8,20 +8,20 @@ commits:
   - 'fix(deps): bump x/net to v0.60.0 and pin Go 1.27.2'
   - 'fix(deps): bump golang.org/x/net to v0.61.0 for two HTTP/2 CVEs'
 upstream:
-  outcome: to-file
-  refs: [agent-substrate/substrate#2401, agentgateway/agentgateway#4063]
-  exit: 'the x/net v0.61.0 commit is not replayed at the next re-pin; the Go pin commit is reshaped on the line to toolchain go1.27.3 (go directive back to 1.27.0, .circleci/Dockerfile builder golang:1.27.3, govulncheck lane on the action''s stable) and filed on agent-substrate/substrate as one line after the kagent PR; if declined: dropped, the fork infra carries the version'
-  class: 5
-  destination: agent-substrate/substrate
-  first_step: 'fork infra first: reshape the Go pin commit to toolchain go1.27.3 with go 1.27.0, builder golang:1.27 -> golang:1.27.3, lane on the action''s stable, and split this file; then one line on agent-substrate/substrate. The x/net v0.61.0 commit is class 1 and is not replayed at the next re-pin'
-  source: 'new branch upstream/toolchain-go1-27-3 on giantswarm/substrate, base agent-substrate main at or past 3c9a3cd3'
-  test: 'the govulncheck matrix stays clean on the file''s toolchain; go build ./... with a local go1.27.0 fetches 1.27.3'
-  recheck: 2026-11-17
+  outcome: drops-at-repin
+  refs: [agent-substrate/substrate#2401, agent-substrate/substrate#2984, agent-substrate/substrate#3013]
+  exit: 'the x/net v0.61.0 commit is not replayed at the next re-pin (fixed in v0.60.0, which upstream requires); the Go pin commit drops, with pin-go-1-27-3, at the re-pin onto a commit containing 3c9a3cd3 (agent-substrate/substrate#2984: toolchain go1.27.3 in every module, go 1.27.0 kept); the .circleci builder image is the line''s own'
+  class: 2
+  destination: 'agent-substrate/substrate#2984 (3c9a3cd3, on upstream main)'
+  first_step: 'none; the one-line toolchain pull request drafted on 2026-10-20 is withdrawn'
+  source: n/a
+  test: 'the govulncheck workflow is green on the re-pin'
+  recheck: 'at the re-pin'
   owner: unassigned
-  draft: issuecomment-6301335986
+  draft: ""
   decision: issuecomment-6301335159
 depends_on: []
-verified: 2026-10-20
+verified: 2026-10-23
 ---
 # Require `golang.org/x/net` v0.61.0 in every module that had it below
 
@@ -40,3 +40,5 @@ not for upstream as such: changes versions only and falls away at the re-pin ont
 [#252](https://github.com/giantswarm/substrate/pull/252) (`fix(deps): bump golang.org/x/net to v0.61.0 for two HTTP/2 CVEs`)
 
 2026-10-20: decided in the version-pins theme review (decision issuecomment-6301335159): the x/net v0.61.0 commit is class 1 drop (fixed in v0.60.0, which upstream requires; no consumer); the Go pin commit is class 5 upstream PR, uncapped, queued after the kagent one: upstream runs govulncheck on the action's stable (run 39410251559, go1.27.2, clean) and #2401 preserved the go requirement, so the upstream shape is a `toolchain go1.27.3` line, which applies to the main module only; the line's `go 1.27.2` directive is also what forces the kagent line's go directive through its replace, so the reshape precedes the kagent mirror.
+
+2026-10-23: upstream has it: agent-substrate/substrate#2984 (merged 2026-10-20, `3c9a3cd3`, the commit the review read) added `toolchain go1.27.3` to every module and the benchmarking Dockerfiles with `go 1.27.0` kept; the one-line pull request drafted on 2026-10-20 is withdrawn, nothing to file. Class 2: the Go pin commit drops, with pin-go-1-27-3, at the re-pin onto a commit containing `3c9a3cd3`. Upstream automates the next patch in agent-substrate/substrate#3013: #3021 (a verify script that the root and plugin `toolchain` lines agree) and #3025 (`.github/renovate.json5`, the `toolchain` directive of the root and `internal/plugins/*` modules only, no `go` directive, no `hack/tools`, no Dockerfiles), both open on that date and waiting for the Renovate app to be installed on the org. The line's root `renovate.json5` (`enabled: false`) comes before `.github/renovate.json5` in Renovate's config-file order, so the re-pin that brings #3025 keeps Renovate off on the line.
