@@ -140,6 +140,64 @@ providers: []`
 	}
 }
 
+func TestHelmImagePullSecrets(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is not installed")
+	}
+	out, err := exec.CommandContext(t.Context(), "helm", "template", "substrate", "../../charts/substrate",
+		"--show-only", "templates/atelet.yaml",
+		"--set", "atelet.imagePullSecrets[0].name=registry-a",
+		"--set", "atelet.imagePullSecrets[1].name=registry-b").CombinedOutput()
+	if err != nil {
+		t.Fatalf("render: %v\n%s", err, out)
+	}
+	var pod *corev1.PodSpec
+	for _, doc := range strings.Split(string(out), "\n---\n") {
+		var ds appsv1.DaemonSet
+		if err := yaml.Unmarshal([]byte(doc), &ds); err != nil {
+			t.Fatal(err)
+		}
+		if ds.Kind == "DaemonSet" {
+			pod = &ds.Spec.Template.Spec
+		}
+	}
+	if pod == nil || len(pod.Containers) != 1 {
+		t.Fatal("expected atelet DaemonSet with one container")
+	}
+	container := pod.Containers[0]
+	var flagged []string
+	for _, arg := range container.Args {
+		if file, ok := strings.CutPrefix(arg, "--image-pull-secret-file="); ok {
+			flagged = append(flagged, file)
+		}
+	}
+	if want := []string{"/run/image-pull-secrets/registry-a/.dockerconfigjson", "/run/image-pull-secrets/registry-b/.dockerconfigjson"}; !slices.Equal(flagged, want) {
+		t.Fatalf("--image-pull-secret-file flags = %v, want %v in order", flagged, want)
+	}
+	for i, secret := range []string{"registry-a", "registry-b"} {
+		mountIndex := slices.IndexFunc(container.VolumeMounts, func(m corev1.VolumeMount) bool {
+			return m.MountPath == "/run/image-pull-secrets/"+secret
+		})
+		if mountIndex < 0 || !container.VolumeMounts[mountIndex].ReadOnly || container.VolumeMounts[mountIndex].SubPath != "" {
+			t.Fatalf("Secret %s must mount read-only without subPath, so rotation reaches atelet", secret)
+		}
+		volumeIndex := slices.IndexFunc(pod.Volumes, func(v corev1.Volume) bool { return v.Name == container.VolumeMounts[mountIndex].Name })
+		if volumeIndex < 0 || pod.Volumes[volumeIndex].Secret == nil {
+			t.Fatalf("mount %d has no Secret volume", i)
+		}
+		src := pod.Volumes[volumeIndex].Secret
+		if src.SecretName != secret || !reflect.DeepEqual(src.Items, []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: ".dockerconfigjson"}}) {
+			t.Errorf("volume for %s projects %+v", secret, src)
+		}
+	}
+
+	out, err = exec.CommandContext(t.Context(), "helm", "template", "substrate", "../../charts/substrate",
+		"--show-only", "templates/atelet.yaml", "--set", "atelet.imagePullSecrets[0].other=x").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "need a name") {
+		t.Errorf("render accepted a pull secret without a name: %v\n%s", err, out)
+	}
+}
+
 func TestHelmSandboxAssetStorage(t *testing.T) {
 	for _, tc := range []struct {
 		name, backend string
