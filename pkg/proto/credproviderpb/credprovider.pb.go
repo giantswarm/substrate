@@ -23,6 +23,7 @@ package credproviderpb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -97,7 +98,12 @@ func (x *FetchSecretRequest) GetActorSpiffeId() string {
 type FetchSecretResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The raw bytes contains the secret.
-	OpaqueBytes   []byte `protobuf:"bytes,1,opt,name=opaque_bytes,json=opaqueBytes,proto3" json:"opaque_bytes,omitempty"`
+	OpaqueBytes []byte `protobuf:"bytes,1,opt,name=opaque_bytes,json=opaqueBytes,proto3" json:"opaque_bytes,omitempty"`
+	// How long the injector may reuse the secret for the same actor and URI.
+	// Unset keeps the injector's default; zero makes it fetch the secret again
+	// for every request. An injector never reuses a secret longer than its own
+	// default, whatever the provider answers.
+	MaxAge        *durationpb.Duration `protobuf:"bytes,2,opt,name=max_age,json=maxAge,proto3" json:"max_age,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -139,16 +145,24 @@ func (x *FetchSecretResponse) GetOpaqueBytes() []byte {
 	return nil
 }
 
+func (x *FetchSecretResponse) GetMaxAge() *durationpb.Duration {
+	if x != nil {
+		return x.MaxAge
+	}
+	return nil
+}
+
 var File_credprovider_proto protoreflect.FileDescriptor
 
 const file_credprovider_proto_rawDesc = "" +
 	"\n" +
-	"\x12credprovider.proto\x12\fcredprovider\"N\n" +
+	"\x12credprovider.proto\x12\fcredprovider\x1a\x1egoogle/protobuf/duration.proto\"N\n" +
 	"\x12FetchSecretRequest\x12\x10\n" +
 	"\x03uri\x18\x01 \x01(\tR\x03uri\x12&\n" +
-	"\x0factor_spiffe_id\x18\x02 \x01(\tR\ractorSpiffeId\"=\n" +
+	"\x0factor_spiffe_id\x18\x02 \x01(\tR\ractorSpiffeId\"q\n" +
 	"\x13FetchSecretResponse\x12&\n" +
-	"\fopaque_bytes\x18\x01 \x01(\fB\x03\x80\x01\x01R\vopaqueBytes2j\n" +
+	"\fopaque_bytes\x18\x01 \x01(\fB\x03\x80\x01\x01R\vopaqueBytes\x122\n" +
+	"\amax_age\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\x06maxAge2j\n" +
 	"\x12CredentialProvider\x12T\n" +
 	"\vFetchSecret\x12 .credprovider.FetchSecretRequest\x1a!.credprovider.FetchSecretResponse\"\x00B?Z=github.com/agent-substrate/substrate/pkg/proto/credproviderpbb\x06proto3"
 
@@ -168,15 +182,17 @@ var file_credprovider_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_credprovider_proto_goTypes = []any{
 	(*FetchSecretRequest)(nil),  // 0: credprovider.FetchSecretRequest
 	(*FetchSecretResponse)(nil), // 1: credprovider.FetchSecretResponse
+	(*durationpb.Duration)(nil), // 2: google.protobuf.Duration
 }
 var file_credprovider_proto_depIdxs = []int32{
-	0, // 0: credprovider.CredentialProvider.FetchSecret:input_type -> credprovider.FetchSecretRequest
-	1, // 1: credprovider.CredentialProvider.FetchSecret:output_type -> credprovider.FetchSecretResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: credprovider.FetchSecretResponse.max_age:type_name -> google.protobuf.Duration
+	0, // 1: credprovider.CredentialProvider.FetchSecret:input_type -> credprovider.FetchSecretRequest
+	1, // 2: credprovider.CredentialProvider.FetchSecret:output_type -> credprovider.FetchSecretResponse
+	2, // [2:3] is the sub-list for method output_type
+	1, // [1:2] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_credprovider_proto_init() }

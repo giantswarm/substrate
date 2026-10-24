@@ -1409,6 +1409,10 @@ survive it.
 - **During the roll:** an actor image only a pull secret can read is pulled
   once its node's atelet runs 1.18; a 1.17 atelet still pulls it
   anonymously or through the providers, as before.
+- **Credential providers:** `FetchSecretResponse` gains `max_age`, how long
+  the injector may reuse an answer. A provider of 1.17 never sets it and
+  keeps the injector's default; atenet's injector caches nothing, so it
+  fetches every request whichever version answers.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
