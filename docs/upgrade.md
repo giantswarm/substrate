@@ -1409,6 +1409,14 @@ survive it.
 - **During the roll:** an actor image only a pull secret can read is pulled
   once its node's atelet runs 1.18; a 1.17 atelet still pulls it
   anonymously or through the providers, as before.
+- **Behavior, CSI volumes:** a read-write-many or read-only-many volume of a
+  driver that advertises staging is staged once per node at one path its
+  targets share and unstaged after its last target, so a driver that tracks
+  its stagings (csi-driver-host-path) accepts an actor's second mount of it.
+  csi-driver-nfs advertises no staging and is unaffected.
+- **During the roll, CSI volumes:** a staging a 1.17 atelet made per target
+  is unstaged at its own path when that target is unpublished; nothing to do
+  by hand.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
