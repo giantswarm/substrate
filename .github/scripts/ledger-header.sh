@@ -63,8 +63,8 @@ if [ ! -d "$dir" ]; then
   exit 64
 fi
 
-if ! command -v yq >/dev/null 2>&1; then
-  echo "yq (mikefarah yq v4) is required to parse the headers" >&2
+if ! command -v yq >/dev/null 2>&1 || ! yq --version 2>&1 | grep -q mikefarah; then
+  echo "the Go yq (mikefarah yq v4) is required to parse the headers; found: $(command -v yq || echo none)" >&2
   exit 64
 fi
 
