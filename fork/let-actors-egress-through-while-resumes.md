@@ -8,11 +8,11 @@ commits:
   - 'chart: authorize the egress actor as a frontend policy at CONNECT time — the line''s dataplane (agentgateway#3237) reads it there'
   - 'fix(atenet,ateom): let an actor''s egress through while it resumes — the golden boot fetches before readyz'
 upstream:
-  outcome: open
+  outcome: merged
   refs: [agent-substrate/substrate#1543, agent-substrate/substrate#1959, agent-substrate/substrate#2117, agent-substrate/substrate#2159, agentgateway/agentgateway#3237, giantswarm/agentgateway-upstream#4]
-  exit: as#2117 merged
+  exit: "drops at the re-pin onto a commit containing ddab01e0c (as#2117)"
 depends_on: [giantswarm/agentgateway-upstream:the-egress-admits-a-resuming-actor-at-connect-time]
-verified: 2026-10-20
+verified: 2026-10-26
 ---
 # Let an actor's egress through while it resumes
 
@@ -31,3 +31,5 @@ an actor whose workload fetches what it needs to become ready — kagent's Go AD
 `6be3d50c` ([#4](https://github.com/giantswarm/substrate/pull/4); first published as `0.0.27-dev.giantswarm.2026-09-10.22-37-39.h1817627`)
 
 2026-10-20: agent-substrate/substrate#1959 (merged 2026-10-01, `7317e083`, in the pin), agentgateway/agentgateway#3237 (merged 2026-09-01, `8cbb254d`) and giantswarm/agentgateway-upstream#4 (merged 2026-09-11) are the tunnel shape and the dataplane this patch relies on, not its exit, so the outcome stays open on #2117.
+
+2026-10-26: agent-substrate/substrate#2117 merged on 2026-10-22 as `ddab01e0c`, so the outcome moves to merged; the chart half drops with it.
