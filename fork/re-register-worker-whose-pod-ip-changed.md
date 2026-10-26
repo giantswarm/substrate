@@ -7,11 +7,11 @@ status: carried
 commits:
   - 'workersync: re-register a worker whose pod IP changed in place'
 upstream:
-  outcome: open
-  refs: [agent-substrate/substrate#1837, agent-substrate/substrate#1983, agent-substrate/substrate#944]
-  exit: as#1983 merged
+  outcome: superseded
+  refs: [agent-substrate/substrate#1837, agent-substrate/substrate#1983, agent-substrate/substrate#944, agent-substrate/substrate#2988]
+  exit: "at the re-pin onto a commit containing 06737b8f3 (as#2988): check that a worker whose pod IP changed in place re-registers, then drop"
 depends_on: [ateom-keeps-re-asserting-capacity-report]
-verified: 2026-10-20
+verified: 2026-10-26
 ---
 # Re-register a worker whose pod IP changed in place
 
@@ -30,3 +30,5 @@ to file: the upstream-shaped patch is branch [`upstream/workersync-pod-ip-repair
 `b438d13c`, [#20](https://github.com/giantswarm/substrate/pull/20) (rebase-merged 2026-09-12)
 
 2026-10-20: agent-substrate/substrate#944 was closed as completed on 2026-10-01 by #2052 (`8a6b5e14`, in the pin, the `ips` field the patch already compares), which is not this fix, so the outcome stays open on #1983.
+
+2026-10-26: agent-substrate/substrate#1983 was closed on 2026-10-22 as fixed instead by #2988 (`06737b8f3`, worker restarts detected by an epoch the worker registers), and #1837 was closed as completed the same day. Whether the epoch covers an in-place IP change without a restart is unchecked, so the exit is a check at the re-pin, not a blind drop.

@@ -7,11 +7,11 @@ status: carried
 commits:
   - 'fix(helm): recreate the rustfs bucket-init Job, its image from gsoci'
 upstream:
-  outcome: open
+  outcome: fork-only
   refs: [kagent-dev/substrate#80]
-  exit: kd#80 merges and the hook half drops at the re-pin; the gsoci default stays fork-only
+  exit: "with T14: the knob becomes a setting of the generated chart of agent-substrate/substrate#3170; re-check 2026-11-17"
 depends_on: []
-verified: 2026-10-20
+verified: 2026-10-26
 ---
 # The `rustfs-bucket-init` Job is a Helm hook
 
@@ -30,3 +30,5 @@ to file for kagent-dev/substrate (the hook only; the gsoci default is fork-only)
 `f4256587` ([#85](https://github.com/giantswarm/substrate/pull/85))
 
 2026-10-20: [kagent-dev/substrate#80](https://github.com/kagent-dev/substrate/pull/80) (timflannagan, opened 2026-10-15) makes the Job the same `post-install,post-upgrade` hook with `before-hook-creation,hook-succeeded` and lets the microvm asset scripts tolerate the removed hook, so the hook half is open upstream under that pull request and the outcome moves from to-file to open.
+
+2026-10-26: kagent-dev/substrate#80 was closed unmerged by its author on 2026-10-21 ("Closing for now"). Under the chart-knobs decision of 2026-10-24 the row stays fork-only until agent-substrate/substrate#3170's generated chart lands.
