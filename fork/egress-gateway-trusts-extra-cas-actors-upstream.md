@@ -7,11 +7,11 @@ status: carried
 commits:
   - 'feat(chart): extra CAs for the egress gateway''s upstream TLS'
 upstream:
-  outcome: to-file
-  refs: []
-  exit: "kagent-dev/substrate chart PR merged: drop; unreviewed on 2026-11-17: the lab mounts its own bundle and the file drops (no production installation needs it, checked 2026-10-20)"
+  outcome: open
+  refs: [kagent-dev/substrate#100, kagent-dev/substrate#101]
+  exit: "kagent-dev/substrate#101 merged: drop at the re-pin past it; unreviewed on 2026-11-17: the lab mounts its own bundle and the file drops (no production installation needs it, checked 2026-10-20)"
 depends_on: []
-verified: 2026-10-20
+verified: 2026-10-26
 ---
 # The egress gateway trusts extra CAs on the actors' upstream HTTPS
 
@@ -30,3 +30,5 @@ to file — prepared in the fork: branch [`upstream/atenet-egress-upstream-trust
 [#92](https://github.com/giantswarm/substrate/pull/92)
 
 2026-10-20, decided on internal issue 38652, comment 6301541135: class 5 upstream PR, capped (136 lines, acceptance uncertain), fallback class 3 (lab only); destination kagent-dev/substrate, an issue then the chart PR; first step the issue, kagent-dev/substrate; branch `upstream/atenet-egress-upstream-trust` @ `175664c9f`; test `atenet_egress_upstream_trust_test.yaml` and the lab's serving test; depends on no theme; re-check 2026-11-17; owner unassigned; draft: internal issue 38652, comment 6301544635 and comment 6301545100.
+
+2026-10-26: filed by fiunchinho as the issue kagent-dev/substrate#100 and the chart PR kagent-dev/substrate#101, from `upstream/atenet-egress-upstream-trust-2` @ `7a20f7e15` (`175664c9f` cherry-picked onto kagent-dev/substrate `main` @ `3c6b9adbf`, +167). One change on top of the prepared commit: with a bundle set, the dynamic HTTPS backend leaves `backendTLS.root` out, because agentgateway reads the native roots only when `root` is unset and upstream `main` sets it on that backend; without a bundle the render is identical to `main`. `helm unittest` 44/44, two new cases for `root`. Owner fiunchinho.
