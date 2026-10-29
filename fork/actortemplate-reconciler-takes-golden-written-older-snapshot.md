@@ -9,11 +9,11 @@ commits:
   - 'fix(ateapi): take a golden written in an older snapshot layout again'
 upstream:
   outcome: open
-  refs: [agent-substrate/substrate#2474, giantswarm/substrate#151, giantswarm/substrate#284]
-  exit: 'ported at the conversion re-pin as its golden re-take and dropped at the following re-pin; the general case is an upstream issue on the snapshot compatibility stamp'
+  refs: [agent-substrate/substrate#2474, giantswarm/substrate#151, giantswarm/substrate#284, agent-substrate/substrate#3433]
+  exit: 'ported at the conversion re-pin as its golden re-take and dropped at the following re-pin; the general case is agent-substrate/substrate#3433, the upstream issue on the snapshot compatibility stamp'
   class: 6
-  destination: 'giantswarm/substrate row and snapshot conversion; agent-substrate/substrate issue on the snapshot compatibility stamp'
-  first_step: 'file the upstream issue on the snapshot compatibility stamp (agent-substrate/substrate)'
+  destination: 'giantswarm/substrate row and snapshot conversion; agent-substrate/substrate#3433 on the snapshot compatibility stamp'
+  first_step: 'the answer on agent-substrate/substrate#3433, then a pull request for the two compat attributes if upstream agrees'
   source: 'giantswarm @ fba71507b 88454826b; upstream/golden-layout-retake @ 165b2d371 (agent-substrate/substrate#2474)'
   test: 'the conversion lab upgrade: every golden is taken again in the new layout'
   recheck: 'Substrate GA (agent-substrate/substrate#2004), fallback 2026-11-24, with the conversion re-pin; the issue''s answer at each re-pin'
@@ -23,7 +23,7 @@ upstream:
   couplings: [compat-migrations]
   open_question: ''
 depends_on: [giantswarm/substrate#151]
-verified: 2026-10-21
+verified: 2026-10-29
 ---
 # The ActorTemplate reconciler takes a golden written in an older snapshot layout again
 
@@ -46,3 +46,5 @@ the reconciler took each golden once and skipped a template with a golden tag fo
 2026-10-21: decided in the fork-reduction review of the compat-migrations theme: fork-only (class 6) with an upstream issue (class 4): the next re-pin past kagent-dev/kagent 96c40300 is the first whose Substrate carries agent-substrate/substrate#2888; the fork converts state across it instead of cutting over, and the re-take of goldens moves into that conversion; the general case, a golden re-taken when its compatibility stamp matches no worker, is drafted as an upstream issue.
 
 2026-10-22: amended in the fork-reduction review of the compat-migrations theme: the conversion re-pin is the first past Substrate GA (fallback 2026-11-24), with one conversion written then against the frozen format; whether it runs as a one-shot agent-platform Job or as fork code for that one re-pin is decided then.
+
+2026-10-29: the general case filed as agent-substrate/substrate#3433 by fiunchinho from the draft, with every reference refreshed to upstream `main` `89475d52` (the skew policy now lives at `docs/reference/version-skew-policy.md`): two compat attributes, `checkpoint_format` and `restore_spec_hash`, and a golden taken again when its stamp matches no worker in its pools. agent-substrate/substrate#2474 stays the exit for the layout re-take, so the outcome stays open.
