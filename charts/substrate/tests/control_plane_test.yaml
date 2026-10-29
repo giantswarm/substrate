@@ -17,6 +17,7 @@ templates:
 - ate-api-server.yaml
 - ate-api-config.yaml
 - ate-controller.yaml
+- atenet-router.yaml
 - role.yaml
 - atelet.yaml
 - k8s-credential-provider.yaml
@@ -67,6 +68,12 @@ tests:
         apiGroups: [ate.dev]
         resources: [sandboxconfigs, workerpools]
         verbs: [get, list, watch]
+  - contains:
+      path: rules
+      content:
+        apiGroups: [events.k8s.io]
+        resources: [events]
+        verbs: [create, patch]
 - it: probes atelet health without exposing host ports
   template: atelet.yaml
   documentSelector:
@@ -324,3 +331,31 @@ tests:
         apiGroups: [ate.dev]
         resources: [workerpools, csidriverconfigs]
         verbs: [get, watch, list]
+
+- it: requires a trusted and explicitly allowed router client
+  template: atenet-router.yaml
+  documentSelector:
+    path: kind
+    value: ConfigMap
+  asserts:
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: 'source.spiffeId in \[\]'
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: 'root: /run/podidentity.podcert.ate.dev/trust-bundle.pem'
+  - notMatchRegex:
+      path: data["config.yaml"]
+      pattern: 'port: 808[01]'
+- it: allows the configured router client identities
+  template: atenet-router.yaml
+  set:
+    atenetRouter.ingressAllowedSPIFFEIDs:
+    - spiffe://cluster.local/ns/client/sa/router-client
+  documentSelector:
+    path: kind
+    value: ConfigMap
+  asserts:
+  - matchRegex:
+      path: data["config.yaml"]
+      pattern: 'source.spiffeId in \["spiffe://cluster.local/ns/client/sa/router-client"\]'

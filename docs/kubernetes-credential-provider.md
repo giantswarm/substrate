@@ -28,12 +28,12 @@ and the current [FetchSecret contract](../api/credprovider/v1/credprovider.proto
 Create the MITM CA Secret using the existing installation tooling:
 
 ```sh
-hack/install-ate-kind.sh --create-egress-mitm-ca-pool-secret
+go run ./cmd/ate-setup --kind create egress-mitm-ca-pool
 ```
 
 The gateway needs `egress-mitm-ca-pool` with `tls.crt` and `tls.key` in its namespace.
 Actors making HTTPS requests must trust this CA; see the
-[MITM trust bundle guide](egress-trust-bundle.md).
+[MITM trust bundle guide](guides/egress-trust-bundle.md).
 
 For Helm, add these values to your release configuration:
 
@@ -63,7 +63,7 @@ For the manifest installer, set your grants in
 
 ```sh
 kubectl kustomize manifests/egress-credential-injection | ko apply -f -
-hack/install-ate.sh --deploy-atenet \
+go run ./cmd/ate-setup deploy atenet \
   --atenet-dataplane=agentgateway --credential-provider='{"enabled":false}'
 ```
 
