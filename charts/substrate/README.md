@@ -140,11 +140,11 @@ snapshot bucket, and let the API server's identity impersonate it. See
 [the GCP setup guide](../../tools/setup-gcp/README.md#what-create-iam-actually-grants)
 for the required IAM grants. S3 and RustFS do not need this setting.
 
-The default gVisor config now uses release `20261019.0` (`v5`) for separate
+The default gVisor config now uses release `20261026.0` (`v6`) for separate
 container-rootfs and durable-directory checkpoint bundles. Upgrade the sandbox config together with ateworker-gvisor;
 custom configs must pin a release with the same checkpoint support and supply
 the `gvisor` release tarball asset. Bare `runsc` assets are no longer accepted.
-This replaces the previous `v4` config. Existing `v4` memory snapshots need a
+This replaces the previous `v5` config. Existing `v5` memory snapshots need a
 compatible runtime; falling back to a durable filesystem snapshot does not
 restore the actor's memory.
 
@@ -153,6 +153,11 @@ initializer Job before running `helm upgrade`. The default Job name is
 `rustfs-bucket-init` in the release namespace. This update changes the AWS CLI
 image, and Kubernetes cannot patch an existing Job's pod template. Helm
 recreates the Job, which keeps the existing bucket and its contents.
+
+The router now requires mTLS on ports 8443 and 8444. Set
+`atenetRouter.ingressAllowedSPIFFEIDs` to the client identities allowed to reach
+actors; its empty default denies all ingress. Plaintext ports 8080 and 8081
+no longer accept connections.
 
 The chart now denies ingress to the control-plane namespace by default and
 allows the component, router, egress, storage, and monitoring traffic it needs.
@@ -215,7 +220,7 @@ shared `ate-client` ServiceAccount is a bootstrap global owner so demos and
 CLI access work. For shared installs, set `ateApi.authorization.bootstrapOwners`
 to your operators' own principals and grant tenant access with `kubectl ate
 create access-policy`; anyone who can mint the shared client's token otherwise has
-global owner access. See [authorization](../../docs/authorization.md).
+global owner access. See [authorization](../../docs/guides/authorization.md).
 
 Upstream renumbered protobuf fields, so older clients and binaries are not
 wire compatible. Upgrade clients and components together: upstream now uses the
