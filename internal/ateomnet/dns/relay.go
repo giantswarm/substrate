@@ -55,7 +55,8 @@ type limiter struct {
 // Relay checks actor DNS against its egress policy before forwarding queries.
 // It listens in the sandbox's gateway namespace and dials from the worker's.
 type Relay struct {
-	upstreams []string
+	upstreams     []string
+	searchDomains []string
 
 	// dialer reaches upstream resolvers from the worker namespace.
 	dialer  *net.Dialer
@@ -68,7 +69,15 @@ func NewRelay(resolvConfPath string) (*Relay, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewRelayForUpstreams(upstreams)
+	relay, err := NewRelayForUpstreams(upstreams)
+	if err != nil {
+		return nil, err
+	}
+	relay.searchDomains, err = resolvConfSearchDomains(resolvConfPath)
+	if err != nil {
+		return nil, err
+	}
+	return relay, nil
 }
 
 // NewRelayForUpstreams forwards to upstreams, each "host:port", tried in order.
@@ -126,5 +135,5 @@ func (r *Relay) Serve(ctx context.Context, ns netns.Handle, policy PolicySource)
 // serveOn serves DNS on netC's sockets, which the caller has already bound,
 // and dials upstreams with netC's dialer.
 func (r *Relay) serveOn(ctx context.Context, netC *netConn, policy PolicySource) *Server {
-	return newServer(ctx, &serverConfig{upstreams: r.upstreams, policy: policy}, netC, &r.limiter)
+	return newServer(ctx, &serverConfig{upstreams: r.upstreams, policy: policy, searchDomains: r.searchDomains}, netC, &r.limiter)
 }

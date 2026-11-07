@@ -29,8 +29,9 @@ import (
 )
 
 type serverConfig struct {
-	upstreams []string
-	policy    PolicySource
+	upstreams     []string
+	policy        PolicySource
+	searchDomains []string
 }
 
 type netConn struct {
@@ -151,7 +152,7 @@ func (s *Server) servePacket(ctx context.Context) error {
 			defer func() { <-s.limiter.inFlight }()
 			// A failed query fails the actor's lookup too, often its whole search
 			// list: name the query so the worker's log shows which one and why.
-			answer := checkQuery(ctx, s.config.policy, query)
+			answer := checkQuery(ctx, s.config.policy, query, s.config.searchDomains...)
 			var err error
 			if answer == nil {
 				answer, err = s.exchangeUDP(ctx, query)
@@ -271,7 +272,7 @@ func (s *Server) relayTCP(ctx context.Context, downstream net.Conn) {
 		if _, err := io.ReadFull(downstream, query); err != nil {
 			return
 		}
-		answer := checkQuery(ctx, s.config.policy, query)
+		answer := checkQuery(ctx, s.config.policy, query, s.config.searchDomains...)
 		if answer == nil {
 			var err error
 			answer, err = s.exchangeTCP(ctx, query)

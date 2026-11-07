@@ -37,7 +37,7 @@ type queryPolicy func(dnsmessage.Question) bool
 
 // egressPolicyCheck returns the queryPolicy that checks each DNS question against
 // the actor's egress policy.
-func egressPolicyCheck(ctx context.Context, source PolicySource) queryPolicy {
+func egressPolicyCheck(ctx context.Context, source PolicySource, searchDomains ...string) queryPolicy {
 	if source == nil {
 		return func(dnsmessage.Question) bool { return false }
 	}
@@ -59,19 +59,19 @@ func egressPolicyCheck(ctx context.Context, source PolicySource) queryPolicy {
 		}
 		e := eval
 		mu.Unlock()
-		return e.allowsHostname(q.Name.String())
+		return e.allowsHostname(q.Name.String(), searchDomains...)
 	}
 }
 
 // checkQuery refuses malformed messages and disallowed questions before any
 // upstream connection. Checking every question prevents multi-question bypasses.
-func checkQuery(ctx context.Context, source PolicySource, query []byte) []byte {
+func checkQuery(ctx context.Context, source PolicySource, query []byte, searchDomains ...string) []byte {
 	var msg dnsmessage.Message
 	if err := msg.Unpack(query); err != nil {
 		return []byte{}
 	}
 	allowed := !msg.Header.Response && msg.Header.OpCode == 0 && len(msg.Questions) > 0
-	check := egressPolicyCheck(ctx, source)
+	check := egressPolicyCheck(ctx, source, searchDomains...)
 	for _, q := range msg.Questions {
 		if q.Class != dnsmessage.ClassINET || !check(q) {
 			allowed = false

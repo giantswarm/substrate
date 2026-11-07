@@ -43,3 +43,5 @@ The relay implementation at this pin differs from upstream's DNS handler,
 so policy checks are applied before UDP forwarding and per framed TCP message.
 
 [Pull request](https://github.com/giantswarm/substrate/pull/560).
+
+Short service names also match their expansions under the worker’s Kubernetes cluster search domains. Node-supplied external search domains do not expand the allowlist.

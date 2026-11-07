@@ -66,7 +66,7 @@ func newEvaluator(policy *ateletpb.EgressPolicy) *evaluator {
 
 // allowsHostname reports whether qname is a valid DNS hostname matched by at
 // least one rule in the policy.
-func (e *evaluator) allowsHostname(qname string) bool {
+func (e *evaluator) allowsHostname(qname string, searchDomains ...string) bool {
 	if e == nil || len(e.patterns) == 0 {
 		return false
 	}
@@ -77,6 +77,14 @@ func (e *evaluator) allowsHostname(qname string) bool {
 	for _, p := range e.patterns {
 		if p.Matches(host) {
 			return true
+		}
+		// Kubernetes expands short service names through its cluster search
+		// list. Only trusted suffixes from the worker's ClusterFirst config
+		// reach this list; node-supplied external search domains do not.
+		for _, suffix := range searchDomains {
+			if short, ok := strings.CutSuffix(host, "."+suffix); ok && short != "" && p.Matches(short) {
+				return true
+			}
 		}
 	}
 	return false

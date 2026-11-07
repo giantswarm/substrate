@@ -71,3 +71,5 @@ CURRENT CONNECT EGRESS PATH (one tunnel per actor TCP connection except destinat
 The relay checks hostnames from HTTP, HTTPS, TLS passthrough and TCP rules using the same exact-name and wildcard matching as the egress gateway. It checks every message of a TCP DNS stream separately. A nil or empty policy permits no DNS names. A policy read failure before the first successful fetch denies resolution; after a successful fetch, the last policy remains in use until the control plane is reachable again. Policies are refreshed after five seconds.
 
 The worker reads only destinations through atelet’s authenticated node-local connection. Policy metadata and credential injection effects remain outside the worker. DNS names are normalized to lowercase without a trailing dot before matching. An exact rule does not admit arbitrary subdomains; a wildcard rule admits the subdomains the policy explicitly permits. DNS record types are unrestricted for allowed names.
+
+Short service names also match their expansions under the worker’s Kubernetes cluster search domains. Node-supplied external search domains do not expand the allowlist.
