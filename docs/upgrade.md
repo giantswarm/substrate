@@ -1420,6 +1420,27 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.18
+
+#### 1.18.0 to 1.18.1
+
+- **Persisted format:** unchanged. No Postgres, CRD or snapshot migration.
+- **Behavior, DNS:** the actor DNS relay forwards only names allowed by
+  the actor's HTTP, HTTPS, TLS passthrough or TCP rules. A name outside
+  those rules receives NXDOMAIN, including queries on an established TCP
+  DNS connection. An absent or empty policy allows no names. Add required
+  destinations to the actor's policy before upgrading; DNS no longer
+  provides an unrestricted path around the egress gateway.
+- **During the roll:** update atelet before its workers. New workers use
+  the authenticated node-local policy RPC; until their node's atelet
+  supports it, DNS fails closed. An old worker retains the previous DNS
+  behavior until it is replaced. Policies are refreshed after five
+  seconds; after a successful read, a failed refresh retains the last
+  policy until atelet can be reached again.
+- **Goldens:** kept. DNS enforcement belongs to the worker, including for
+  an actor restored from an existing snapshot.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
