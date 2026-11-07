@@ -97,12 +97,13 @@ func TestActorEgressRequiresPolicy(t *testing.T) {
 }
 
 // hostnamePolicyActor creates an actor whose policy allows HTTPS to
-// example.com and nothing else, and waits until it is routable.
+// example.com, TLS passthrough to example.edu and HTTP to example.org,
+// and waits until it is routable.
 func hostnamePolicyActor(t *testing.T, ctx context.Context) (*e2e.RouterClient, resources.ActorRef) {
 	t.Helper()
-	// Admit example.org to DNS on a disjoint port so the HTTPS negatives
+	// Admit example.org to DNS via HTTP on port 80 so the HTTPS negatives
 	// still reach the gateway and prove its own decision on port 443.
-	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "egress-sni", e2e.EgressFixture(), e2e.EgressAllowHTTPS("example.com"), e2e.EgressAllowPassthrough("example.edu"), e2e.EgressAllowTCP([]int32{1}, "example.org"))
+	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "egress-sni", e2e.EgressFixture(), e2e.EgressAllowHTTPS("example.com"), e2e.EgressAllowPassthrough("example.edu"), e2e.EgressAllowHTTP("example.org"))
 	router := mustRouterClient(t, ctx)
 	t.Cleanup(func() { router.Close() })
 	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: actorName}
