@@ -100,7 +100,9 @@ func TestActorEgressRequiresPolicy(t *testing.T) {
 // example.com and nothing else, and waits until it is routable.
 func hostnamePolicyActor(t *testing.T, ctx context.Context) (*e2e.RouterClient, resources.ActorRef) {
 	t.Helper()
-	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "egress-sni", e2e.EgressFixture(), e2e.EgressAllowHTTPS("example.com"), e2e.EgressAllowPassthrough("example.edu"))
+	// Admit example.org to DNS on a disjoint port so the HTTPS negatives
+	// still reach the gateway and prove its own decision on port 443.
+	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "egress-sni", e2e.EgressFixture(), e2e.EgressAllowHTTPS("example.com"), e2e.EgressAllowPassthrough("example.edu"), e2e.EgressAllowTCP([]int32{1}, "example.org"))
 	router := mustRouterClient(t, ctx)
 	t.Cleanup(func() { router.Close() })
 	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: actorName}
@@ -249,5 +251,34 @@ func waitForActorRoute(t *testing.T, ctx context.Context, router *e2e.RouterClie
 			t.Fatalf("the egress Actor's route did not come up: GET /readyz returned HTTP %d", response.StatusCode)
 		}
 		time.Sleep(time.Second)
+	}
+}
+
+// TestActorDNSPolicy refuses a resolvable service outside the actor's policy.
+func TestActorDNSPolicy(t *testing.T) {
+	ctx := context.Background()
+	listed := e2e.DeployServerPod(t, ctx, egressHTTPTarget())
+	other := egressHTTPTarget()
+	other.Name = "dns-unlisted"
+	unlisted := e2e.DeployServerPod(t, ctx, other)
+	allowed := fmt.Sprintf("%s.%s.svc.cluster.local", egressHTTPTarget().Name, listed.Namespace)
+	denied := fmt.Sprintf("%s.%s.svc.cluster.local", other.Name, unlisted.Namespace)
+	_, actorName, _ := createAndResumeActorWithEgress(t, ctx, "dns-policy", e2e.EgressFixture(), e2e.EgressAllowHTTP(allowed))
+	router := mustRouterClient(t, ctx)
+	defer router.Close()
+	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: actorName}
+	status, body := fetchThroughEgressActorUntil(t, ctx, router, actorRef, "http://"+allowed+"/healthz", reached)
+	if status != http.StatusOK {
+		t.Fatalf("allowed DNS name: status %d, body %s", status, body)
+	}
+	status, body = fetchThroughEgressActorUntil(t, ctx, router, actorRef, "http://"+denied+"/healthz", notTransient)
+	var response struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+	if status != http.StatusBadGateway || !strings.Contains(response.Error, "lookup "+denied) || !strings.Contains(response.Error, "no such host") {
+		t.Fatalf("disallowed DNS name: status %d, body %s; want NXDOMAIN before the gateway", status, body)
 	}
 }
