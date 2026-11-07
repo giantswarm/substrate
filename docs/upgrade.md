@@ -1424,6 +1424,8 @@ survive it.
 
 #### 1.18.0 to 1.18.1
 
+- **Dependencies:** compress v1.20.2 fixes the two-block-frame panic
+  GO-2026-6865; no compressed format changes or manual conversion.
 - **Persisted format:** unchanged. No Postgres, CRD or snapshot migration.
 - **Behavior, DNS:** the actor DNS relay forwards only names allowed by
   the actor's HTTP, HTTPS, TLS passthrough or TCP rules. A name outside
