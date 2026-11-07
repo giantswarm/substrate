@@ -35,6 +35,7 @@ import (
 
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/internal/substratex509"
 	"github.com/spf13/pflag"
 )
 
@@ -91,6 +92,21 @@ func TestRegisterFlags(t *testing.T) {
 
 // testConfig returns a Config over fresh credentials and free loopback ports.
 func testConfig(t *testing.T) Config {
+	cfg, _ := testConfigAndCA(t)
+	return cfg
+}
+
+type testCA struct {
+	cert *x509.Certificate
+	key  *ecdsa.PrivateKey
+}
+
+const (
+	testNodeName = "node"
+	testNodeUID  = "node-uid"
+)
+
+func testConfigAndCA(t *testing.T) (Config, testCA) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -109,11 +125,21 @@ func testConfig(t *testing.T) Config {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
+	if err := substratex509.AddPodIdentityToCertificate(&substratex509.PodIdentity{
+		Namespace: "workers", ServiceAccountName: "default", ServiceAccountUID: "sa-uid",
+		PodName: "worker", PodUID: "pod-uid", NodeName: testNodeName, NodeUID: testNodeUID,
+	}, template); err != nil {
+		t.Fatal(err)
+	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +171,7 @@ func testConfig(t *testing.T) Config {
 		BrokerIdentity:       "spiffe://cluster.local/ns/ate-system/sa/atelet",
 		EgressListenAddress:  "0.0.0.0:15001",
 		EgressTrustBundle:    trust,
-	}
+	}, testCA{cert: cert, key: key}
 }
 
 // freeAddress returns a loopback address nothing is listening on.

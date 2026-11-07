@@ -66,7 +66,7 @@ func TestSandboxSessionCheckRuntimeTaken(t *testing.T) {
 	ctx := context.Background()
 	session, err := ServeSandbox(ctx, SandboxNetworkConfig{
 		ActorUID: "33333333-3333-3333-3333-333333333333", Veth: true, EgressPort: testEgressPort,
-	}, nil, nil)
+	}, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestSandboxSessionDialerConcurrentClose(t *testing.T) {
 	roottest.Require(t, "creates network namespaces")
 	session, err := ServeSandbox(context.Background(), SandboxNetworkConfig{
 		ActorUID: "concurrent-close", EgressPort: testEgressPort,
-	}, nil, nil)
+	}, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +407,7 @@ func TestSessionCloseWaitsForServingToStop(t *testing.T) {
 	egress := &slowEgress{release: make(chan struct{})}
 	session, err := ServeSandbox(context.Background(), SandboxNetworkConfig{
 		ActorUID: "close-waits", EgressPort: testEgressPort,
-	}, egress, nil)
+	}, egress, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestSessionCloseReportsAWaitItCouldNotFinish(t *testing.T) {
 	defer close(egress.release)
 	session, err := ServeSandbox(context.Background(), SandboxNetworkConfig{
 		ActorUID: "close-deadline", EgressPort: testEgressPort,
-	}, egress, nil)
+	}, egress, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -94,7 +94,7 @@ func (s *AteomService) hostActor(ctx context.Context, attribution resources.Acto
 	session, err := ateomnet.ServeSandbox(ctx, ateomnet.SandboxNetworkConfig{
 		ActorUID:   uid,
 		EgressPort: s.tunnel.EgressPort,
-	}, s.tunnel.Egress, s.tunnel.DNSRelay)
+	}, s.tunnel.Egress, s.tunnel.DNSRelay, s.tunnel.ActorEgressPolicy(attribution))
 	if err != nil {
 		s.actorsMu.Lock()
 		delete(s.actors, uid)

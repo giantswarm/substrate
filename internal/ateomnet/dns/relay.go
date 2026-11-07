@@ -52,9 +52,8 @@ type limiter struct {
 	connections chan struct{}
 }
 
-// Relay forwards UDP and TCP DNS unchanged to the worker pod's resolvers.
+// Relay checks actor DNS against its egress policy before forwarding queries.
 // It listens in the sandbox's gateway namespace and dials from the worker's.
-// DNS bypasses the egress tunnel and is not checked against egress policy.
 type Relay struct {
 	upstreams []string
 
@@ -96,7 +95,7 @@ func NewRelayForUpstreams(upstreams []string) (*Relay, error) {
 }
 
 // Serve serves UDP and TCP DNS in the sandbox's local gateway namespace.
-func (r *Relay) Serve(ctx context.Context, ns netns.Handle) (*Server, error) {
+func (r *Relay) Serve(ctx context.Context, ns netns.Handle, policy PolicySource) (*Server, error) {
 	// Bind the wildcard because the microVM tap's gateway address is added later.
 	address := net.JoinHostPort("0.0.0.0", strconv.Itoa(dnsPort))
 
@@ -121,11 +120,11 @@ func (r *Relay) Serve(ctx context.Context, ns netns.Handle) (*Server, error) {
 		return nil, err
 	}
 
-	return r.serveOn(ctx, &netC), nil
+	return r.serveOn(ctx, &netC, policy), nil
 }
 
 // serveOn serves DNS on netC's sockets, which the caller has already bound,
 // and dials upstreams with netC's dialer.
-func (r *Relay) serveOn(ctx context.Context, netC *netConn) *Server {
-	return newServer(ctx, &serverConfig{upstreams: r.upstreams}, netC, &r.limiter)
+func (r *Relay) serveOn(ctx context.Context, netC *netConn, policy PolicySource) *Server {
+	return newServer(ctx, &serverConfig{upstreams: r.upstreams, policy: policy}, netC, &r.limiter)
 }
