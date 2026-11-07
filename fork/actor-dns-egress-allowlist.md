@@ -41,3 +41,5 @@ Adapted from upstream commit df1331d75cd5f109421cd06e830f22841cf38395,
 which checks individual hostnames as well as refusing actors without a policy.
 The relay implementation at this pin differs from upstream's DNS handler,
 so policy checks are applied before UDP forwarding and per framed TCP message.
+
+[Pull request](https://github.com/giantswarm/substrate/pull/560).
