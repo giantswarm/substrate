@@ -25,4 +25,6 @@ Since the v0.4.0-alpha1 pin no resume reads the template's golden: an actor rest
 
 ## History
 
+`giantswarm`: [#561](https://github.com/giantswarm/substrate/pull/561).
+
 to file — prepared in the fork: branch [`upstream/golden-resnapshot`](https://github.com/giantswarm/substrate/tree/upstream/golden-resnapshot) (`88bdd021` on the mirror `main` @ `c2edd34d`, DCO-signed, no fork references, its message the pull-request text). Upstream keeps object storage behind a plugin with no list call, places the golden in the template's atespace and names it after the template, and has no golden re-take that replaces a tag, so the port detects the lost golden by the source tag's row and snapshot UUID instead of by its objects, moves the actor onto the current golden as a new snapshot generation, and refuses a failed golden with a plain `FailedPrecondition`; its unit tests and the `controlapi` and functional suites pass on the mirror.
