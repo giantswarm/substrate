@@ -68,6 +68,10 @@ const maxRPCDeadline = 10 * time.Minute
 
 const minResyncInterval = 250 * time.Millisecond
 
+// fromEnv is the flag value that reads a PostgreSQL setting from its
+// environment variable instead (loadFlagsFromEnv).
+const fromEnv = "@env"
+
 var (
 	listenAddr           = pflag.String("grpc-listen-addr", ":443", "Address and port the gRPC server should listen on.")
 	metricsListenAddr    = pflag.String("metrics-listen-addr", ":9090", "Address and port the prometheus metrics server should listen on.")
@@ -427,7 +431,7 @@ func loadFlagsFromEnv() error {
 		{postgresSchema, "ATE_API_POSTGRES_SCHEMA"},
 	}
 	for _, o := range overrides {
-		if *o.flag == "@env" {
+		if *o.flag == fromEnv {
 			*o.flag = os.Getenv(o.env)
 		}
 	}
