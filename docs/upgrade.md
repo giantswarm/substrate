@@ -1420,6 +1420,17 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+#### 1.18.0 to 1.18.1
+
+- **Persisted format:** unchanged.
+- **Chart:** `images.agentgateway` is 2.6.10 (2.6.5 before): the same
+  data plane on a refreshed base image, without the `ca-certificates-bundle`
+  findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
+  keeps them.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]
