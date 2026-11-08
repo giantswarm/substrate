@@ -5,6 +5,7 @@ theme: ci-publish-infra
 category: infra
 status: carried
 commits:
+  - 'ci(e2e): run the networking suite on the Envoy ext_proc dataplane'
   - 'ci(fork): the ledger header check requires the Go yq'
   - 'ci(fork): a pull request closes no issue by keyword'
   - 'chore: the boilerplate check skips .json5 as it skips .json'

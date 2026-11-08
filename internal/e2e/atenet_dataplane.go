@@ -40,6 +40,10 @@ type AtenetDataplane interface {
 	PlatformMetricPrefixes([]string) []string
 	RouteDurationSeen(context.Context, string) (bool, error)
 	MissingActorGRPCCode() codes.Code
+	// HeldActorGRPCCode is the code a gRPC call to an Actor whose lease
+	// another operation holds gets once the router's resume budget is spent,
+	// and whether the dataplane answers it in a way a suite can assert.
+	HeldActorGRPCCode() (codes.Code, bool)
 	// RelaysTCPRules reports whether the egress gateway relays TCP that is
 	// neither TLS nor HTTP when a tcp rule allows it. A gateway that does not
 	// closes it like any refused stream.
@@ -88,6 +92,10 @@ func (envoyAtenetDataplane) RouteDurationSeen(_ context.Context, collectorScrape
 // router answers it with the resume's own status.
 func (envoyAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.NotFound }
 
+// HeldActorGRPCCode: the router answers a held Actor with the resume's own
+// Aborted status, which tells the caller to retry its operation.
+func (envoyAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) { return codes.Aborted, true }
+
 // RelaysTCPRules: the Envoy egress gateway has no chain for a tcp rule yet;
 // its egress-policy module closes every stream that is neither TLS nor HTTP.
 func (envoyAtenetDataplane) RelaysTCPRules() bool { return false }
@@ -98,6 +106,13 @@ type agentGatewayAtenetDataplane struct{}
 // call by gRPC's HTTP-to-status fallback table, which maps 404 to Unimplemented.
 // TODO: carry the resume's own status to gRPC callers in AgentGateway.
 func (agentGatewayAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.Unimplemented }
+
+// HeldActorGRPCCode: AgentGateway answers its own ingress denials, and for a
+// held Actor not with the resume's status but by the same fallback table.
+// TODO: carry the resume's own status to gRPC callers in AgentGateway.
+func (agentGatewayAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) {
+	return codes.Unknown, false
+}
 
 func (agentGatewayAtenetDataplane) RelaysTCPRules() bool { return true }
 

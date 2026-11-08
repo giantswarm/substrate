@@ -17,6 +17,8 @@ package e2e
 import (
 	"net/http"
 	"testing"
+
+	"google.golang.org/grpc/codes"
 )
 
 func TestAtenetDataplaneEgressPolicyDenial(t *testing.T) {
@@ -30,6 +32,21 @@ func TestAtenetDataplaneEgressPolicyDenial(t *testing.T) {
 		t.Setenv(AtenetDataplaneEnv, "agentgateway")
 		if !CurrentAtenetDataplane().IsEgressPolicyDenied(http.StatusForbidden, "actor egress policy denied destination") {
 			t.Error("AgentGateway direct policy denial was not recognized")
+		}
+	})
+}
+
+func TestAtenetDataplaneHeldActorGRPCCode(t *testing.T) {
+	t.Run("envoy", func(t *testing.T) {
+		t.Setenv(AtenetDataplaneEnv, "")
+		if code, ok := CurrentAtenetDataplane().HeldActorGRPCCode(); !ok || code != codes.Aborted {
+			t.Errorf("Envoy HeldActorGRPCCode() = %v, %t; want Aborted, true", code, ok)
+		}
+	})
+	t.Run("agentgateway", func(t *testing.T) {
+		t.Setenv(AtenetDataplaneEnv, "agentgateway")
+		if _, ok := CurrentAtenetDataplane().HeldActorGRPCCode(); ok {
+			t.Error("AgentGateway HeldActorGRPCCode() is asserted, want it skipped until it carries the resume's status")
 		}
 	})
 }
