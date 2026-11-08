@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Fork (giantswarm/substrate): every pull request against a line names its
-# own number in the ledger (FORK.md, fork/), or carries the label no-ledger with a
+# Fork (giantswarm/substrate): every pull request against a line has its row
+# in the ledger (FORK.md, fork/): a line naming its number, or a fork/ file it
+# adds or edits, read from the pull request; or it carries the label no-ledger with a
 # "no-ledger: <reason>" line in its description; on every line, every pull
 # request merged into it is in the ledger. A workflow
 # of its own beside pr-workflow, so a label or a description edit re-runs

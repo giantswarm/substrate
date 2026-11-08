@@ -5,6 +5,7 @@ theme: ci-publish-infra
 category: infra
 status: carried
 commits:
+  - 'ci(fork): one commit carries a change with its ledger file'
   - 'ci(fork): the ledger header check requires the Go yq'
   - 'ci(fork): a pull request closes no issue by keyword'
   - 'chore: the boilerplate check skips .json5 as it skips .json'
