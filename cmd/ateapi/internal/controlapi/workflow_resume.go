@@ -96,6 +96,9 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	if wasRunning = actor.GetStatus().GetState() == ateapi.ActorState_ACTOR_STATE_RUNNING; wasRunning {
 		return actor, false, nil
 	}
+	if actor, err = w.ensureGoldenSourcePresent(leaseCtx, actorRef, actor, actorTemplate); err != nil {
+		return nil, false, err
+	}
 	var created *ateapi.Actor
 	if created, err = w.ensureVolumesCreated(leaseCtx, actorRef, actor, actorTemplate); err != nil {
 		return nil, false, err

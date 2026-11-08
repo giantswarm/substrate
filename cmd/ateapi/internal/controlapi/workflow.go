@@ -117,6 +117,11 @@ type ActorWorkflow struct {
 	workflowDeadline        time.Duration
 	objectStorePlugin       objectstore.ControlProviderClient
 	clusterSnapshotLocation string
+	// goldenResnapshotBudget bounds how long a resume waits for its
+	// template's golden to be taken again, goldenResnapshotPoll how often it
+	// looks; zero is the default (see ensureGoldenSourcePresent).
+	goldenResnapshotBudget time.Duration
+	goldenResnapshotPoll   time.Duration
 }
 
 // NewActorWorkflow creates a new ActorWorkflow. workflowDeadline bounds
@@ -192,6 +197,9 @@ type actorWorkflowStore interface {
 	MarkTagForDeletion(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions, mutate func(toUpdate *ateapi.Tag) error) (*ateapi.Tag, error)
 	DeleteTag(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions) (*ateapi.Tag, error)
 	GetActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef) (*ateapi.ActorTemplate, error)
+	// UpdateActorTemplate clears a lost golden record, which sends the
+	// template back to the reconciler to take its golden again.
+	UpdateActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.Precondition, mutate func(dbTemplate *ateapi.ActorTemplate) error) (*ateapi.ActorTemplate, error)
 	MarkActorTemplateForDeletion(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions, mutate func(toUpdate *ateapi.ActorTemplate) error) (*ateapi.ActorTemplate, error)
 	DeleteActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (*ateapi.ActorTemplate, error)
 	AcquireLease(ctx context.Context, key string) (*store.Lease, error)

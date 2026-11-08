@@ -125,7 +125,9 @@ func (w *ActorWorkflow) TagActorSnapshot(ctx context.Context, tag *ateapi.Tag) (
 //
 // Note that this destroys the external snapshot: an Actor created from the tag
 // and never suspended is still borrowing it and becomes unrecoverable. Do not
-// delete a tag while clones of it exist.
+// delete a tag while clones of it exist. A golden tag is the exception: the
+// resume of such an Actor moves it onto its template's golden, taken again if
+// need be (ensureGoldenSourcePresent).
 func (w *ActorWorkflow) DeleteTag(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions) (*ateapi.Tag, error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	// Serializes against a create of the same tag, whose copy would otherwise
