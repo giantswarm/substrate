@@ -25,4 +25,4 @@ Each template resync also sweeps the reserved atespace `ate-golden` under the le
 
 ## History
 
-`giantswarm`: this file's pull request; `release-1.3`: its backport.
+`giantswarm`: [#565](https://github.com/giantswarm/substrate/pull/565); `release-1.3`: [#566](https://github.com/giantswarm/substrate/pull/566).
