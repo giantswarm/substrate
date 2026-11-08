@@ -100,6 +100,7 @@ var (
 	drainTimeout = pflag.Duration("drain-timeout", 15*time.Second, "Deadline for the graceful gRPC drain on shutdown. In-flight RPCs still running past it are forcefully cancelled.")
 
 	templateResyncInterval = pflag.Duration("template-resync-interval", 20*time.Second, fmt.Sprintf("Interval between actor template resyncs. Must be at least %s.", minResyncInterval))
+	goldenSweepGracePeriod = pflag.Duration("golden-sweep-grace-period", controlapi.DefaultGoldenSweepGracePeriod, "Age a golden actor or golden tag whose ActorTemplate no longer exists reaches before the template resync removes it. A template delete that failed after removing the template leaves them behind.")
 	actorWorkflowDeadline  = pflag.Duration("actor-workflow-deadline", 5*time.Minute, "Maximum wall-clock duration of a single Resume/Suspend workflow; raise it for slow image registries.")
 	actorRestoreBudget     = pflag.Duration("actor-restore-budget", 90*time.Second, "Budget of one atelet restore attempt within a Resume workflow, a cold image pull and unpack included. An attempt that exceeds it is retried, up to 3 attempts within --actor-workflow-deadline; an actor whose restore keeps exceeding it is crashed with the budget named in its crash message. 0 leaves an attempt bounded by the workflow deadline alone.")
 
@@ -126,6 +127,9 @@ func main() {
 	slog.InfoContext(ctx, "ateapi starting", slog.String("version", version.Version))
 	if *templateResyncInterval < minResyncInterval {
 		serverboot.Fatal(ctx, "Invalid --template-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
+	}
+	if *goldenSweepGracePeriod < 0 {
+		serverboot.Fatal(ctx, "Invalid --golden-sweep-grace-period", fmt.Errorf("must not be negative"))
 	}
 	if *actorTransitionResyncInterval < minResyncInterval {
 		serverboot.Fatal(ctx, "Invalid --actor-transition-resync-interval", fmt.Errorf("must be at least %s", minResyncInterval))
@@ -316,7 +320,7 @@ func main() {
 	)
 
 	// Drive stored ActorTemplates through the golden actor flow.
-	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv, *templateResyncInterval)
+	templateReconciler := controlapi.NewActorTemplateReconciler(persistence, controlSrv, *templateResyncInterval, *goldenSweepGracePeriod)
 	templateReconciler.Start(shutdownCtx)
 	// Make every pause durable in the background.
 	controlSrv.Start(shutdownCtx)
@@ -466,6 +470,7 @@ func logFlagValues(ctx context.Context) {
 		slog.Duration("actor-workflow-deadline", *actorWorkflowDeadline),
 		slog.Duration("actor-restore-budget", *actorRestoreBudget),
 		slog.Duration("actor-transition-resync-interval", *actorTransitionResyncInterval),
+		slog.Duration("golden-sweep-grace-period", *goldenSweepGracePeriod),
 	)
 }
 
