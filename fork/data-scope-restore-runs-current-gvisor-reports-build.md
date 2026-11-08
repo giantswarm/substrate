@@ -40,3 +40,5 @@ the node.
 
 2026-11-08: written for giantswarm/substrate#175; the restore half rests on the line's own `restoreRuntime`, which
 upstream does not have, so no upstream change is prepared.
+
+[#563](https://github.com/giantswarm/substrate/pull/563), for [#175](https://github.com/giantswarm/substrate/issues/175)
