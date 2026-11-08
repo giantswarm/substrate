@@ -146,11 +146,22 @@ var retainedSandboxAssets = []assetEntry{
 	{URL: "gs://gvisor/releases/nightly/2026-09-02/aarch64/gvisor.tar.zstd", SHA256: "a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df"},
 }
 
+// restoreScope is the scope a restore runs at: data when the request asks for
+// it or when the snapshot manifest records a capture of durable data alone
+// (a full capture uploaded as data), which holds no checkpoint image to load;
+// else the request's.
+func restoreScope(requested ateletpb.SnapshotScope, snapshot *sandboxAssetsRecord) ateletpb.SnapshotScope {
+	if snapshot != nil && snapshot.Scope == ateattr.SnapshotScopeData {
+		return ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA
+	}
+	return requested
+}
+
 // restoreRuntime returns the sandbox a restore runs: the request's, with the
 // sandbox binaries the snapshot recorded when the restore loads the snapshot's
-// checkpoint image (any scope but data, which boots the workload fresh, asked
-// for by the request or recorded by the manifest), the snapshot is of the same
-// sandbox class, and each recorded binary is the request's or a retained build
+// checkpoint image (any scope but data, which boots the workload fresh; scope
+// is restoreScope's), the snapshot is of the same sandbox class, and each
+// recorded binary is the request's or a retained build
 // (retainedSandboxAssets). runsc refuses a checkpoint image another build
 // wrote, so a SandboxConfig that names a newer gVisor still resumes every
 // snapshot taken before it, and the restored actor's later checkpoints keep
@@ -160,7 +171,7 @@ var retainedSandboxAssets = []assetEntry{
 // checkpoint record them, so a SandboxConfig change reaches such an actor at
 // its next resume.
 func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.SnapshotScope) *sandboxAssetsRecord {
-	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || snapshot.Scope == ateattr.SnapshotScopeData || len(snapshot.Assets) == 0 ||
+	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || len(snapshot.Assets) == 0 ||
 		snapshot.SandboxClass != requested.SandboxClass || !trustedAssets(snapshot.Assets, requested.Assets) {
 		return requested
 	}

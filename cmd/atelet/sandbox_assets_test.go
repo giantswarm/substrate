@@ -281,18 +281,6 @@ func TestRestoreRuntime(t *testing.T) {
 			want:     newer,
 		},
 		{
-			name:     "a data-scope manifest boots fresh on the request's gVisor whatever the request's scope",
-			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older, Scope: ateattr.SnapshotScopeData},
-			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
-			want:     newer,
-		},
-		{
-			name:     "a full-scope manifest runs the snapshot's gVisor",
-			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older, Scope: ateattr.SnapshotScopeFull},
-			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
-			want:     older,
-		},
-		{
 			name:     "a snapshot without recorded assets runs the request's",
 			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor"},
 			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
@@ -333,6 +321,32 @@ func TestRestoreRuntime(t *testing.T) {
 			}
 			if requested.Assets[gvisorAssetName].SHA256 != "newer" {
 				t.Errorf("restoreRuntime() changed the request's record")
+			}
+		})
+	}
+}
+
+// TestRestoreScope proves a restore runs at data scope when the request asks
+// for it or the snapshot manifest records durable data alone, and at the
+// request's scope otherwise: a data-only capture holds no checkpoint image.
+func TestRestoreScope(t *testing.T) {
+	full, data := ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL, ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA
+	for _, tc := range []struct {
+		name      string
+		requested ateletpb.SnapshotScope
+		snapshot  *sandboxAssetsRecord
+		want      ateletpb.SnapshotScope
+	}{
+		{name: "full request, full manifest", requested: full, snapshot: &sandboxAssetsRecord{Scope: ateattr.SnapshotScopeFull}, want: full},
+		{name: "full request, data manifest", requested: full, snapshot: &sandboxAssetsRecord{Scope: ateattr.SnapshotScopeData}, want: data},
+		{name: "full request, manifest without a scope", requested: full, snapshot: &sandboxAssetsRecord{}, want: full},
+		{name: "data request, full manifest", requested: data, snapshot: &sandboxAssetsRecord{Scope: ateattr.SnapshotScopeFull}, want: data},
+		{name: "unspecified request, data manifest", snapshot: &sandboxAssetsRecord{Scope: ateattr.SnapshotScopeData}, want: data},
+		{name: "no manifest", requested: full, want: full},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := restoreScope(tc.requested, tc.snapshot); got != tc.want {
+				t.Errorf("restoreScope() = %v, want %v", got, tc.want)
 			}
 		})
 	}

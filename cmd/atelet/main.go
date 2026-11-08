@@ -1263,9 +1263,15 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	// snapshot kind only becomes knowable here.
 	op.kind = restoreSnapshotKind(req, sandboxRec)
 
+	// A manifest of durable data alone restores at data scope whatever the
+	// request says: there is no checkpoint image to load. The binaries, the
+	// ateom request and the metrics all follow this scope.
+	scope := restoreScope(req.GetScope(), sandboxRec)
+	op.scope = ateattr.SnapshotScopeValue(scope)
+
 	// runsc refuses a checkpoint image another build wrote, so a restore that
 	// loads one runs the sandbox binaries the snapshot was captured with.
-	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, req.GetScope())
+	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, scope)
 
 	var registration *registeredActor
 	// Undo the Register if the restore fails. The errgroup join below happens
@@ -1375,7 +1381,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		RunscPath:             runscPathFor(assetPaths),
 		RuntimeAssetPaths:     assetPaths,
 		Spec:                  spec,
-		Scope:                 toAteomSnapshotScope(req.GetScope()),
+		Scope:                 toAteomSnapshotScope(scope),
 		ActorUid:              req.GetActorUid(),
 		ActorDirs:             actorDirs,
 		PreserveRestoreDir:    directLocal,

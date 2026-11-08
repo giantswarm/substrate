@@ -17,10 +17,11 @@ verified: 2026-11-08
 
 ## Change
 
-The atelet's `restoreRuntime` (`cmd/atelet/sandbox_assets.go`) runs the request's sandbox binaries, the
-SandboxConfig's current ones, for a restore the request asks at data scope and also for a snapshot whose manifest
-records data scope alone (a full capture uploaded as data), so only a restore that loads a checkpoint image runs the
-recorded build. The on-node record a restore writes is that build, so the actor's next snapshot records it. atelet's
+The atelet's `Restore` runs at the scope `restoreScope` (`cmd/atelet/sandbox_assets.go`) derives: data when the
+request asks for it or the snapshot manifest records data scope alone (a full capture uploaded as data, which holds no
+checkpoint image), else the request's. That one scope picks the binaries (`restoreRuntime`: the request's, the
+SandboxConfig's current ones, at data scope), the scope of ateom's `RestoreWorkload` and the restore metrics' label, so
+only a restore that loads a checkpoint image runs the recorded build. The on-node record a restore writes is that build, so the actor's next snapshot records it. atelet's
 `RunResponse` and `RestoreResponse` carry `sandbox_assets` (field 10001), the binaries the actor runs on for the
 atelet's architecture; the resume workflow records them on `ActorStatus.sandbox_assets` (field 10002, asset name, URL
 and sha256, sorted by name; a report beyond the field's bounds is logged and left out) when the actor turns RUNNING.

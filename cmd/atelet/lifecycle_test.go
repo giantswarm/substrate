@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/trustbundle"
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
@@ -80,6 +82,9 @@ type fakeAteom struct {
 	// terminateRunscPath records the RunscPath of the most recent
 	// TerminateWorkload request.
 	terminateRunscPath string
+	// restoreScope records the Scope of the most recent RestoreWorkload
+	// request.
+	restoreScope ateompb.SnapshotScope
 }
 
 func (f *fakeAteom) recordActorDirs(rpc string, actorDirs *ateompb.ActorDirs) {
@@ -110,6 +115,7 @@ func (f *fakeAteom) CheckpointWorkload(_ context.Context, req *ateompb.Checkpoin
 func (f *fakeAteom) RestoreWorkload(_ context.Context, req *ateompb.RestoreWorkloadRequest) (*ateompb.RestoreWorkloadResponse, error) {
 	f.recordActorDirs("RestoreWorkload", req.GetActorDirs())
 	f.preserveRestoreDir = req.GetPreserveRestoreDir()
+	f.restoreScope = req.GetScope()
 	if f.restoreErr != nil {
 		return nil, f.restoreErr
 	}
@@ -535,6 +541,70 @@ func TestRestoreRunsAndReportsTheSandboxOfItsScope(t *testing.T) {
 			}
 			if got, want := rec.Assets[runscAssetName], (assetEntry{URL: want.GetUrl(), SHA256: want.GetSha256()}); got != want {
 				t.Errorf("next snapshot records runsc %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+// TestRestoreOfDataOnlyManifestBootsFresh proves a restore whose snapshot
+// manifest records durable data alone asks ateom for a data-scope restore and
+// runs the request's sandbox binaries even when the request says full, while
+// a full-state snapshot still restores at full scope on the build that wrote
+// it.
+func TestRestoreOfDataOnlyManifestBootsFresh(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		manifestScope string
+		wantScope     ateompb.SnapshotScope
+		wantCaptured  bool
+	}{
+		{name: "data-only manifest", manifestScope: ateattr.SnapshotScopeData, wantScope: ateompb.SnapshotScope_SNAPSHOT_SCOPE_DATA},
+		{name: "full-state manifest", manifestScope: ateattr.SnapshotScopeFull, wantScope: ateompb.SnapshotScope_SNAPSHOT_SCOPE_FULL, wantCaptured: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newCheckpointedActor(t)
+
+			// Record the manifest's scope as a capture uploaded as data does.
+			path := filepath.Join(ateletpath.LocalSnapshotDir(checkpointedActorUID, a.restore.GetLocalConfig().GetSnapshotName()), sandboxManifestName)
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("reading snapshot manifest: %v", err)
+			}
+			rec, err := unmarshalSandboxRecord(raw)
+			if err != nil {
+				t.Fatalf("unmarshalling snapshot manifest: %v", err)
+			}
+			rec.Scope = tc.manifestScope
+			if raw, err = json.Marshal(rec); err != nil {
+				t.Fatalf("marshalling snapshot manifest: %v", err)
+			}
+			if err := os.WriteFile(path, raw, 0o600); err != nil {
+				t.Fatalf("writing snapshot manifest: %v", err)
+			}
+
+			// The SandboxConfig names another build than the one captured,
+			// which stays trusted as a retained build is.
+			files := a.restore.GetSandboxAssets().GetAssets()[runtime.GOARCH].GetFiles()
+			captured := proto.CloneOf(files[runscAssetName])
+			files[runscAssetName] = &ateletpb.AssetFile{Url: captured.GetUrl() + "-newer", Sha256: captured.GetSha256()}
+			retained := retainedSandboxAssets
+			retainedSandboxAssets = append(slices.Clone(retained), assetEntry{URL: captured.GetUrl(), SHA256: captured.GetSha256()})
+			t.Cleanup(func() { retainedSandboxAssets = retained })
+
+			a.restore.Scope = ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL
+			resp, err := a.herder.Restore(t.Context(), a.restore)
+			if err != nil {
+				t.Fatalf("Restore: %v", err)
+			}
+			if a.ateom.restoreScope != tc.wantScope {
+				t.Errorf("ateom restore scope = %v, want %v", a.ateom.restoreScope, tc.wantScope)
+			}
+			want := files[runscAssetName]
+			if tc.wantCaptured {
+				want = captured
+			}
+			if diff := cmp.Diff(want, resp.GetSandboxAssets().GetFiles()[runscAssetName], protocmp.Transform()); diff != "" {
+				t.Errorf("Restore ran runsc (-want +got):\n%s", diff)
 			}
 		})
 	}
