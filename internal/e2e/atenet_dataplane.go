@@ -48,6 +48,10 @@ type AtenetDataplane interface {
 	// neither TLS nor HTTP when a tcp rule allows it. A gateway that does not
 	// closes it like any refused stream.
 	RelaysTCPRules() bool
+	// IsTCPRefusal reports whether received, what an actor read back on a
+	// raw TCP stream the gateway did not relay, is the gateway's refusal: no
+	// byte of the origin's.
+	IsTCPRefusal(received string) bool
 }
 
 // CurrentAtenetDataplane returns the implementation selected for this test
@@ -100,6 +104,14 @@ func (envoyAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) { return code
 // its egress-policy module closes every stream that is neither TLS nor HTTP.
 func (envoyAtenetDataplane) RelaysTCPRules() bool { return false }
 
+// IsTCPRefusal: Envoy's egress listener parses a stream that is neither TLS
+// nor CONNECT as HTTP/1.1 and answers what is not HTTP with its own 400 before
+// closing; nothing reaches the origin.
+func (envoyAtenetDataplane) IsTCPRefusal(received string) bool {
+	return received == "" ||
+		(strings.HasPrefix(received, "HTTP/1.1 400 Bad Request\r\n") && strings.Contains(received, "\r\nserver: envoy\r\n"))
+}
+
 type agentGatewayAtenetDataplane struct{}
 
 // MissingActorGRPCCode: AgentGateway answers its own ingress denial to a gRPC
@@ -115,6 +127,9 @@ func (agentGatewayAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) {
 }
 
 func (agentGatewayAtenetDataplane) RelaysTCPRules() bool { return true }
+
+// IsTCPRefusal: AgentGateway closes a refused stream with nothing written.
+func (agentGatewayAtenetDataplane) IsTCPRefusal(received string) bool { return received == "" }
 
 func (agentGatewayAtenetDataplane) NewParkingObserver(context.Context) (ParkingObserver, error) {
 	return agentGatewayParkingObserver{}, nil

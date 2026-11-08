@@ -16,6 +16,7 @@ package e2e
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -27,6 +28,10 @@ import (
 // heldActorLeaseToken marks the lease rows HoldActorLease writes, so its
 // release deletes only its own row and never an operation's.
 const heldActorLeaseToken = "e2e-held-actor"
+
+// postgresSchemaEnv names the schema ate-api's tables live in, as
+// hack/install-ate.sh installs it (default substrate).
+const postgresSchemaEnv = "ATE_API_POSTGRES_SCHEMA"
 
 // HoldActorLease holds actorRef's lease, as a lifecycle operation of ate-api
 // does, for ttl or until the test ends: a resume of the Actor meanwhile is
@@ -42,12 +47,17 @@ func HoldActorLease(t *testing.T, actorRef resources.ActorRef, ttl time.Duration
 	t.Helper()
 	key := sqlLiteral("lease:actor:" + actorRef.Atespace + ":" + actorRef.Name)
 	token := sqlLiteral(heldActorLeaseToken)
-	runPostgresSQL(t, fmt.Sprintf(`INSERT INTO leases (key, token, holder, acquired_at, expires_at)
+	schema := os.Getenv(postgresSchemaEnv)
+	if schema == "" {
+		schema = "substrate"
+	}
+	leases := sqlIdentifier(schema) + ".leases"
+	runPostgresSQL(t, fmt.Sprintf(`INSERT INTO %[4]s (key, token, holder, acquired_at, expires_at)
 VALUES (%[1]s, %[2]s, 'e2e', clock_timestamp(), clock_timestamp() + make_interval(secs => %[3]d))
 ON CONFLICT (key) DO UPDATE SET token = EXCLUDED.token, holder = EXCLUDED.holder,
-  acquired_at = EXCLUDED.acquired_at, expires_at = EXCLUDED.expires_at`, key, token, int(ttl.Seconds())))
+  acquired_at = EXCLUDED.acquired_at, expires_at = EXCLUDED.expires_at`, key, token, int(ttl.Seconds()), leases))
 	t.Cleanup(func() {
-		runPostgresSQL(t, fmt.Sprintf(`DELETE FROM leases WHERE key = %s AND token = %s`, key, token))
+		runPostgresSQL(t, fmt.Sprintf(`DELETE FROM %s WHERE key = %s AND token = %s`, leases, key, token))
 	})
 }
 
@@ -69,6 +79,11 @@ func runPostgresSQL(t *testing.T, statement string) {
 	if err != nil {
 		t.Fatalf("running %q in PostgreSQL: %v: %s", statement, err, output)
 	}
+}
+
+// sqlIdentifier quotes s as an SQL identifier.
+func sqlIdentifier(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 // sqlLiteral quotes s as an SQL string literal.

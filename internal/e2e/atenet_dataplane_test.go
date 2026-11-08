@@ -50,3 +50,26 @@ func TestAtenetDataplaneHeldActorGRPCCode(t *testing.T) {
 		}
 	})
 }
+
+func TestAtenetDataplaneTCPRefusal(t *testing.T) {
+	const envoy400 = "HTTP/1.1 400 Bad Request\r\ncontent-length: 11\r\ncontent-type: text/plain\r\nserver: envoy\r\nconnection: close\r\n\r\nBad Request"
+	t.Run("envoy", func(t *testing.T) {
+		t.Setenv(AtenetDataplaneEnv, "")
+		dataplane := CurrentAtenetDataplane()
+		for _, received := range []string{"", envoy400} {
+			if !dataplane.IsTCPRefusal(received) {
+				t.Errorf("Envoy IsTCPRefusal(%q) = false, want true", received)
+			}
+		}
+		if dataplane.IsTCPRefusal("echo: SSH-2.0-actor\r\n") {
+			t.Error("Envoy IsTCPRefusal took the origin's echo for a refusal")
+		}
+	})
+	t.Run("agentgateway", func(t *testing.T) {
+		t.Setenv(AtenetDataplaneEnv, "agentgateway")
+		dataplane := CurrentAtenetDataplane()
+		if !dataplane.IsTCPRefusal("") || dataplane.IsTCPRefusal(envoy400) {
+			t.Error("AgentGateway IsTCPRefusal accepts anything but a stream closed with nothing")
+		}
+	})
+}
