@@ -625,7 +625,7 @@ func (s *AteomHerder) Run(ctx context.Context, req *ateletpb.RunRequest) (resp *
 		return nil, fmt.Errorf("while calling ateom.RunWorkload: %w", err)
 	}
 
-	return &ateletpb.RunResponse{}, nil
+	return &ateletpb.RunResponse{SandboxAssets: sandboxRec.archAssets()}, nil
 }
 
 var snapshotSizeBytes metric.Int64Histogram
@@ -1389,7 +1389,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		return nil, fmt.Errorf("while calling ateom.RestoreWorkload: %w", err)
 	}
 
-	return &ateletpb.RestoreResponse{}, nil
+	return &ateletpb.RestoreResponse{SandboxAssets: runtimeRec.archAssets()}, nil
 }
 
 // Terminate terminates any running workload on ateom, unmounts external volumes,

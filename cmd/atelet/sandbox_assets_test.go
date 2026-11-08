@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/google/go-cmp/cmp"
@@ -278,6 +279,18 @@ func TestRestoreRuntime(t *testing.T) {
 			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older},
 			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA,
 			want:     newer,
+		},
+		{
+			name:     "a data-scope manifest boots fresh on the request's gVisor whatever the request's scope",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older, Scope: ateattr.SnapshotScopeData},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     newer,
+		},
+		{
+			name:     "a full-scope manifest runs the snapshot's gVisor",
+			snapshot: &sandboxAssetsRecord{SandboxClass: "gvisor", Assets: older, Scope: ateattr.SnapshotScopeFull},
+			scope:    ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:     older,
 		},
 		{
 			name:     "a snapshot without recorded assets runs the request's",

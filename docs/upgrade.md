@@ -1420,6 +1420,37 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.18
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.17 straight to a 1.18 patch is the 1.17 to 1.18 step and the patch
+entries in one roll.
+
+#### 1.18.0 to 1.18.1
+
+- **Persisted format:** one optional field more, nothing migrated. An
+  Actor's status carries `sandbox_assets`, the sandbox binaries it last
+  ran on (asset name, URL and sha256), written by every resume; an actor
+  not resumed since reads none. atelet's Run and Restore responses carry
+  the same list; a 1.18.0 ate-api-server ignores them. No CRD, no
+  Postgres schema and no snapshot layout differs.
+- **Behavior, sandbox builds:** an actor restored at data scope runs the
+  SandboxConfig's current gVisor whatever build its snapshot was taken
+  on, also when its snapshot manifest alone says the snapshot holds data
+  only, and its next snapshot records that build: actors whose data-scope
+  snapshots were taken on an older release move to the current one at
+  their next resume, with no step per actor. A full-scope restore still
+  runs the (trusted) build that wrote its checkpoint image.
+- **kubectl ate:** `kubectl ate get actors` has a `SANDBOX` column, the
+  last column, naming the gVisor release an actor last ran on (such as
+  `nightly/2026-09-09`) or `<none>`; `-o yaml` lists every asset.
+- **During the roll:** an actor resumed by a 1.18.0 atelet reads no
+  `sandbox_assets`; it gets them at its next resume on a 1.18.1 atelet.
+- **Migration:** none to run.
+- **Goldens:** kept.
+- **Reset:** none. **Conversations lost:** none.
+
 ### After the roll, on GKE
 
 > [!WARNING]

@@ -70,7 +70,7 @@ func PrintActorsTo(out io.Writer, actors []*ateapipb.Actor, format string) error
 		return printProto(out, &ateapipb.ListActorsResponse{Actors: actors}, format)
 	case "table":
 		w := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "ATESPACE\tNAME\tTEMPLATE\tSTATE\tWORKER POD\tWORKER IPS\tVERSION\tAGE")
+		fmt.Fprintln(w, "ATESPACE\tNAME\tTEMPLATE\tSTATE\tWORKER POD\tWORKER IPS\tVERSION\tAGE\tSANDBOX")
 		for _, actor := range actors {
 			atespace := actor.GetMetadata().GetAtespace()
 			name := actor.GetMetadata().GetName()
@@ -85,12 +85,57 @@ func PrintActorsTo(out io.Writer, actors []*ateapipb.Actor, format string) error
 
 			version := actor.GetMetadata().GetVersion()
 			age := formatAge(actor.GetMetadata().GetCreateTime())
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", atespace, name, template, state, worker, strings.Join(assignment.GetWorkerPodIps(), ","), version, age)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", atespace, name, template, state, worker, strings.Join(assignment.GetWorkerPodIps(), ","), version, age, sandboxDisplay(actor.GetStatus().GetSandboxAssets()))
 		}
 		return w.Flush()
 	default:
 		return fmt.Errorf("unsupported format %q", format)
 	}
+}
+
+// sandboxDisplay names the sandbox build an Actor last ran on: the gVisor
+// release its "gvisor" (or "runsc") asset was downloaded from, such as
+// "nightly/2026-09-09" for gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd,
+// else the first asset by name with the head of its sha256. -o yaml shows
+// every asset in full.
+func sandboxDisplay(assets []*ateapipb.SandboxAsset) string {
+	if len(assets) == 0 {
+		return "<none>"
+	}
+	for _, name := range []string{"gvisor", "runsc"} {
+		for _, a := range assets {
+			if a.GetName() == name {
+				if release := gvisorRelease(a.GetUrl()); release != "" {
+					return release
+				}
+				return name + "@" + shortSHA256(a.GetSha256())
+			}
+		}
+	}
+	first := slices.MinFunc(assets, func(a, b *ateapipb.SandboxAsset) int { return cmp.Compare(a.GetName(), b.GetName()) })
+	return first.GetName() + "@" + shortSHA256(first.GetSha256())
+}
+
+// gvisorRelease returns the release path of a gVisor download URL, the part
+// between "releases/" and the architecture directory, or "" for a URL of
+// another shape.
+func gvisorRelease(url string) string {
+	_, rest, ok := strings.Cut(url, "/releases/")
+	if !ok {
+		return ""
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) < 3 {
+		return ""
+	}
+	return strings.Join(parts[:len(parts)-2], "/")
+}
+
+func shortSHA256(sha string) string {
+	if len(sha) > 12 {
+		return sha[:12]
+	}
+	return sha
 }
 
 // WorkerOccupancy is how full a Worker is, as a count against its limit. A

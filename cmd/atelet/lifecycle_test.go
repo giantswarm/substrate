@@ -35,10 +35,12 @@ import (
 	"github.com/agent-substrate/substrate/internal/proto/ateompb"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/internal/volume"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 // useTempNodeDirs roots atelet's on-node state in temp directories so a test
@@ -455,6 +457,86 @@ func TestRestoreUsesRequestSandboxAssets(t *testing.T) {
 	}
 	if got.PauseImage != a.restorePause {
 		t.Errorf("restored actor pause image = %q, want the request's %q", got.PauseImage, a.restorePause)
+	}
+}
+
+// TestRestoreRunsAndReportsTheSandboxOfItsScope proves the sandbox binaries a
+// restore runs, reports and records for the actor's next checkpoint after its
+// SandboxConfig moved to another build: a full-scope restore loads a checkpoint
+// image and keeps the (trusted) build that wrote it, a data-scope restore boots
+// fresh on the request's, so the next snapshot of that actor records the
+// request's build and its pin moves forward.
+func TestRestoreRunsAndReportsTheSandboxOfItsScope(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		scope ateletpb.SnapshotScope
+		want  func(captured, requested *ateletpb.AssetFile) *ateletpb.AssetFile
+	}{
+		{
+			name:  "full scope keeps the captured build",
+			scope: ateletpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
+			want:  func(captured, _ *ateletpb.AssetFile) *ateletpb.AssetFile { return captured },
+		},
+		{
+			name:  "data scope runs the request's build",
+			scope: ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA,
+			want:  func(_, requested *ateletpb.AssetFile) *ateletpb.AssetFile { return requested },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newCheckpointedActor(t)
+			ctx := t.Context()
+
+			files := a.restore.GetSandboxAssets().GetAssets()[runtime.GOARCH].GetFiles()
+			captured := proto.CloneOf(files[runscAssetName])
+			// The SandboxConfig names another build since the checkpoint:
+			// another URL, the same bytes the fake object store serves.
+			requested := &ateletpb.AssetFile{Url: captured.GetUrl() + "-newer", Sha256: captured.GetSha256()}
+			files[runscAssetName] = requested
+			// The captured build stays trusted, as a retained build is.
+			retained := retainedSandboxAssets
+			retainedSandboxAssets = append(slices.Clone(retained), assetEntry{URL: captured.GetUrl(), SHA256: captured.GetSha256()})
+			t.Cleanup(func() { retainedSandboxAssets = retained })
+
+			a.restore.Scope = tc.scope
+			resp, err := a.herder.Restore(ctx, a.restore)
+			if err != nil {
+				t.Fatalf("Restore: %v", err)
+			}
+			want := tc.want(captured, requested)
+			if diff := cmp.Diff(want, resp.GetSandboxAssets().GetFiles()[runscAssetName], protocmp.Transform()); diff != "" {
+				t.Errorf("Restore reported runsc (-want +got):\n%s", diff)
+			}
+
+			const nextSnapshot = "pause-snap-2"
+			if _, err := a.herder.Checkpoint(ctx, &ateletpb.CheckpointRequest{
+				Atespace:              a.restore.GetAtespace(),
+				ActorName:             a.restore.GetActorName(),
+				ActorUid:              checkpointedActorUID,
+				ActorTemplateAtespace: "default",
+				ActorTemplateName:     "counter",
+				TargetAteomUid:        checkpointedAteomUID,
+				Spec:                  a.spec,
+				Scope:                 tc.scope,
+				Type:                  ateletpb.CheckpointType_CHECKPOINT_TYPE_LOCAL,
+				Config: &ateletpb.CheckpointRequest_LocalConfig{
+					LocalConfig: &ateletpb.LocalCheckpointConfiguration{SnapshotName: nextSnapshot},
+				},
+			}); err != nil {
+				t.Fatalf("Checkpoint after the restore: %v", err)
+			}
+			manifest, err := os.ReadFile(filepath.Join(ateletpath.LocalSnapshotDir(checkpointedActorUID, nextSnapshot), sandboxManifestName))
+			if err != nil {
+				t.Fatalf("reading the next snapshot's manifest: %v", err)
+			}
+			rec, err := unmarshalSandboxRecord(manifest)
+			if err != nil {
+				t.Fatalf("unmarshalling the next snapshot's manifest: %v", err)
+			}
+			if got, want := rec.Assets[runscAssetName], (assetEntry{URL: want.GetUrl(), SHA256: want.GetSha256()}); got != want {
+				t.Errorf("next snapshot records runsc %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 

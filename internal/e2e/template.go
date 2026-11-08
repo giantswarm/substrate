@@ -16,6 +16,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,7 +121,16 @@ func CreateSubstrateTemplateFrom(ctx context.Context, t *testing.T, clients *Cli
 	if opts.Modify != nil {
 		opts.Modify(tmpl)
 	}
-	created, err := clients.SubstrateAPI.CreateActorTemplate(ctx, &ateapipb.CreateActorTemplateRequest{ActorTemplate: tmpl})
+	// A SandboxConfig the test created just before reaches the control
+	// plane's informer a moment later; until then the create is refused as
+	// naming a SandboxConfig that is not found.
+	var created *ateapipb.ActorTemplate
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(time.Second) {
+		created, err = clients.SubstrateAPI.CreateActorTemplate(ctx, &ateapipb.CreateActorTemplateRequest{ActorTemplate: tmpl})
+		if err == nil || status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "SandboxConfig") || time.Now().After(deadline) {
+			break
+		}
+	}
 	if err != nil {
 		t.Fatalf("failed to create ActorTemplate %s/%s: %v", opts.Atespace, opts.Name, err)
 	}

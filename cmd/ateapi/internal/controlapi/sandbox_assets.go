@@ -15,7 +15,11 @@
 package controlapi
 
 import (
+	"cmp"
+	"context"
 	"fmt"
+	"log/slog"
+	"slices"
 
 	"github.com/agent-substrate/substrate/internal/apierror"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
@@ -85,5 +89,40 @@ func sandboxAssetsProto(sc *atev1alpha1.SandboxConfig) *ateletpb.SandboxAssets {
 		}
 		out.Assets[arch] = archAssets
 	}
+	return out
+}
+
+// Bounds of ActorStatus.sandbox_assets, as its validation tags state them.
+const (
+	maxStatusSandboxAssets   = 16
+	maxStatusSandboxAssetLen = 253
+	maxStatusSandboxURLLen   = 4096
+	maxStatusSandboxSHA256   = 64
+)
+
+// sandboxAssetsStatus converts the sandbox binaries an atelet reports it runs
+// an actor on into ActorStatus.sandbox_assets, sorted by name. A report that
+// does not fit the status's bounds is logged and left out, so it never makes
+// the actor's later updates fail validation; an atelet that reports nothing
+// yields none.
+func sandboxAssetsStatus(ctx context.Context, reported *ateletpb.ArchAssets) []*ateapipb.SandboxAsset {
+	files := reported.GetFiles()
+	if len(files) == 0 {
+		return nil
+	}
+	if len(files) > maxStatusSandboxAssets {
+		slog.WarnContext(ctx, "Atelet reported more sandbox assets than the actor status holds; not recording them", slog.Int("assets", len(files)))
+		return nil
+	}
+	out := make([]*ateapipb.SandboxAsset, 0, len(files))
+	for name, f := range files {
+		if name == "" || len(name) > maxStatusSandboxAssetLen || f.GetUrl() == "" || len(f.GetUrl()) > maxStatusSandboxURLLen ||
+			f.GetSha256() == "" || len(f.GetSha256()) > maxStatusSandboxSHA256 {
+			slog.WarnContext(ctx, "Atelet reported a sandbox asset the actor status cannot hold; not recording the assets", slog.String("asset", name))
+			return nil
+		}
+		out = append(out, &ateapipb.SandboxAsset{Name: name, Url: f.GetUrl(), Sha256: f.GetSha256()})
+	}
+	slices.SortFunc(out, func(a, b *ateapipb.SandboxAsset) int { return cmp.Compare(a.GetName(), b.GetName()) })
 	return out
 }

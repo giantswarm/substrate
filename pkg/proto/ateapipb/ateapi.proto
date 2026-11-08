@@ -982,6 +982,39 @@ message ActorStatus {
   //
   // +k8s:optional
   FencingToken fencing_token = 10001;
+
+  // sandbox_assets are the sandbox binaries the Actor last ran on, as the
+  // atelet that booted or restored it reported them: the SandboxConfig's on
+  // a boot or a data-scope restore, the ones its snapshot was captured with
+  // on a restore that loads a checkpoint image. Kept while the Actor is not
+  // running. Empty until it first runs.
+  //
+  // +k8s:optional
+  // +k8s:maxItems=16
+  // +k8s:listType=map
+  // +k8s:listMapKey=name
+  repeated SandboxAsset sandbox_assets = 10002;
+}
+
+// SandboxAsset is one sandbox binary an Actor runs on.
+message SandboxAsset {
+  // name is the asset's name in the SandboxConfig, such as "gvisor".
+  //
+  // +k8s:required
+  // +k8s:maxLength=253
+  string name = 1;
+
+  // url is where the asset was downloaded from.
+  //
+  // +k8s:required
+  // +k8s:maxLength=4096
+  string url = 2;
+
+  // sha256 is the asset's lower-case hex SHA-256.
+  //
+  // +k8s:required
+  // +k8s:maxLength=64
+  string sha256 = 3;
 }
 
 // ActorCrash describes the failure that moved an Actor to CRASHED.
