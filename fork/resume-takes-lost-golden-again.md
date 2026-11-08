@@ -8,7 +8,7 @@ commits:
   - 'fix(ateapi): take a lost golden again on the first resume'
 upstream:
   outcome: to-file
-  refs: [giantswarm/substrate#170]
+  refs: [giantswarm/substrate#170, giantswarm/substrate#561]
   exit: 'an upstream change that recovers the clones of a deleted golden tag; the line drops its commit at the re-pin onto a release carrying it'
 depends_on: [actortemplate-reconciler-takes-golden-written-older-snapshot]
 verified: 2026-11-08
