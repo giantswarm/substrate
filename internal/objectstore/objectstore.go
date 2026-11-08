@@ -89,6 +89,24 @@ func DeletePrefix(ctx context.Context, s Store, uri resources.StoragePrefix) err
 	return group.Wait()
 }
 
+// HasObjects reports whether any object is left under uri: whether an
+// external snapshot can still be restored from, or was collected. A missing
+// bucket holds nothing.
+func HasObjects(ctx context.Context, s Store, uri resources.StoragePrefix) (bool, error) {
+	bucket, prefix, err := BucketPrefix(uri)
+	if err != nil {
+		return false, err
+	}
+	objects, err := s.List(ctx, bucket, prefix)
+	if err != nil {
+		if isMissingBucket(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("while listing %s: %w", uri, err)
+	}
+	return len(objects) > 0, nil
+}
+
 // isMissingBucket accepts only provider errors identifying a missing bucket;
 // other failures must still prevent cleanup from being marked complete.
 func isMissingBucket(err error) bool {
