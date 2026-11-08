@@ -25,6 +25,6 @@ Each template resync also sweeps the reserved atespace `ate-golden` under the le
 
 ## History
 
-`giantswarm`: [#565](https://github.com/giantswarm/substrate/pull/565). Not carried on `release-1.3`, which takes no further patches; its backport [#566](https://github.com/giantswarm/substrate/pull/566) was closed unmerged.
+`giantswarm`: [#565](https://github.com/giantswarm/substrate/pull/565). Not backported to `release-1.3`: on 2026-11-08 the maintainers decided to land the sweep on `giantswarm` alone, since the installations run the 1.18 line and `release-1.3` has taken no patch since 2026-10-08. The backport [#566](https://github.com/giantswarm/substrate/pull/566) was closed unmerged, and the acceptance criteria of [#177](https://github.com/giantswarm/substrate/issues/177) record the narrowed scope.
 
 Proven in agentlab on Substrate 1.18.0 with this change's ate-api (two replicas, a one-minute grace period): a kagent template delete made while the snapshot store was down removed the row and left its golden tag; the sweep retried while the store was down and removed the tag, once, as soon as the store was back.
