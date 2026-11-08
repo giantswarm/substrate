@@ -88,6 +88,10 @@ type templateReconcilerStore interface {
 	// UpdateActor repairs the golden actor row a release before golden tags
 	// left without the template its guest state was built under.
 	UpdateActor(ctx context.Context, actorRef resources.ActorRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.Actor) error) (*ateapipb.Actor, error)
+	// ListActors and ListTags find the goldens a deleted template left in
+	// the reserved atespace.
+	ListActors(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.Actor], error)
+	ListTags(ctx context.Context, atespace string, opts store.ListOptions) (store.ListResponse[*ateapipb.Tag], error)
 	AcquireLease(ctx context.Context, key string) (*store.Lease, error)
 }
 
@@ -110,33 +114,40 @@ type goldenActorControl interface {
 }
 
 // ActorTemplateReconciler drives stored ActorTemplates through the golden
-// actor state machine.
+// actor state machine. It also removes the goldens a deleted template left
+// behind once they are older than goldenSweepGrace.
 type ActorTemplateReconciler struct {
-	persistence    templateReconcilerStore
-	control        goldenActorControl
-	queue          workqueue.TypedRateLimitingInterface[resources.ActorTemplateRef]
-	resyncInterval time.Duration
+	persistence      templateReconcilerStore
+	control          goldenActorControl
+	queue            workqueue.TypedRateLimitingInterface[resources.ActorTemplateRef]
+	resyncInterval   time.Duration
+	goldenSweepGrace time.Duration
 }
 
-func NewActorTemplateReconciler(persistence templateReconcilerStore, control goldenActorControl, resyncInterval time.Duration) *ActorTemplateReconciler {
+func NewActorTemplateReconciler(persistence templateReconcilerStore, control goldenActorControl, resyncInterval, goldenSweepGrace time.Duration) *ActorTemplateReconciler {
 	return &ActorTemplateReconciler{
-		persistence:    persistence,
-		control:        control,
-		resyncInterval: resyncInterval,
+		persistence:      persistence,
+		control:          control,
+		resyncInterval:   resyncInterval,
+		goldenSweepGrace: goldenSweepGrace,
 		// Create rate-limiting queue with exponential backoff
 		queue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[resources.ActorTemplateRef]()),
 	}
 }
 
 // Start launches the queue workers and the resync producer; there is no event
-// source for stored templates, so the periodic list is the event source.
+// source for stored templates, so the periodic list is the event source. Each
+// resync also sweeps the goldens of deleted templates.
 func (r *ActorTemplateReconciler) Start(ctx context.Context) {
 	go func() {
 		defer r.queue.ShutDown()
 		for range templateWorkerCount {
 			go wait.UntilWithContext(ctx, r.runWorker, time.Second)
 		}
-		wait.UntilWithContext(ctx, r.resync, r.resyncInterval)
+		wait.UntilWithContext(ctx, func(ctx context.Context) {
+			r.resync(ctx)
+			r.sweepOrphanedGoldens(ctx)
+		}, r.resyncInterval)
 	}()
 }
 
