@@ -6,6 +6,7 @@ category: bugfix
 status: carried
 commits:
   - 'fix(ateapi): sweep the goldens a failed template delete left behind'
+  - 'refactor(ateapi): name the @env flag value and the test namespace'
 upstream:
   outcome: to-file
   refs: []
