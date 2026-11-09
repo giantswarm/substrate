@@ -70,13 +70,21 @@ cat >"${DIR}/fork/a-change.md" <<'EOF'
 EOF
 files='[{"path":"cmd/x.go"},{"path":"fork/a-change.md"}]'
 LEDGER_DIR="${DIR}/fork" pr "row in a ledger file" 0 '{"number":50,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}'
-LEDGER_DIR="${DIR}/fork" pr "no row in FORK.md or a ledger file" 1 '{"number":51,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#51 is missing"
+LEDGER_DIR="${DIR}/fork" pr "no row in FORK.md or a ledger file" 1 '{"number":51,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#51 is missing"
+# One commit carries a change: the ledger file the pull request adds is its
+# row, before any number is written into it.
+LEDGER_DIR="${DIR}/fork" pr "its own ledger file, no number" 0 '{"number":53,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}'
+LEDGER_DIR="${DIR}/fork" pr "a ledger file it deletes is no row" 1 '{"number":54,"title":"fix: x","body":"","labels":[],"files":[{"path":"cmd/x.go"},{"path":"fork/dropped.md"}],"headRefName":"fork/x","author":{"is_bot":false}}' "#54 is missing"
+LEDGER_DIR="${DIR}/fork" pr "a file beside the ledger files is no row" 1 '{"number":55,"title":"fix: x","body":"","labels":[],"files":[{"path":"cmd/x.go"},{"path":"fork/EXEMPT"},{"path":"docs/fork/a-change.md"}],"headRefName":"fork/x","author":{"is_bot":false}}' "#55 is missing"
+LEDGER_DIR="${DIR}/no-such-dir" pr "no ledger directory, no own row" 1 '{"number":56,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}' "#56 is missing"
 LEDGER_DIR="${DIR}/fork" pr "ledger files alone" 0 '{"number":52,"title":"fix: x","body":"","labels":[],"files":[{"path":"fork/a-change.md"}],"headRefName":"fork/x","author":{"is_bot":false}}'
 LEDGER_DIR="${DIR}/no-such-dir" pr "a missing ledger directory is skipped" 0 '{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}}'
 
 MODE=line pr "line: all merged have rows" 0 '[{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}},{"number":40,"title":"docs(fork): x","body":"","labels":[],"files":[{"path":"FORK.md"}],"headRefName":"fork/y","author":{"is_bot":false}}]'
 MODE=line pr "line: names every missing number" 1 '[{"number":7,"title":"fix: x","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/x","author":{"is_bot":false}},{"number":8,"title":"fix: y","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/y","author":{"is_bot":false}},{"number":11,"title":"fix: z","body":"","labels":[],"files":'"${code}"',"headRefName":"fork/z","author":{"is_bot":false}}]' "missing #8 #11"
 MODE=line pr "line: an empty line" 0 '[]'
+MODE=line LEDGER_DIR="${DIR}/fork" pr "line: a merged pull request's own ledger file" 0 '[{"number":57,"title":"fix: x","body":"","labels":[],"files":'"${files}"',"headRefName":"fork/x","author":{"is_bot":false}}]'
+MODE=line LEDGER_DIR="${DIR}/fork" pr "line: its file dropped since" 1 '[{"number":58,"title":"fix: x","body":"","labels":[],"files":[{"path":"cmd/x.go"},{"path":"fork/dropped.md"}],"headRefName":"fork/x","author":{"is_bot":false}}]' "missing #58"
 
 if [[ "${failures}" -gt 0 ]]; then
   echo "${failures} case(s) failed"

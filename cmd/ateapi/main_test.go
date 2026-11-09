@@ -57,10 +57,10 @@ func TestLoadFlagsFromEnvResolvesPostgresSourcesOnce(t *testing.T) {
 		*postgresOwnerRole = oldDDLRole
 		*experimentalEnableAuthz = oldAuthz
 	})
-	*postgresReadWriteConnectionString = "@env"
-	*postgresOwnerConnectionString = "@env"
-	*postgresReadWriteRole = "@env"
-	*postgresOwnerRole = "@env"
+	*postgresReadWriteConnectionString = fromEnv
+	*postgresOwnerConnectionString = fromEnv
+	*postgresReadWriteRole = fromEnv
+	*postgresOwnerRole = fromEnv
 	*experimentalEnableAuthz = false
 	t.Setenv("ATE_API_POSTGRES_READ_WRITE_CONNECTION_STRING", "runtime-a")
 	t.Setenv("ATE_API_POSTGRES_OWNER_CONNECTION_STRING", "ddl-a")
@@ -105,6 +105,7 @@ func TestLoadFlagsFromEnvPoolMaxConns(t *testing.T) {
 }
 
 func TestResolveActorJWTIssuer(t *testing.T) {
+	const namespace = "ate-system"
 	tests := []struct {
 		name      string
 		flagValue string
@@ -112,10 +113,10 @@ func TestResolveActorJWTIssuer(t *testing.T) {
 		want      string
 		wantErr   bool
 	}{
-		{name: "unset uses the namespace's idp Service", namespace: "ate-system", want: "https://idp.ate-system.svc"},
+		{name: "unset uses the namespace's idp Service", namespace: namespace, want: "https://idp.ate-system.svc"},
 		{name: "unset in a relocated install", namespace: "team-a", want: "https://idp.team-a.svc"},
-		{name: "set is used as given", flagValue: "https://idp.example.com/prod/", namespace: "ate-system", want: "https://idp.example.com/prod/"},
-		{name: "set but invalid", flagValue: "http://idp.example.com", namespace: "ate-system", wantErr: true},
+		{name: "set is used as given", flagValue: "https://idp.example.com/prod/", namespace: namespace, want: "https://idp.example.com/prod/"},
+		{name: "set but invalid", flagValue: "http://idp.example.com", namespace: namespace, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
