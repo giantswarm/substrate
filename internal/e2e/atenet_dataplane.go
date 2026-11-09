@@ -89,7 +89,7 @@ func (envoyAtenetDataplane) IsEgressPolicyDenied(status int, body string) bool {
 func (envoyAtenetDataplane) PlatformMetricPrefixes(prefixes []string) []string { return prefixes }
 
 func (envoyAtenetDataplane) RouteDurationSeen(_ context.Context, collectorScrape string) (bool, error) {
-	return len(MissingPlatformMetrics(collectorScrape, []string{"atenet_router_route_duration"})) == 0, nil
+	return len(MissingPlatformMetrics(collectorScrape, []string{routerRouteDurationMetric})) == 0, nil
 }
 
 // MissingActorGRPCCode is the code a gRPC call to a missing Actor gets: the
@@ -148,7 +148,7 @@ func (agentGatewayAtenetDataplane) IsEgressPolicyDenied(status int, body string)
 func (agentGatewayAtenetDataplane) PlatformMetricPrefixes(prefixes []string) []string {
 	filtered := make([]string, 0, len(prefixes))
 	for _, prefix := range prefixes {
-		if prefix != "atenet_router_route_duration" {
+		if prefix != routerRouteDurationMetric {
 			filtered = append(filtered, prefix)
 		}
 	}
