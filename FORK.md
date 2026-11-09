@@ -110,8 +110,8 @@ credential provider) is a plugin of its own in upstream's shape, [giantswarm/sub
 (`google-access-token`), routed through `credentialProvider.additionalProviders`; the bundled provider serves `k8s.io` alone again, as
 upstream's does, and `ate-setup` renders one provider name. An installation keeps the plugin deployed and routed before it takes the
 release that drops the name (agent-platform routes it with the floor bump); kagent-dev/substrate#47 closed unreviewed on 2026-10-12. The
-routing value itself is still carried; its exit upstream is kagent-dev/substrate#90 (the chart's `credentialProvider.additionalProviders`,
-nothing cloud-specific); `ate-setup` and the kustomize manifests upstream still render one provider.
+routing value itself is still carried; kagent-dev/substrate#152 superseded its upstream pull request #90 with
+`atenetEgress.extraCredentialProviders`, which the re-pin onto a release carrying it takes in its place.
 
 Dropped at the 2026-10-12 re-pin onto v0.5.0-alpha2 because upstream carries them: the cherry-picks of agent-substrate/substrate#2110
 (one rootfs-upper tar per container, `893b1edb`) and #2111 (device nodes and xattrs on extract, `8da76493`), the atelet refusal of a
