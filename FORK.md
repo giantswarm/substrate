@@ -541,13 +541,22 @@ plans repository.
   or a row of a private list (`.github/scripts/fork-public-links.sh`).
 - **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
   A cherry-pick of an upstream commit is rebase-merged (see "Branches").
-- **The ledger**: a pull request against a line that changes more than this file names its own number as `#n` in a
-  ledger file of its own (`fork/<change>.md`, or `fork/fork-infrastructure-*.md` for CI and tooling; a maintenance
-  branch keeps its own copy of this file as its ledger), or
-  carries the label `no-ledger` with a line `no-ledger: <reason>` in its description. The `fork-ledger` workflow
-  checks it on every pull request (`docs(fork)` pull requests, re-pin candidates and bot pull requests need no
-  ledger entry) and, on every line, that every pull request merged into it has its row in the line's ledger; it
-  names each missing number.
+- **The ledger**: a pull request against a line that changes more than this file adds or edits a ledger file of its
+  own (`fork/<change>.md`, or `fork/fork-infrastructure-*.md` for CI and tooling) in the same commit as the change, or
+  carries the label `no-ledger` with a line `no-ledger: <reason>` in its description. The file needs no pull request
+  number: the `fork-ledger` workflow reads the number from the pull request it runs in and takes the ledger file
+  that pull request adds or edits as its row, and on the line it reads each merged pull request's file list, so the
+  file and its number stay tied after the merge without a second `docs(fork)` commit. A file may still name its
+  pull request as `#n` (the next edit of the file writes it in); a maintenance branch, which keeps its own copy of
+  this file as its ledger, names it so. The workflow checks every pull request (`docs(fork)` pull requests, re-pin
+  candidates and bot pull requests need no ledger entry) and, on every line, that every pull request merged into it
+  has its row in the line's ledger; it names each missing number.
+- **Dependency bumps**: the root module is vendored (`vendor/`), so every Go build of it reads the vendored modules
+  (`-mod=vendor`, Go's default beside a `vendor/` directory and explicit in `.circleci/Dockerfile`): `go get` and
+  `go mod tidy` alone fail CircleCI's image builds, `run-tests` and `govulncheck` with "inconsistent vendoring". A bump of the root module runs `go get <module>@<version> && go mod tidy && go mod vendor` and commits
+  `go.mod`, `go.sum` and `vendor/` together; the tool modules under `hack/tools/` are not vendored and need
+  `go mod tidy` in their own directory only. A bump that carries no change of the line takes a `chore(deps)` or
+  `fix(deps)` title, `fix(deps)` with its ledger file when it carries a requirement ahead of upstream.
 - **Experiments**: your own personal fork. Branches here exist to become pull requests.
 - **What CI runs on a pull request**: upstream's `pr-workflow` (unit, root-gated and e2e suites on kind, gVisor and
   micro-VM lanes: every suite runs on both, so a node-level arrangement a test makes must hold on both ateoms; the micro-VM ateom clears its checkpoint directory before writing, the gVisor ateom only creates it, so blocking the checkpoint with an immutable file passes one lane and fails the other, while a file under the directory's name is refused by both; see `CONTRIBUTING.md`), `helm-e2e` (the charts on kind), `govulncheck` and `fork-ledger` (the ledger, above); `run-tests` and `govulncheck` are required. `govulncheck` runs once per Go
