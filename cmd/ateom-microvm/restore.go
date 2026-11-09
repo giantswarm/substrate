@@ -251,8 +251,10 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 	}()
 	defer func() {
 		if !untarJoined {
-			// Preserve the restore error; this receive only joins the goroutine.
-			_ = <-untarDone
+			// Preserve the restore error while reporting a failed background untar.
+			if untarErr := <-untarDone; untarErr != nil {
+				slog.WarnContext(ctx, "Failed to extract rootfs upper during restore cleanup", slog.Any("err", untarErr))
+			}
 		}
 	}()
 
