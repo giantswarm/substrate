@@ -57,6 +57,12 @@ type fakeTemplateStore struct {
 	golden         *fakeGoldenControl
 	updateActorErr error
 	actorUpdates   int
+
+	// goldenActors and goldenTags are the actor and tag rows of the reserved
+	// atespace ListActors and ListTags return; listGoldensErr fails both.
+	goldenActors   []*ateapipb.Actor
+	goldenTags     []*ateapipb.Tag
+	listGoldensErr error
 }
 
 func newFakeTemplateStore(templates ...*ateapipb.ActorTemplate) *fakeTemplateStore {
@@ -481,7 +487,7 @@ const (
 )
 
 func newTestTemplateReconciler(persistence templateReconcilerStore, control goldenActorControl) *ActorTemplateReconciler {
-	return NewActorTemplateReconciler(persistence, control, 7*time.Second)
+	return NewActorTemplateReconciler(persistence, control, 7*time.Second, DefaultGoldenSweepGracePeriod)
 }
 
 func TestGoldenSnapshotWarmupFor(t *testing.T) {
