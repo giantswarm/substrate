@@ -42,6 +42,10 @@ const (
 // prometheus exporter appends unit and type suffixes (e.g. _seconds_bucket,
 // _bytes_count), so matching is by prefix. This slice grows as each metric
 // slice lands and as more components are wired to push to the collector.
+// routerRouteDurationMetric is the Envoy router's route duration instrument,
+// which the AgentGateway router exports under its own name.
+const routerRouteDurationMetric = "atenet_router_route_duration"
+
 var PlatformMetricPrefixes = []string{
 	"ate_workerpool_workers",
 	"ate_workerpool_desired_workers",
@@ -52,7 +56,7 @@ var PlatformMetricPrefixes = []string{
 	"ate_actor_restore_duration",
 	"ate_actor_checkpoint_duration",
 	"atelet_snapshot_size",
-	"atenet_router_route_duration",
+	routerRouteDurationMetric,
 }
 
 // ScrapeAgentGatewayRouterMetrics reads the AgentGateway router's native
