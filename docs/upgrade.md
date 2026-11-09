@@ -1423,6 +1423,11 @@ survive it.
 #### 1.18.0 to 1.18.1
 
 - **Persisted format:** unchanged.
+- **Chart:** `images.agentgateway` is 2.6.10 (2.6.5 before): the same
+  data plane on a refreshed base image, without the `ca-certificates-bundle`
+  findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
+  keeps them.
+- **Migration:** none to run.
 - **Behavior, goldens of deleted templates:** each template resync also
   removes the golden actors and golden tags in `ate-golden` whose
   ActorTemplate no longer exists and that are older than
