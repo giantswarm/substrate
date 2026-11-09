@@ -250,6 +250,61 @@ func TestDeletePrefix_Resumes(t *testing.T) {
 	}
 }
 
+// TestHasObjects covers telling a restorable external snapshot from a collected
+// one: a snapshot with objects, one with none, a neighbor that shares its name
+// as a prefix, a missing bucket, and a listing that fails.
+func TestHasObjects(t *testing.T) {
+	failure := errors.New("boom")
+	uri := mustTagSnapshotURI(t, testLocation, "ate-golden", "tag-1")
+	tests := []struct {
+		name    string
+		seed    func(t *testing.T, fake *objectstoretest.Fake)
+		onList  func(bucket, prefix string) error
+		want    bool
+		wantErr error
+	}{
+		{
+			name: "objects left",
+			seed: func(t *testing.T, fake *objectstoretest.Fake) { fake.PutSnapshot(t, uri, "manifest.json") },
+			want: true,
+		},
+		{
+			name: "collected",
+		},
+		{
+			name: "only a neighbor whose name extends the tag's",
+			seed: func(t *testing.T, fake *objectstoretest.Fake) {
+				fake.PutSnapshot(t, mustTagSnapshotURI(t, testLocation, "ate-golden", "tag-10"), "manifest.json")
+			},
+		},
+		{
+			name:   "missing bucket",
+			onList: func(string, string) error { return storage.ErrBucketNotExist },
+		},
+		{
+			name:    "listing fails",
+			onList:  func(string, string) error { return failure },
+			wantErr: failure,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := objectstoretest.New()
+			if tt.seed != nil {
+				tt.seed(t, fake)
+			}
+			fake.OnList = tt.onList
+			got, err := objectstore.HasObjects(t.Context(), fake, uri.Prefix())
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("HasObjects(%s) error = %v, want %v", uri, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("HasObjects(%s) = %v, want %v", uri, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCopyPrefix(t *testing.T) {
 	src := mustActorSnapshotURI(t, testLocation, "team-a", "actor-1", "snap-1")
 	dst := mustTagSnapshotURI(t, testLocation, "team-a", "snap-2")

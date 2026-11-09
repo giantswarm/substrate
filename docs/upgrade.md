@@ -1420,6 +1420,13 @@ survive it.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.
 
+### Patch steps within 1.18
+
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.17 straight to a 1.18 patch is the 1.17 to 1.18 step and the patch
+entries in one roll.
+
 #### 1.18.0 to 1.18.1
 
 - **Persisted format:** unchanged.
@@ -1440,6 +1447,20 @@ survive it.
   exists is never touched.
 - **During the roll:** a 1.18.0 replica does not sweep; the 1.18.1
   replicas do, one at a time.
+- **Behavior, lost goldens:** an actor created from its template's golden
+  and never suspended since borrows the golden tag's snapshot. When that
+  snapshot's objects are gone (the tag deleted, or replaced by a golden
+  taken again in a newer layout), its resume moves it onto the template's
+  current golden, or sends the template back to take its golden again and
+  waits for it up to two minutes, answering `Unavailable` once that is
+  spent; 1.18.0 restored the missing snapshot and crashed the actor. A
+  template whose golden failed for good refuses such a resume as not
+  resumable, reason `GOLDEN_SNAPSHOT_UNAVAILABLE`. An actor that has
+  suspended once restores its own snapshot as before.
+- **During the roll:** the recovery runs once ate-api-server runs 1.18.1.
+  An actor a 1.18.0 resume already crashed this way stays `CRASHED`;
+  `kubectl ate revert` returns it to the golden it borrowed, and its next
+  resume recovers it.
 - **Goldens:** kept. **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE
