@@ -5,6 +5,7 @@ theme: ci-publish-infra
 category: infra
 status: carried
 commits:
+  - 'ci(fork): one commit carries a change with its ledger file'
   - 'ci(fork): the ledger header check requires the Go yq'
   - 'ci(fork): a pull request closes no issue by keyword'
   - 'chore: the boilerplate check skips .json5 as it skips .json'
@@ -16,6 +17,7 @@ commits:
   - 'chore(agentgateway): run 2.6.0, which counts refusals per actor'
   - 'chore(agentgateway): run 2.6.1, which counts raw tcp refusals'
   - 'chore(agentgateway): run 2.6.5, which mints through MintActorJwt'
+  - 'chore(agentgateway): run 2.6.10, without the ca-certificates CVEs'
   - 'chore(chart): run the agentgateway line''s 2.3.6 in the router and egress gateway'
   - 'chore(chart): run the agentgateway line''s 2.3.5 in the router and egress gateway'
   - 'chore(chart): run the agentgateway line''s 2.3.0 in the router and egress gateway'

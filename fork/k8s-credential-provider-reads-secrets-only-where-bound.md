@@ -11,7 +11,7 @@ upstream:
   refs: [kagent-dev/substrate#131]
   exit: "kagent-dev/substrate#131 merged, then the next re-pin drops it"
 depends_on: []
-verified: 2026-11-05
+verified: 2026-11-09
 ---
 # The credential provider reads Secrets only where it is bound
 

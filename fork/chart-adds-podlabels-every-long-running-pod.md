@@ -11,7 +11,7 @@ upstream:
   refs: [kagent-dev/substrate#48]
   exit: kd#48 merged
 depends_on: []
-verified: 2026-10-19
+verified: 2026-11-09
 ---
 # The chart adds `podLabels` to every long-running pod, next to its own `app` label, which a …
 
