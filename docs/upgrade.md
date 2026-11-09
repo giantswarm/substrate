@@ -1435,6 +1435,10 @@ entries in one roll.
   not resumed since reads none. atelet's Run and Restore responses carry
   the same list; a 1.18.0 ate-api-server ignores them. No CRD, no
   Postgres schema and no snapshot layout differs.
+- **Chart:** `images.agentgateway` is 2.6.10 (2.6.5 before): the same
+  data plane on a refreshed base image, without the `ca-certificates-bundle`
+  findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
+  keeps them.
 - **Behavior, sandbox builds:** an actor restored at data scope runs the
   SandboxConfig's current gVisor whatever build its snapshot was taken
   on, also when its snapshot manifest alone says the snapshot holds data
@@ -1445,8 +1449,20 @@ entries in one roll.
 - **kubectl ate:** `kubectl ate get actors` has a `SANDBOX` column, the
   last column, naming the gVisor release an actor last ran on (such as
   `nightly/2026-09-09`) or `<none>`; `-o yaml` lists every asset.
+- **Behavior, goldens of deleted templates:** each template resync also
+  removes the golden actors and golden tags in `ate-golden` whose
+  ActorTemplate no longer exists and that are older than
+  `--golden-sweep-grace-period` (ate-api, 10 minutes by default), on one
+  replica at a time, with one log line per template uid naming what it
+  removed. A template delete that failed after removing the template (object
+  storage unreachable, ate-api restarted mid-delete) left them behind until
+  someone deleted them by hand; the first resyncs of 1.18.1 remove those
+  left by earlier releases too, snapshots included. A golden whose template
+  exists is never touched.
 - **During the roll:** an actor resumed by a 1.18.0 atelet reads no
   `sandbox_assets`; it gets them at its next resume on a 1.18.1 atelet.
+  A 1.18.0 ate-api replica does not sweep goldens of deleted templates;
+  the 1.18.1 replicas do, one at a time.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.

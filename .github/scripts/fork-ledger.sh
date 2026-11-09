@@ -19,11 +19,17 @@
 # line).
 #
 #   fork-ledger.sh pr   <pull-request.json> <FORK.md> [<fork/>]
-#       the pull request names its own number in the ledger as #<n>;
+#       the pull request has its row in the ledger;
 #   fork-ledger.sh line <merged-pull-requests.json> <FORK.md> [<fork/>]
 #       every pull request merged into the line does (a maintenance branch:
 #       its own copy of FORK.md is its ledger; a path that does not exist,
 #       such as fork/ there, is skipped).
+#
+# A pull request's row is a ledger line naming its number as #<n> or as a
+# link, or a ledger file of fork/ the pull request itself adds or edits: the
+# number is read from the pull request, so one commit carries a change with
+# its file, and the merged pull request's file list ties the file to its
+# number on the line.
 #
 # The JSON is what `gh pr view --json` / `gh pr list --json` print with the
 # fields number, title, body, labels, files, headRefName and author. A pull
@@ -40,15 +46,31 @@ usage() {
   exit 2
 }
 
+# Whether one of the ledger files a pull request adds or edits (base names,
+# space-separated) is a file of a ledger directory: the pull request's own row.
+own_row() {
+  local own="$1" path name
+  shift
+  [[ -n "${own}" ]] || return 1
+  for path in "$@"; do
+    [[ -d "${path}" ]] || continue
+    for name in ${own}; do
+      [[ -f "${path}/${name}" ]] && return 0
+    done
+  done
+  return 1
+}
+
 # The pull requests of the JSON (one object or an array) that need a row and
 # have none, one per line as "<number>\t<reason the exemption failed>".
 missing() {
   local json="$1"
   shift
   local -a ledger=("$@")
-  local n why
-  while IFS=$'\t' read -r n why; do
-    if ! grep -rqE "(^|[^[:alnum:]/_.-])#${n}([^0-9]|$)|/pull/${n}([^0-9]|$)" "${ledger[@]}"; then
+  local n why own
+  while IFS=$'\t' read -r n why own; do
+    if ! own_row "${own}" "${ledger[@]}" &&
+      ! grep -rqE "(^|[^[:alnum:]/_.-])#${n}([^0-9]|$)|/pull/${n}([^0-9]|$)" "${ledger[@]}"; then
       printf '%s\t%s\n' "${n}" "${why}"
     fi
   done < <(jq -r '
@@ -62,7 +84,8 @@ missing() {
     | select(($labelled and $reason) | not)
     | [.number,
        (if $labelled then "labelled no-ledger without a \"no-ledger: <reason>\" line in the description"
-        else "no row names it" end)]
+        else "no row names it" end),
+       ([.files[]?.path | select(test("^fork/[^/]+[.]md$")) | ltrimstr("fork/")] | join(" "))]
     | @tsv' "${json}")
 }
 
@@ -87,7 +110,7 @@ if [[ -z "${result}" ]]; then
 fi
 
 while IFS=$'\t' read -r n why; do
-  echo "::error file=FORK.md::#${n} is missing from the ledger (${why}): add a row naming #${n}, or label the pull request no-ledger with a line \"no-ledger: <reason>\" in its description"
+  echo "::error file=FORK.md::#${n} is missing from the ledger (${why}): add a ledger file of its own under fork/ (or a row naming #${n}), or label the pull request no-ledger with a line \"no-ledger: <reason>\" in its description"
 done <<<"${result}"
 echo "fork-ledger: missing $(cut -f1 <<<"${result}" | sed 's/^/#/' | paste -sd' ')" >&2
 exit 1

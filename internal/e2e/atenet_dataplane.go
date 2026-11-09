@@ -40,10 +40,18 @@ type AtenetDataplane interface {
 	PlatformMetricPrefixes([]string) []string
 	RouteDurationSeen(context.Context, string) (bool, error)
 	MissingActorGRPCCode() codes.Code
+	// HeldActorGRPCCode is the code a gRPC call to an Actor whose lease
+	// another operation holds gets once the router's resume budget is spent,
+	// and whether the dataplane answers it in a way a suite can assert.
+	HeldActorGRPCCode() (codes.Code, bool)
 	// RelaysTCPRules reports whether the egress gateway relays TCP that is
 	// neither TLS nor HTTP when a tcp rule allows it. A gateway that does not
 	// closes it like any refused stream.
 	RelaysTCPRules() bool
+	// IsTCPRefusal reports whether received, what an actor read back on a
+	// raw TCP stream the gateway did not relay, is the gateway's refusal: no
+	// byte of the origin's.
+	IsTCPRefusal(received string) bool
 }
 
 // CurrentAtenetDataplane returns the implementation selected for this test
@@ -81,16 +89,28 @@ func (envoyAtenetDataplane) IsEgressPolicyDenied(status int, body string) bool {
 func (envoyAtenetDataplane) PlatformMetricPrefixes(prefixes []string) []string { return prefixes }
 
 func (envoyAtenetDataplane) RouteDurationSeen(_ context.Context, collectorScrape string) (bool, error) {
-	return len(MissingPlatformMetrics(collectorScrape, []string{"atenet_router_route_duration"})) == 0, nil
+	return len(MissingPlatformMetrics(collectorScrape, []string{routerRouteDurationMetric})) == 0, nil
 }
 
 // MissingActorGRPCCode is the code a gRPC call to a missing Actor gets: the
 // router answers it with the resume's own status.
 func (envoyAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.NotFound }
 
+// HeldActorGRPCCode: the router answers a held Actor with the resume's own
+// Aborted status, which tells the caller to retry its operation.
+func (envoyAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) { return codes.Aborted, true }
+
 // RelaysTCPRules: the Envoy egress gateway has no chain for a tcp rule yet;
 // its egress-policy module closes every stream that is neither TLS nor HTTP.
 func (envoyAtenetDataplane) RelaysTCPRules() bool { return false }
+
+// IsTCPRefusal: Envoy's egress listener parses a stream that is neither TLS
+// nor CONNECT as HTTP/1.1 and answers what is not HTTP with its own 400 before
+// closing; nothing reaches the origin.
+func (envoyAtenetDataplane) IsTCPRefusal(received string) bool {
+	return received == "" ||
+		(strings.HasPrefix(received, "HTTP/1.1 400 Bad Request\r\n") && strings.Contains(received, "\r\nserver: envoy\r\n"))
+}
 
 type agentGatewayAtenetDataplane struct{}
 
@@ -99,7 +119,17 @@ type agentGatewayAtenetDataplane struct{}
 // TODO: carry the resume's own status to gRPC callers in AgentGateway.
 func (agentGatewayAtenetDataplane) MissingActorGRPCCode() codes.Code { return codes.Unimplemented }
 
+// HeldActorGRPCCode: AgentGateway answers its own ingress denials, and for a
+// held Actor not with the resume's status but by the same fallback table.
+// TODO: carry the resume's own status to gRPC callers in AgentGateway.
+func (agentGatewayAtenetDataplane) HeldActorGRPCCode() (codes.Code, bool) {
+	return codes.Unknown, false
+}
+
 func (agentGatewayAtenetDataplane) RelaysTCPRules() bool { return true }
+
+// IsTCPRefusal: AgentGateway closes a refused stream with nothing written.
+func (agentGatewayAtenetDataplane) IsTCPRefusal(received string) bool { return received == "" }
 
 func (agentGatewayAtenetDataplane) NewParkingObserver(context.Context) (ParkingObserver, error) {
 	return agentGatewayParkingObserver{}, nil
@@ -118,7 +148,7 @@ func (agentGatewayAtenetDataplane) IsEgressPolicyDenied(status int, body string)
 func (agentGatewayAtenetDataplane) PlatformMetricPrefixes(prefixes []string) []string {
 	filtered := make([]string, 0, len(prefixes))
 	for _, prefix := range prefixes {
-		if prefix != "atenet_router_route_duration" {
+		if prefix != routerRouteDurationMetric {
 			filtered = append(filtered, prefix)
 		}
 	}

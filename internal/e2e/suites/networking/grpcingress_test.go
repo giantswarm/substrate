@@ -35,6 +35,7 @@ import (
 	"github.com/agent-substrate/substrate/internal/portforward"
 	"github.com/agent-substrate/substrate/internal/proto/grpcechopb"
 	"github.com/agent-substrate/substrate/internal/resources"
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -266,10 +267,9 @@ func TestIngressGRPC(t *testing.T) {
 // grpc-message beside content-type application/grpc); a plain HTTP request
 // keeps its status code and text.
 //
-// A missing Actor is the denial here because it is deterministic; an Actor
-// whose lease another operation holds takes the same path with the Aborted
-// code (cmd/atenet/internal/router/extproc), and no e2e can hold an Actor's
-// lease past the router's resume budget on demand.
+// A missing Actor is the denial here because every dataplane answers it;
+// TestIngressHeldActor below covers an Actor whose lease another operation
+// holds.
 func TestIngressDenialProtocol(t *testing.T) {
 	ctx := context.Background()
 	actorRef := resources.ActorRef{Atespace: networkingAtespace, Name: "no-such-actor"}
@@ -314,6 +314,74 @@ func TestIngressDenialProtocol(t *testing.T) {
 		}
 		if got := resp.Header.Get("Grpc-Status"); got != "" {
 			t.Errorf("GET to missing actor %s carries grpc-status %q, want none", actorRef, got)
+		}
+	})
+}
+
+// TestIngressHeldActor pins what a caller of an Actor whose lease another
+// operation holds is answered once the router's resume budget is spent: a gRPC
+// call reads Aborted with the router's reason, which tells it to retry, not
+// the Unavailable of a control plane that is down; a plain HTTP request keeps
+// the 503 and its text. The lease is held past the budget by writing its row
+// (e2e.HoldActorLease); the Actor stays at rest, so every request needs a
+// resume. The denial comes before any routing, so the HTTP-only counter
+// fixture serves the gRPC call as well.
+func TestIngressHeldActor(t *testing.T) {
+	wantCode, asserted := e2e.CurrentAtenetDataplane().HeldActorGRPCCode()
+	if !asserted {
+		t.Skip("this dataplane answers a held Actor by gRPC's HTTP-to-status fallback table, not with the resume's status")
+	}
+	ctx := context.Background()
+	fixture := e2e.SubstrateCounterFixture()
+	actorRef := createActor(t, ctx, "heldactor",
+		&ateapipb.Actor{ActorTemplate: &ateapipb.ObjectRef{Atespace: fixture.Atespace, Name: fixture.Name}},
+		fixture.Atespace+"/"+fixture.Name, fixture.DeployWith, nil)
+	held := resources.ActorRefFromObjectRef(actorRef)
+	// Well past the router's resume budget (15s without parking), and the
+	// calls' own deadlines below.
+	e2e.HoldActorLease(t, held, 3*time.Minute)
+	address := routerAddress(t, ctx)
+	const reason = "another operation is in progress"
+
+	t.Run("gRPC call reads Aborted", func(t *testing.T) {
+		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			t.Fatalf("creating the gRPC client: %v", err)
+		}
+		defer conn.Close()
+		rpcCtx, cancel := context.WithTimeout(metadata.AppendToOutgoingContext(ctx, atenet.TargetActorHeader, held.String()), 60*time.Second)
+		defer cancel()
+
+		_, err = grpcechopb.NewEchoClient(conn).Echo(rpcCtx, &grpcechopb.EchoRequest{Message: "are you free?"})
+		st, ok := status.FromError(err)
+		if err == nil || !ok {
+			t.Fatalf("Echo to held actor %s = %v, want a gRPC status", held, err)
+		}
+		if st.Code() != wantCode {
+			t.Errorf("Echo to held actor %s: code = %v (message %q), want %v", held, st.Code(), st.Message(), wantCode)
+		}
+		if !strings.Contains(st.Message(), reason) {
+			t.Errorf("Echo to held actor %s: message = %q, want the hold's reason %q", held, st.Message(), reason)
+		}
+	})
+
+	t.Run("HTTP request keeps its status and text", func(t *testing.T) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+"/readyz", http.NoBody)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(atenet.TargetActorHeader, held.String())
+		resp, err := (&http.Client{Timeout: 60 * time.Second}).Do(req)
+		if err != nil {
+			t.Fatalf("GET to held actor %s: %v", held, err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusServiceUnavailable || !strings.Contains(string(body), reason) {
+			t.Errorf("GET to held actor %s = %d %q, want 503 with the hold's reason %q", held, resp.StatusCode, body, reason)
+		}
+		if got := resp.Header.Get("Grpc-Status"); got != "" {
+			t.Errorf("GET to held actor %s carries grpc-status %q, want none", held, got)
 		}
 	})
 }

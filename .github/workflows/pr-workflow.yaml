@@ -150,8 +150,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # lanes: "all" runs every suite on both sandbox classes; "networking"
+        # runs the networking suite on gVisor alone. The Envoy entry keeps the
+        # router's Envoy ext_proc path (its ingress handler, the gRPC status of a
+        # denial) under test on every pull request; the line's chart runs
+        # AgentGateway, which runs everything.
         include:
           - dataplane: agentgateway
+            lanes: all
+          - dataplane: envoy
+            lanes: networking
     env:
       E2E_ATENET_DATAPLANE: ${{ matrix.dataplane }}
       # The installer requires a credential provider selection, and deploys the
@@ -203,13 +211,16 @@ jobs:
         # gateway.
         run: hack/install-ate-kind.sh --deploy-ate-system --atenet-dataplane=${{ matrix.dataplane }} --rollout-timeout=300s
       - name: Enable NFS
+        if: matrix.lanes == 'all'
         # Load NFS kernel modules so in-cluster NFS server and CSI driver can run.
         run: |
           sudo modprobe nfs || true
           sudo modprobe nfsd || true
       - name: Install CSI NFS driver
+        if: matrix.lanes == 'all'
         run: hack/install-ate-kind.sh --setup-csi=nfs
       - name: Deploy micro-VM counter demo
+        if: matrix.lanes == 'all'
         # Stages the (cached) assets into the cluster's rustfs and deploys the
         # counter-microvm demo onto the control plane installed above.
         run: hack/run-microvm-demo-kind.sh --skip-control-plane
@@ -220,10 +231,20 @@ jobs:
         # ActorTemplate for the class under test, so both fixtures have to exist
         # before their respective lane runs. The demo's actors trust the CA the
         # gateway mints its leaves from.
+        env:
+          LANES: ${{ matrix.lanes }}
         run: |
           hack/install-ate-kind.sh --deploy-demo-egress
-          hack/install-ate-kind.sh --deploy-demo-egress-microvm
+          if [ "$LANES" = all ]; then
+            hack/install-ate-kind.sh --deploy-demo-egress-microvm
+          fi
+      - name: Run E2E tests (networking, gVisor)
+        if: matrix.lanes == 'networking'
+        env:
+          E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-networking-gvisor.xml
+        run: hack/run-e2e-kind.sh ./internal/e2e/suites/networking -v -args --no-color
       - name: Run E2E tests (gVisor)
+        if: matrix.lanes == 'all'
         env:
           # Gates the injection suite. Injection happens inside the gateway, so
           # the sandbox class does not matter and only this lane runs it.
@@ -232,6 +253,7 @@ jobs:
         # The identity suite runs last and alone (see below), not here.
         run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
       - name: Run E2E tests (micro-VM)
+        if: matrix.lanes == 'all'
         # The same suites again, with every fixture repointed at its micro-VM
         # variant by the single E2E_SANDBOX_CLASS knob (see internal/e2e/sandbox.go).
         # Sequential with the gVisor lane above, not concurrent: a suite releases
@@ -242,6 +264,7 @@ jobs:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-microvm.xml
         run: hack/run-e2e-kind.sh -skip '^TestActorIdentity' -v -args --no-color
       - name: Run E2E tests (identity, gVisor)
+        if: matrix.lanes == 'all'
         # The suite rotates the cluster-wide egress CA pool, and
         # the gateway picks a rotation up only once kubelet has propagated the
         # Secret into its pod, so until then it signs with a CA no actor trusts.
@@ -250,6 +273,7 @@ jobs:
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-gvisor.xml
         run: hack/run-e2e-kind.sh ./internal/e2e/suites/identity -v -args --no-color
       - name: Run E2E tests (identity, micro-VM)
+        if: matrix.lanes == 'all'
         env:
           E2E_SANDBOX_CLASS: microvm
           E2E_JUNIT_FILE: ${{ github.workspace }}/_artifacts/e2e-identity-microvm.xml

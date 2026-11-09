@@ -10,11 +10,11 @@ commits:
   - 'fix(chart): validate the egress gateway''s further credential providers'
   - 'feat(chart): further credential providers for the egress gateway'
 upstream:
-  outcome: open
-  refs: [agent-substrate/substrate#2829, agent-substrate/substrate#2830, agent-substrate/substrate#3409, agent-substrate/substrate#3410, kagent-dev/substrate#90]
-  exit: "kagent-dev/substrate#90 merged: drop; unreviewed on 2026-11-17: the platform chart overlays the egress gateway's credentialProviders entries and the file drops"
+  outcome: superseded
+  refs: [agent-substrate/substrate#2829, agent-substrate/substrate#2830, agent-substrate/substrate#3409, agent-substrate/substrate#3410, kagent-dev/substrate#90, kagent-dev/substrate#152]
+  exit: "the re-pin onto a kagent-dev/substrate release that carries #152 drops it; agent-platform moves from credentialProvider.additionalProviders to atenetEgress.extraCredentialProviders in the same step"
 depends_on: []
-verified: 2026-10-29
+verified: 2026-11-09
 ---
 # The egress gateway takes further credential providers
 
@@ -35,3 +35,5 @@ kagent injects the caller of the current turn at egress through its own provider
 2026-10-20, decided on internal issue 38652, comment 6301541135: class 5 upstream PR in flight, fallback class 3 platform; destination kagent-dev/substrate#90 (the chart) and agent-substrate/substrate#2830 (ate-setup, for #2829); the dataplane already selects a provider by URI authority; first step none, both are filed; branch the `giantswarm` commit of this file; test the chart's additional-providers cases; depends on theme T6; re-check 2026-11-17; owner unassigned; draft: internal issue 38652, comment 6301544198.
 
 2026-10-29: agent-substrate/substrate#3409 merged on 2026-10-29 as `de4c5d9b0` and routes several credential providers through ate-setup and atenet, on the Envoy dataplane too, so #2830 was closed as superseded; [#3410](https://github.com/agent-substrate/substrate/pull/3410) (open) documents it. This file carries only the chart half, so the exit waits on kagent-dev/substrate#90 alone.
+
+2026-11-09: kagent-dev/substrate#152 merged on 2026-11-08 as `40c2eaacb`: `atenetEgress.extraCredentialProviders` (`name`, `address` as host:port) adds providers beside the bundled one, and `credentialProvider.enabled` gates the bundled `k8s.io` provider. #90 was closed as superseded. #152 does not check that a name is a lowercase DNS name or that an address is `<service>.<namespace>.svc:<port>`; those checks leave with this file. No kagent-dev/substrate tag carries #152 on 2026-11-09 (latest v1.0.0-rc4).
