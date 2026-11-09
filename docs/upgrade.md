@@ -1428,8 +1428,19 @@ survive it.
   findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
   keeps them.
 - **Migration:** none to run.
-- **Goldens:** kept.
-- **Reset:** none. **Conversations lost:** none.
+- **Behavior, goldens of deleted templates:** each template resync also
+  removes the golden actors and golden tags in `ate-golden` whose
+  ActorTemplate no longer exists and that are older than
+  `--golden-sweep-grace-period` (ate-api, 10 minutes by default), on one
+  replica at a time, with one log line per template uid naming what it
+  removed. A template delete that failed after removing the template (object
+  storage unreachable, ate-api restarted mid-delete) left them behind until
+  someone deleted them by hand; the first resyncs of 1.18.1 remove those
+  left by earlier releases too, snapshots included. A golden whose template
+  exists is never touched.
+- **During the roll:** a 1.18.0 replica does not sweep; the 1.18.1
+  replicas do, one at a time.
+- **Goldens:** kept. **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE
 
