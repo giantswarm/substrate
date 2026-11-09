@@ -251,7 +251,8 @@ func (s *AteomService) restoreFullScope(ctx context.Context, p actorBootParams, 
 	}()
 	defer func() {
 		if !untarJoined {
-			<-untarDone
+			// Preserve the restore error; this receive only joins the goroutine.
+			_ = <-untarDone
 		}
 	}()
 
