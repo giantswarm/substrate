@@ -99,9 +99,22 @@ jobs:
         run: |
           gh pr view "${PR}" --repo "${GITHUB_REPOSITORY}" --json "${FIELDS}" >"${RUNNER_TEMP}/pr.json"
           .github/scripts/fork-ledger.sh pr "${RUNNER_TEMP}/pr.json" FORK.md fork
+      # Only the pull requests the line's commit this merge stands on
+      # carries: GitHub's test merge can lag behind the line, and a pull
+      # request merged after it has its row on the line, not in this checkout.
+      # Carried: its merge commit is in HEAD^1, or it merged before HEAD^1 was
+      # committed (a re-pin rewrites the merge commits of the older ones).
       - name: Every merged pull request's row
         if: github.event_name == 'pull_request'
         run: |
           gh pr list --repo "${GITHUB_REPOSITORY}" --base "${BASE}" --state merged --limit 1000 \
-            --json "${FIELDS}" >"${RUNNER_TEMP}/merged.json"
+            --json "${FIELDS},mergedAt,mergeCommit" >"${RUNNER_TEMP}/all.json"
+          at="$(date -u -d "$(git show -s --format=%cI HEAD^1)" +%Y-%m-%dT%H:%M:%SZ)"
+          carried="$(jq -r '.[].mergeCommit.oid // empty' "${RUNNER_TEMP}/all.json" |
+            while read -r oid; do
+              if git merge-base --is-ancestor "${oid}" HEAD^1 2>/dev/null; then echo "${oid}"; fi
+            done | jq -R . | jq -s .)"
+          jq --arg at "${at}" --argjson carried "${carried}" \
+            '[.[] | select(.mergedAt <= $at or ((.mergeCommit.oid // "") as $o | $carried | index($o)))]' \
+            "${RUNNER_TEMP}/all.json" >"${RUNNER_TEMP}/merged.json"
           .github/scripts/fork-ledger.sh line "${RUNNER_TEMP}/merged.json" FORK.md fork
