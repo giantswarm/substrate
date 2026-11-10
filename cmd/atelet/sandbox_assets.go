@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/agent-substrate/substrate/cmd/atelet/internal/ateletpath"
+	"github.com/agent-substrate/substrate/internal/ateattr"
 	"github.com/agent-substrate/substrate/internal/nodepath"
 	"github.com/agent-substrate/substrate/internal/proto/ateletpb"
 	"github.com/agent-substrate/substrate/internal/resources"
@@ -83,9 +84,8 @@ type assetEntry struct {
 type sandboxAssetsRecord struct {
 	SandboxClass string                `json:"sandboxClass"`
 	Assets       map[string]assetEntry `json:"assets"`
-	// PauseImage is the root sandbox container's image. It is recorded here
-	// rather than taken from the request at Restore so a snapshot is rebuilt
-	// with the same sandbox it was captured from. Only gVisor has one.
+	// PauseImage is the root sandbox container's image. A restore takes the
+	// request's. Only gVisor has one.
 	PauseImage string `json:"pauseImage,omitempty"`
 	// Actor identity makes a flat snapshot self-identifying if control-plane
 	// persistence is unavailable.
@@ -146,15 +146,30 @@ var retainedSandboxAssets = []assetEntry{
 	{URL: "gs://gvisor/releases/nightly/2026-09-02/aarch64/gvisor.tar.zstd", SHA256: "a64916f9813ce7e4841a30480a599337f7dda07b421c6bf0123db2212aa7d1df"},
 }
 
+// restoreScope is the scope a restore runs at: data when the request asks for
+// it or when the snapshot manifest records a capture of durable data alone
+// (a full capture uploaded as data), which holds no checkpoint image to load;
+// else the request's.
+func restoreScope(requested ateletpb.SnapshotScope, snapshot *sandboxAssetsRecord) ateletpb.SnapshotScope {
+	if snapshot != nil && snapshot.Scope == ateattr.SnapshotScopeData {
+		return ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA
+	}
+	return requested
+}
+
 // restoreRuntime returns the sandbox a restore runs: the request's, with the
 // sandbox binaries the snapshot recorded when the restore loads the snapshot's
-// checkpoint image (any scope but data, which boots the workload fresh), the
-// snapshot is of the same sandbox class, and each recorded binary is the
-// request's or a retained build (retainedSandboxAssets). runsc refuses a
-// checkpoint image another build wrote, so a SandboxConfig that names a newer
-// gVisor still resumes every snapshot taken before it, and the restored actor's
-// later checkpoints keep that gVisor; the template's golden moves to the newer
-// one when it is taken again.
+// checkpoint image (any scope but data, which boots the workload fresh; scope
+// is restoreScope's), the snapshot is of the same sandbox class, and each
+// recorded binary is the request's or a retained build
+// (retainedSandboxAssets). runsc refuses a checkpoint image another build
+// wrote, so a SandboxConfig that names a newer gVisor still resumes every
+// snapshot taken before it, and the restored actor's later checkpoints keep
+// that gVisor; the template's golden moves to the newer one when it is taken
+// again. A data-scope restore runs the SandboxConfig's binaries whatever its
+// snapshot recorded, and the on-node record it writes makes the actor's next
+// checkpoint record them, so a SandboxConfig change reaches such an actor at
+// its next resume.
 func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.SnapshotScope) *sandboxAssetsRecord {
 	if scope == ateletpb.SnapshotScope_SNAPSHOT_SCOPE_DATA || snapshot == nil || len(snapshot.Assets) == 0 ||
 		snapshot.SandboxClass != requested.SandboxClass || !trustedAssets(snapshot.Assets, requested.Assets) {
@@ -163,6 +178,16 @@ func restoreRuntime(requested, snapshot *sandboxAssetsRecord, scope ateletpb.Sna
 	rec := *requested
 	rec.Assets = snapshot.Assets
 	return &rec
+}
+
+// archAssets returns the record's binaries as the atelet reports them back in
+// a Run or Restore response.
+func (r *sandboxAssetsRecord) archAssets() *ateletpb.ArchAssets {
+	files := make(map[string]*ateletpb.AssetFile, len(r.Assets))
+	for name, a := range r.Assets {
+		files[name] = &ateletpb.AssetFile{Url: a.URL, Sha256: a.SHA256}
+	}
+	return &ateletpb.ArchAssets{Files: files}
 }
 
 // trustedAssets reports whether every asset is one of the requested ones or a

@@ -112,7 +112,8 @@ func TestResumeActor_RunningFastPathDoesNotAcquireLease(t *testing.T) {
 }
 
 // TestFinalizeRunning_CommitsRunning verifies the last step of a resume moves
-// the actor out of RESUMING against a freshly read version.
+// the actor out of RESUMING against a freshly read version and records the
+// sandbox binaries the atelet reported it runs on.
 func TestFinalizeRunning_CommitsRunning(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
@@ -123,12 +124,15 @@ func TestFinalizeRunning_CommitsRunning(t *testing.T) {
 	})
 	w := &ActorWorkflow{store: persistence}
 
-	got, err := w.finalizeRunning(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
+	got, err := w.finalizeRunning(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil, capturingAteletStatus)
 	if err != nil {
 		t.Fatalf("finalizeRunning: %v", err)
 	}
 	if got.GetStatus().GetState() != ateapipb.ActorState_ACTOR_STATE_RUNNING {
 		t.Errorf("state = %v, want RUNNING", got.GetStatus().GetState())
+	}
+	if diff := cmp.Diff(capturingAteletStatus, got.GetStatus().GetSandboxAssets(), protocmp.Transform()); diff != "" {
+		t.Errorf("recorded sandbox assets (-want +got):\n%s", diff)
 	}
 }
 
@@ -1091,7 +1095,8 @@ func TestLoadActorForResume_RunningActorShortCircuits(t *testing.T) {
 }
 
 // capturingAtelet records the last Restore and Run request it receives, so a
-// test can assert on the exact wire request the resume workflow sends.
+// test can assert on the exact wire request the resume workflow sends, and
+// answers both with the sandbox assets of capturingAteletAssets.
 type capturingAtelet struct {
 	ateletpb.UnimplementedAteomHerderServer
 
@@ -1100,18 +1105,31 @@ type capturingAtelet struct {
 	run     *ateletpb.RunRequest
 }
 
+// capturingAteletAssets are the sandbox binaries capturingAtelet reports the
+// actor runs on, and capturingAteletStatus their ActorStatus form.
+var (
+	capturingAteletAssets = &ateletpb.ArchAssets{Files: map[string]*ateletpb.AssetFile{
+		"runsc":  {Url: "gs://bucket/runsc", Sha256: "b"},
+		"gvisor": {Url: "gs://bucket/gvisor.tar.zstd", Sha256: "a"},
+	}}
+	capturingAteletStatus = []*ateapipb.SandboxAsset{
+		{Name: "gvisor", Url: "gs://bucket/gvisor.tar.zstd", Sha256: "a"},
+		{Name: "runsc", Url: "gs://bucket/runsc", Sha256: "b"},
+	}
+)
+
 func (f *capturingAtelet) Restore(ctx context.Context, req *ateletpb.RestoreRequest) (*ateletpb.RestoreResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restore = proto.Clone(req).(*ateletpb.RestoreRequest)
-	return &ateletpb.RestoreResponse{}, nil
+	return &ateletpb.RestoreResponse{SandboxAssets: capturingAteletAssets}, nil
 }
 
 func (f *capturingAtelet) Run(ctx context.Context, req *ateletpb.RunRequest) (*ateletpb.RunResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.run = proto.Clone(req).(*ateletpb.RunRequest)
-	return &ateletpb.RunResponse{}, nil
+	return &ateletpb.RunResponse{SandboxAssets: capturingAteletAssets}, nil
 }
 
 // requests returns the recorded Restore and Run requests, nil for an RPC that
@@ -1544,11 +1562,12 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 			})
 
 			actor, loadedTmpl, src, err := w.loadActorForResume(ctx, actorRef)
+			var tele restoreTelemetry
 			if err == nil {
 				// The assigned worker sits on the local snapshot's node, so the
 				// placement guard admits every case of the table.
 				worker := &ateapipb.Worker{Metadata: &ateapipb.ResourceMetadata{Name: "worker-1"}, NodeName: "node-1"}
-				_, err = w.ensureAteletRestored(ctx, actorRef, actor, loadedTmpl, nil, src, worker)
+				tele, err = w.ensureAteletRestored(ctx, actorRef, actor, loadedTmpl, nil, src, worker)
 			}
 			if got := apierror.Code(err); got != tt.want.code {
 				t.Fatalf("apierror.Code(err) = %v, want %v (err: %v)", got, tt.want.code, err)
@@ -1569,7 +1588,13 @@ func TestResumeActor_AteletWireRequest(t *testing.T) {
 				if !proto.Equal(run.GetSandboxAssets(), wantSandboxAssets) {
 					t.Errorf("run SandboxAssets = %v, want %v", run.GetSandboxAssets(), wantSandboxAssets)
 				}
+				if diff := cmp.Diff(capturingAteletStatus, tele.SandboxAssets, protocmp.Transform()); diff != "" {
+					t.Errorf("sandbox assets the Run reported (-want +got):\n%s", diff)
+				}
 				return
+			}
+			if diff := cmp.Diff(capturingAteletStatus, tele.SandboxAssets, protocmp.Transform()); diff != "" {
+				t.Errorf("sandbox assets the Restore reported (-want +got):\n%s", diff)
 			}
 			if restore == nil || run != nil {
 				t.Fatalf("atelet requests = (restore=%v, run=%v), want exactly one Restore", restore, run)
