@@ -23,6 +23,7 @@ import (
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store"
 	"github.com/agent-substrate/substrate/cmd/ateapi/internal/store/storetest"
 	"github.com/agent-substrate/substrate/internal/apierror"
+	"github.com/agent-substrate/substrate/internal/objectstore"
 	"github.com/agent-substrate/substrate/internal/objectstore/objectstoretest"
 	"github.com/agent-substrate/substrate/internal/resources"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -361,5 +362,81 @@ func TestEnsureGoldenSource_GoldenFailedForGood(t *testing.T) {
 	}
 	if got := f.storedTemplate(t).GetStatus().GetGoldenSnapshotStatus().GetErrorMessage(); got != failure {
 		t.Errorf("golden error = %q, want the failure %q kept", got, failure)
+	}
+}
+
+// A second actor's stale observation must not collect the golden another
+// resume already rebuilt under the same tag name.
+func TestRequestGoldenResnapshot_StaleObservation(t *testing.T) {
+	f := newGoldenResnapshotFixture(t)
+	observed := f.tmpl
+	f.loseGolden(t)
+	replacement := f.takeGolden(t, f.tmpl.GetMetadata().GetUid())
+	before := f.storedTemplate(t)
+
+	if err := f.w.requestGoldenResnapshot(context.Background(), observed); err != nil {
+		t.Fatalf("requestGoldenResnapshot: %v", err)
+	}
+	if _, err := f.persistence.GetTag(context.Background(), resources.TagRefFromTag(replacement)); err != nil {
+		t.Fatalf("replacement golden was deleted: %v", err)
+	}
+	if after := f.storedTemplate(t); after.GetMetadata().GetVersion() != before.GetMetadata().GetVersion() {
+		t.Error("stale request changed the template")
+	}
+}
+
+// The reconciler owns the template while publishing its replacement. A
+// concurrent resume must wait without deleting its tag or clearing its record.
+func TestRequestGoldenResnapshot_ReconcilerLease(t *testing.T) {
+	f := newGoldenResnapshotFixture(t)
+	f.loseGolden(t)
+	ref := resources.ActorTemplateRefFromActorTemplate(f.tmpl)
+	lease, err := f.persistence.AcquireLease(context.Background(), "lease:actortemplate:"+ref.Atespace+":"+ref.Name, "template-reconcile")
+	if err != nil {
+		t.Fatalf("acquire reconciler lease: %v", err)
+	}
+	defer lease.Close()
+	before := f.storedTemplate(t)
+	if err := f.w.requestGoldenResnapshot(context.Background(), f.tmpl); err != nil {
+		t.Fatalf("requestGoldenResnapshot: %v", err)
+	}
+	if after := f.storedTemplate(t); after.GetMetadata().GetVersion() != before.GetMetadata().GetVersion() {
+		t.Error("request changed the template while the reconciler held its lease")
+	}
+}
+
+// Even without a template version change, a tag whose objects became
+// available between observations is no longer a candidate for collection.
+func TestRequestGoldenResnapshot_GoldenPresent(t *testing.T) {
+	f := newGoldenResnapshotFixture(t)
+	before := f.storedTemplate(t)
+	if err := f.w.requestGoldenResnapshot(context.Background(), f.tmpl); err != nil {
+		t.Fatalf("requestGoldenResnapshot: %v", err)
+	}
+	if _, err := f.persistence.GetTag(context.Background(), resources.TagRefFromTag(f.golden)); err != nil {
+		t.Fatalf("healthy golden was deleted: %v", err)
+	}
+	if after := f.storedTemplate(t); after.GetMetadata().GetVersion() != before.GetMetadata().GetVersion() {
+		t.Error("request changed a template with a healthy golden")
+	}
+}
+
+func TestRequestGoldenResnapshot_CollectedSnapshot(t *testing.T) {
+	f := newGoldenResnapshotFixture(t)
+	uri, err := resources.ParseSnapshotURI(f.golden.GetStatus().GetSnapshot().GetSnapshotUri())
+	if err != nil {
+		t.Fatalf("parse golden snapshot URI: %v", err)
+	}
+	if err := objectstore.DeletePrefix(context.Background(), f.objects, uri.Prefix()); err != nil {
+		t.Fatalf("collect golden snapshot: %v", err)
+	}
+	if err := f.w.requestGoldenResnapshot(context.Background(), f.tmpl); err != nil {
+		t.Fatalf("requestGoldenResnapshot: %v", err)
+	}
+	if _, err := f.persistence.GetTag(context.Background(), resources.TagRefFromTag(f.golden)); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetTag = %v, want collected tag deleted", err)
+	}
+	if f.storedTemplate(t).GetStatus().GetGoldenSnapshotStatus().GetGoldenTag() != nil {
+		t.Error("collected golden record was not cleared")
 	}
 }

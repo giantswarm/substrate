@@ -194,15 +194,38 @@ func (w *ActorWorkflow) awaitableGolden(ctx context.Context, actorRef resources.
 // requestGoldenResnapshot sends tmpl back to the reconciler to take its
 // golden again: the recorded golden tag, gone or holding a collected snapshot,
 // is deleted so no pass records it again, then the record is cleared under the
-// observed template's version. A record a concurrent writer changed first is
-// left to it; a conflict leaves the next read to send it back again.
+// observed template's version. The template lease serializes the delete with
+// the reconciler and other resumes; stale observations never delete a tag.
 func (w *ActorWorkflow) requestGoldenResnapshot(ctx context.Context, tmpl *ateapipb.ActorTemplate) error {
 	recorded := tmpl.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
 	tmplRef := resources.ActorTemplateRefFromActorTemplate(tmpl)
+	lease, err := w.store.AcquireLease(ctx, "lease:actortemplate:"+tmplRef.Atespace+":"+tmplRef.Name, "golden-resnapshot")
+	if errors.Is(err, store.ErrLeaseConflict) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("while acquiring ActorTemplate %s lease: %w", tmplRef, err)
+	}
+	defer lease.Close()
+	ctx = lease.Context()
+	current, err := w.store.GetActorTemplate(ctx, tmplRef)
+	if err != nil {
+		return fmt.Errorf("while reading ActorTemplate %s under its lease: %w", tmplRef, err)
+	}
+	if err := store.PreconditionFrom(tmpl).Check(current.GetMetadata()); err != nil {
+		return nil
+	}
+	// A completed replacement may have the same name as the lost tag. Check
+	// again under the lease before deleting anything by that name.
+	if golden, err := w.restorableGolden(ctx, current, resources.SnapshotURI{}); err != nil {
+		return err
+	} else if golden != nil {
+		return nil
+	}
 	if _, err := w.DeleteTag(ctx, resources.TagRefFromObjectRef(recorded), store.DeletePreconditions{}); err != nil && apierror.Code(err) != codes.NotFound {
 		return fmt.Errorf("while deleting the lost golden tag %s of ActorTemplate %s: %w", resources.TagRefFromObjectRef(recorded), tmplRef, err)
 	}
-	_, err := w.store.UpdateActorTemplate(ctx, tmplRef, store.PreconditionFrom(tmpl), func(dbTemplate *ateapipb.ActorTemplate) error {
+	_, err = w.store.UpdateActorTemplate(ctx, tmplRef, store.PreconditionFrom(tmpl), func(dbTemplate *ateapipb.ActorTemplate) error {
 		snapshotStatus := dbTemplate.GetStatus().GetGoldenSnapshotStatus()
 		if !proto.Equal(snapshotStatus.GetGoldenTag(), recorded) || snapshotStatus.GetErrorMessage() != "" {
 			return errGoldenMovedOn
