@@ -1463,6 +1463,20 @@ entries in one roll.
   `sandbox_assets`; it gets them at its next resume on a 1.18.1 atelet.
   A 1.18.0 ate-api replica does not sweep goldens of deleted templates;
   the 1.18.1 replicas do, one at a time.
+- **Behavior, lost goldens:** an actor created from its template's golden
+  and never suspended since borrows the golden tag's snapshot. When that
+  snapshot's objects are gone (the tag deleted, or replaced by a golden
+  taken again in a newer layout), its resume moves it onto the template's
+  current golden, or sends the template back to take its golden again and
+  waits for it up to two minutes, answering `Unavailable` once that is
+  spent; 1.18.0 restored the missing snapshot and crashed the actor. A
+  template whose golden failed for good refuses such a resume as not
+  resumable, reason `GOLDEN_SNAPSHOT_UNAVAILABLE`. An actor that has
+  suspended once restores its own snapshot as before.
+- **During the roll:** the recovery runs once ate-api-server runs 1.18.1.
+  An actor a 1.18.0 resume already crashed this way stays `CRASHED`;
+  `kubectl ate revert` returns it to the golden it borrowed, and its next
+  resume recovers it.
 - **Migration:** none to run.
 - **Goldens:** kept.
 - **Reset:** none. **Conversations lost:** none.

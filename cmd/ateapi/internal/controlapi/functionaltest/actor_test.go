@@ -3083,6 +3083,7 @@ func createDataCommitTemplate(t *testing.T, tc *testContext, ns string) *ateapip
 	if err != nil {
 		t.Fatalf("create golden tag: %v", err)
 	}
+	seedGoldenSnapshotObjects(t, tc)
 	updated, err := tc.persistence.UpdateActorTemplate(context.Background(),
 		resources.ActorTemplateRefFromActorTemplate(created), store.PreconditionFrom(created),
 		func(dbTemplate *ateapipb.ActorTemplate) error {

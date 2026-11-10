@@ -120,6 +120,11 @@ type ActorWorkflow struct {
 	workflowDeadline       time.Duration
 	restoreBudget          time.Duration
 	objectStore            objectstore.Store
+	// goldenResnapshotBudget bounds how long a resume waits for its
+	// template's golden to be taken again, goldenResnapshotPoll how often it
+	// looks; zero is the default (see ensureGoldenSourcePresent).
+	goldenResnapshotBudget time.Duration
+	goldenResnapshotPoll   time.Duration
 	// pauseUploads makes every pause durable in the background; nil in a
 	// workflow built without one, which then pauses node-locally only.
 	pauseUploads *pauseUploader
@@ -192,6 +197,9 @@ type actorWorkflowStore interface {
 	UpdateTag(ctx context.Context, tagRef resources.TagRef, precondition store.Precondition, mutate func(toUpdate *ateapipb.Tag) error) (*ateapipb.Tag, error)
 	DeleteTag(ctx context.Context, tagRef resources.TagRef, precondition store.DeletePreconditions) (*ateapipb.Tag, error)
 	GetActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef) (*ateapipb.ActorTemplate, error)
+	// UpdateActorTemplate clears a lost golden record, which sends the
+	// template back to the reconciler to take its golden again.
+	UpdateActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.Precondition, mutate func(dbTemplate *ateapipb.ActorTemplate) error) (*ateapipb.ActorTemplate, error)
 	DeleteActorTemplate(ctx context.Context, templateRef resources.ActorTemplateRef, precondition store.DeletePreconditions) (*ateapipb.ActorTemplate, error)
 	AcquireLease(ctx context.Context, key, holder string) (*store.Lease, error)
 }

@@ -356,6 +356,16 @@ func goldenSnapshotURI(t *testing.T) string {
 	return uri.String()
 }
 
+// seedGoldenSnapshotObjects writes the objects of the golden tag's snapshot,
+// as the golden flow's copy does: a resume of an actor that borrows a golden
+// whose objects are gone takes the golden again instead of restoring it.
+func seedGoldenSnapshotObjects(t *testing.T, tc *testContext) {
+	t.Helper()
+	if err := tc.objectStore.WriteSnapshot(goldenSnapshotURI(t), "manifest.json"); err != nil {
+		t.Fatalf("write golden snapshot objects: %v", err)
+	}
+}
+
 // snapshotOwnedByActor reports whether snapshotURI sits under the actor's own
 // prefix. That is what says the actor took the snapshot itself rather than
 // borrowing it from a tag, and so what decides whether its suspends and its
@@ -471,6 +481,7 @@ func createTemplateWithContainersAndVolumes(t *testing.T, tc *testContext, ns st
 	if err != nil {
 		t.Fatalf("create golden tag: %v", err)
 	}
+	seedGoldenSnapshotObjects(t, tc)
 
 	// Record the golden snapshot on the template's status directly in the
 	// store, as the ActorTemplateReconciler's checkpoint would: there is no
