@@ -47,9 +47,15 @@ jobs:
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: v4.3.0
+      - name: Cache helm-unittest release
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/substrate-release-assets/helm-unittest
+          key: release-assets-v1-${{ runner.os }}-${{ runner.arch }}-helm-unittest-1.0.3
       - name: Test Helm chart
         run: |
-          helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.0.3 --verify=false
+          export HELM_PLUGINS="$RUNNER_TEMP/helm-plugins"
+          RELEASE_ASSET_CACHE="$HOME/.cache/substrate-release-assets" .github/scripts/install-release-tool.sh helm-unittest 1.0.3
           make helm-test
       - name: Cache micro-VM assets
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
