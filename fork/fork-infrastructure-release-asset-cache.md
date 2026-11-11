@@ -26,3 +26,8 @@ on both cold and warm runs. Publish a downloaded file only after curl succeeds.
 
 Transient release-download failures must not invalidate cached tools or hold
 unrelated pull requests. The fork owns these workflow setup steps.
+
+## History
+
+Release-download 504s exposed the uncached setup paths. The fork now retains
+verified archives and the installed envtest control plane between CI runs.
