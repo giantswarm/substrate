@@ -626,7 +626,7 @@ func (s *AteomHerder) Run(ctx context.Context, req *ateletpb.RunRequest) (resp *
 		return nil, fmt.Errorf("while calling ateom.RunWorkload: %w", err)
 	}
 
-	return &ateletpb.RunResponse{}, nil
+	return &ateletpb.RunResponse{SandboxAssets: sandboxRec.archAssets()}, nil
 }
 
 var snapshotSizeBytes metric.Int64Histogram
@@ -1264,9 +1264,15 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 	// snapshot kind only becomes knowable here.
 	op.kind = restoreSnapshotKind(req, sandboxRec)
 
+	// A manifest of durable data alone restores at data scope whatever the
+	// request says: there is no checkpoint image to load. The binaries, the
+	// ateom request and the metrics all follow this scope.
+	scope := restoreScope(req.GetScope(), sandboxRec)
+	op.scope = ateattr.SnapshotScopeValue(scope)
+
 	// runsc refuses a checkpoint image another build wrote, so a restore that
 	// loads one runs the sandbox binaries the snapshot was captured with.
-	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, req.GetScope())
+	runtimeRec = restoreRuntime(runtimeRec, sandboxRec, scope)
 
 	var registration *registeredActor
 	// Undo the Register if the restore fails. The errgroup join below happens
@@ -1376,7 +1382,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		RunscPath:             runscPathFor(assetPaths),
 		RuntimeAssetPaths:     assetPaths,
 		Spec:                  spec,
-		Scope:                 toAteomSnapshotScope(req.GetScope()),
+		Scope:                 toAteomSnapshotScope(scope),
 		ActorUid:              req.GetActorUid(),
 		ActorDirs:             actorDirs,
 		PreserveRestoreDir:    directLocal,
@@ -1390,7 +1396,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *ateletpb.RestoreRequest)
 		return nil, fmt.Errorf("while calling ateom.RestoreWorkload: %w", err)
 	}
 
-	return &ateletpb.RestoreResponse{}, nil
+	return &ateletpb.RestoreResponse{SandboxAssets: runtimeRec.archAssets()}, nil
 }
 
 // Terminate terminates any running workload on ateom, unmounts external volumes,

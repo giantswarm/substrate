@@ -74,6 +74,9 @@ func TestPrintActorsTo_Table(t *testing.T) {
 					WorkerPod:       "pod-1",
 					WorkerPodIps:    []string{"1.2.3.4", "fd00::1"},
 				},
+				SandboxAssets: []*ateapipb.SandboxAsset{
+					{Name: "gvisor", Url: "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd", Sha256: "fa96cce976ceecb0c4a867dfba9317b30129239ea9a16aec0050fbacb6a6b5af"},
+				},
 			},
 		},
 	}
@@ -83,8 +86,8 @@ func TestPrintActorsTo_Table(t *testing.T) {
 	}
 	output := buf.String()
 
-	expected := `ATESPACE   NAME   TEMPLATE             STATE                 WORKER POD        WORKER IPS        VERSION   AGE
-team-a     id-1   default/template-1   ACTOR_STATE_RUNNING   worker-ns/pod-1   1.2.3.4,fd00::1   2         5m
+	expected := `ATESPACE   NAME   TEMPLATE             STATE                 WORKER POD        WORKER IPS        VERSION   AGE   SANDBOX
+team-a     id-1   default/template-1   ACTOR_STATE_RUNNING   worker-ns/pod-1   1.2.3.4,fd00::1   2         5m    nightly/2026-09-09
 `
 	if diff := cmp.Diff(expected, output); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)
@@ -183,10 +186,10 @@ func TestPrintActorsTo_Table_Sorted(t *testing.T) {
 	}
 
 	// Sorted by atespace first, then template namespace, template name, name.
-	expected := `ATESPACE   NAME    TEMPLATE             STATE                   WORKER POD   WORKER IPS   VERSION   AGE
-team-a     alpha   default/template-1   ACTOR_STATE_RUNNING     <none>                    0         5m
-team-a     beta    other/template-2     ACTOR_STATE_SUSPENDED   <none>                    0         5h
-team-b     zebra   default/template-1   ACTOR_STATE_SUSPENDED   <none>                    0         3d
+	expected := `ATESPACE   NAME    TEMPLATE             STATE                   WORKER POD   WORKER IPS   VERSION   AGE   SANDBOX
+team-a     alpha   default/template-1   ACTOR_STATE_RUNNING     <none>                    0         5m    <none>
+team-a     beta    other/template-2     ACTOR_STATE_SUSPENDED   <none>                    0         5h    <none>
+team-b     zebra   default/template-1   ACTOR_STATE_SUSPENDED   <none>                    0         3d    <none>
 `
 	if diff := cmp.Diff(expected, buf.String()); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)
@@ -217,8 +220,8 @@ func TestPrintActorsTo_Table_TemplateRef(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := `ATESPACE   NAME   TEMPLATE                             STATE                   WORKER POD   WORKER IPS   VERSION   AGE
-team-a     id-1   ate-demo-counter-substrate/counter   ACTOR_STATE_SUSPENDED   <none>                    0         5m
+	expected := `ATESPACE   NAME   TEMPLATE                             STATE                   WORKER POD   WORKER IPS   VERSION   AGE   SANDBOX
+team-a     id-1   ate-demo-counter-substrate/counter   ACTOR_STATE_SUSPENDED   <none>                    0         5m    <none>
 `
 	if diff := cmp.Diff(expected, buf.String()); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)
@@ -927,5 +930,45 @@ func TestPrintWorkerTopTo_Invalid(t *testing.T) {
 	var buf bytes.Buffer
 	if err := PrintWorkerTopTo(&buf, nil, "invalid"); err == nil {
 		t.Errorf("expected error for invalid format, got nil")
+	}
+}
+
+func TestSandboxDisplay(t *testing.T) {
+	const sha = "fa96cce976ceecb0c4a867dfba9317b30129239ea9a16aec0050fbacb6a6b5af"
+	for _, tc := range []struct {
+		name   string
+		assets []*ateapipb.SandboxAsset
+		want   string
+	}{
+		{name: "never ran", want: "<none>"},
+		{
+			name:   "a gVisor nightly",
+			assets: []*ateapipb.SandboxAsset{{Name: "gvisor", Url: "gs://gvisor/releases/nightly/2026-09-09/x86_64/gvisor.tar.zstd", Sha256: sha}},
+			want:   "nightly/2026-09-09",
+		},
+		{
+			name:   "a gVisor release over HTTPS",
+			assets: []*ateapipb.SandboxAsset{{Name: "gvisor", Url: "https://storage.googleapis.com/gvisor/releases/release/20260803.0/aarch64/gvisor.tar.zstd", Sha256: sha}},
+			want:   "release/20260803.0",
+		},
+		{
+			name:   "a bare runsc of another shape",
+			assets: []*ateapipb.SandboxAsset{{Name: "runsc", Url: "gs://bucket/runsc", Sha256: sha}},
+			want:   "runsc@fa96cce976ce",
+		},
+		{
+			name: "micro-VM assets",
+			assets: []*ateapipb.SandboxAsset{
+				{Name: "kata-shim", Url: "gs://bucket/kata-shim", Sha256: "2222"},
+				{Name: "cloud-hypervisor", Url: "gs://bucket/ch", Sha256: sha},
+			},
+			want: "cloud-hypervisor@fa96cce976ce",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sandboxDisplay(tc.assets); got != tc.want {
+				t.Errorf("sandboxDisplay() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

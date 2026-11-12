@@ -57,6 +57,9 @@ type resumeSnapshotSource struct {
 type restoreTelemetry struct {
 	SnapshotKind      string
 	WireSnapshotScope string
+	// SandboxAssets are the sandbox binaries the atelet reports the actor
+	// runs on, recorded on its status when it turns RUNNING.
+	SandboxAssets []*ateapipb.SandboxAsset
 }
 
 // resumeActorOnce executes the workflow to resume a suspended actor. Idempotent:
@@ -117,6 +120,9 @@ func (w *ActorWorkflow) resumeActorOnce(ctx context.Context, actorRef resources.
 	if wasRunning = actor.GetStatus().GetState() == ateapipb.ActorState_ACTOR_STATE_RUNNING; wasRunning {
 		return actor, false, nil
 	}
+	if actor, src, err = w.ensureGoldenSourcePresent(leaseCtx, actorRef, actor, actorTemplate, src); err != nil {
+		return nil, false, err
+	}
 	var created *ateapipb.Actor
 	if created, err = w.ensureVolumesCreated(leaseCtx, actorRef, actor, actorTemplate); err != nil {
 		return nil, false, err
@@ -136,7 +142,7 @@ func (w *ActorWorkflow) resumeActorOnce(ctx context.Context, actorRef resources.
 		return nil, false, err
 	}
 	var running *ateapipb.Actor
-	if running, err = w.finalizeRunning(leaseCtx, actorRef, actorTemplate); err != nil {
+	if running, err = w.finalizeRunning(leaseCtx, actorRef, actorTemplate, tele.SandboxAssets); err != nil {
 		return nil, false, err
 	}
 	actor = running
@@ -747,7 +753,8 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 	}
 
 	// The sandbox binaries and pause image come from the template's
-	// SandboxConfig on every path, restores included.
+	// SandboxConfig on every path, restores included; the atelet restores a
+	// checkpoint image on the binaries that wrote it and reports which it ran.
 	sandboxAssets, err := resolveSandboxAssets(w.sandboxConfigLister, actorTemplate.GetSandboxConfig())
 	if err != nil {
 		return tele, fmt.Errorf("while resolving sandbox assets: %w", err)
@@ -778,7 +785,8 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		tele.WireSnapshotScope = ateattr.SnapshotScopeValue(req.Scope)
 
 		err = w.restoreWithBudget(ctx, actorRef, func(ctx context.Context) error {
-			_, err := client.Restore(ctx, req)
+			resp, err := client.Restore(ctx, req)
+			tele.SandboxAssets = sandboxAssetsStatus(ctx, resp.GetSandboxAssets())
 			return err
 		})
 		return tele, w.crashOnRestoreFailure(ctx, actorRef, actorTemplate, err)
@@ -815,7 +823,8 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 			MemoryBytes:   memBytes,
 		}
 		err = w.restoreWithBudget(ctx, actorRef, func(ctx context.Context) error {
-			_, err := client.Restore(ctx, req)
+			resp, err := client.Restore(ctx, req)
+			tele.SandboxAssets = sandboxAssetsStatus(ctx, resp.GetSandboxAssets())
 			return err
 		})
 		return tele, w.crashOnRestoreFailure(ctx, actorRef, actorTemplate, err)
@@ -836,7 +845,10 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 			CpuMilli:              cpuMilli,
 			MemoryBytes:           memBytes,
 		}
-		if _, err = client.Run(ctx, req); err != nil {
+		var resp *ateletpb.RunResponse
+		resp, err = client.Run(ctx, req)
+		tele.SandboxAssets = sandboxAssetsStatus(ctx, resp.GetSandboxAssets())
+		if err != nil {
 			return tele, w.handleAteletError(ctx, actorRef, actorTemplate, ateattr.OperationResume, "Run", false, err)
 		}
 		return tele, nil
@@ -858,7 +870,7 @@ func (w *ActorWorkflow) egressGateway() *ateletpb.EgressGateway {
 // crashed by the resume instead: it served nothing since the snapshot it was
 // restored from, so ResumeActor returns it to that snapshot and places it on
 // another worker, or answers Unavailable for the caller to retry.
-func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate) (_ *ateapipb.Actor, err error) {
+func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.ActorRef, actorTemplate *ateapipb.ActorTemplate, sandboxAssets []*ateapipb.SandboxAsset) (_ *ateapipb.Actor, err error) {
 	ctx, done := stepSpan(ctx, "FinalizeRunning")
 	defer func() { err = done(err) }()
 
@@ -877,6 +889,7 @@ func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.
 
 	storedActor, err := w.store.UpdateActor(ctx, actorRef, store.PreconditionFrom(latestActor), func(toUpdate *ateapipb.Actor) error {
 		toUpdate.Status.State = ateapipb.ActorState_ACTOR_STATE_RUNNING
+		toUpdate.Status.SandboxAssets = sandboxAssets
 		return nil
 	})
 	if err != nil {

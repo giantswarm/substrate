@@ -394,10 +394,9 @@ message SandboxAssets {
   map<string, ArchAssets> assets = 2; // arch -> {name -> file}
 
   // pause_image is the image for the sandbox's root container. Like the
-  // binaries above it is sandbox configuration, not workload configuration,
-  // and atelet pins it into the snapshot manifest so a restore rebuilds the
-  // sandbox from the same image. Empty for sandboxes without a pause
-  // container (microvm).
+  // binaries above it is sandbox configuration, not workload configuration;
+  // a restore always takes the request's. Empty for sandboxes without a
+  // pause container (microvm).
   string pause_image = 3;
 }
 
@@ -561,6 +560,9 @@ message HTTPGetAction {
 }
 
 message RunResponse {
+  // The sandbox binaries the actor runs on, for this atelet's architecture:
+  // the request's.
+  ArchAssets sandbox_assets = 10001;
 }
 
 message LocalCheckpointConfiguration {
@@ -720,4 +722,8 @@ message RestoreRequest {
 }
 
 message RestoreResponse {
+  // The sandbox binaries the restored actor runs on, for this atelet's
+  // architecture: the request's, or the ones the snapshot was captured with
+  // when the restore loads its checkpoint image.
+  ArchAssets sandbox_assets = 10001;
 }

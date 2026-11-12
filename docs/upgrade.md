@@ -1422,11 +1422,65 @@ survive it.
 
 ### Patch steps within 1.18
 
+Each patch step below needs no migration, no snapshot reset and no
+manual step; no conversation and no durable volume is lost. A step from
+1.17 straight to a 1.18 patch is the 1.17 to 1.18 step and the patch
+entries in one roll.
+
 #### 1.18.0 to 1.18.1
 
+- **Persisted format:** one optional field more, nothing migrated. An
+  Actor's status carries `sandbox_assets`, the sandbox binaries it last
+  ran on (asset name, URL and sha256), written by every resume; an actor
+  not resumed since reads none. atelet's Run and Restore responses carry
+  the same list; a 1.18.0 ate-api-server ignores them. No CRD, no
+  Postgres schema and no snapshot layout differs.
+- **Chart:** `images.agentgateway` is 2.6.10 (2.6.5 before): the same
+  data plane on a refreshed base image, without the `ca-certificates-bundle`
+  findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
+  keeps them.
+- **Behavior, sandbox builds:** an actor restored at data scope runs the
+  SandboxConfig's current gVisor whatever build its snapshot was taken
+  on, also when its snapshot manifest alone says the snapshot holds data
+  only, and its next snapshot records that build: actors whose data-scope
+  snapshots were taken on an older release move to the current one at
+  their next resume, with no step per actor. A full-scope restore still
+  runs the (trusted) build that wrote its checkpoint image.
+- **kubectl ate:** `kubectl ate get actors` has a `SANDBOX` column, the
+  last column, naming the gVisor release an actor last ran on (such as
+  `nightly/2026-09-09`) or `<none>`; `-o yaml` lists every asset.
+- **Behavior, goldens of deleted templates:** each template resync also
+  removes the golden actors and golden tags in `ate-golden` whose
+  ActorTemplate no longer exists and that are older than
+  `--golden-sweep-grace-period` (ate-api, 10 minutes by default), on one
+  replica at a time, with one log line per template uid naming what it
+  removed. A template delete that failed after removing the template (object
+  storage unreachable, ate-api restarted mid-delete) left them behind until
+  someone deleted them by hand; the first resyncs of 1.18.1 remove those
+  left by earlier releases too, snapshots included. A golden whose template
+  exists is never touched.
+- **During the roll:** an actor resumed by a 1.18.0 atelet reads no
+  `sandbox_assets`; it gets them at its next resume on a 1.18.1 atelet.
+  A 1.18.0 ate-api replica does not sweep goldens of deleted templates;
+  the 1.18.1 replicas do, one at a time.
+- **Behavior, lost goldens:** an actor created from its template's golden
+  and never suspended since borrows the golden tag's snapshot. When that
+  snapshot's objects are gone (the tag deleted, or replaced by a golden
+  taken again in a newer layout), its resume moves it onto the template's
+  current golden, or sends the template back to take its golden again and
+  waits for it up to two minutes, answering `Unavailable` once that is
+  spent; 1.18.0 restored the missing snapshot and crashed the actor. A
+  template whose golden failed for good refuses such a resume as not
+  resumable, reason `GOLDEN_SNAPSHOT_UNAVAILABLE`. An actor that has
+  suspended once restores its own snapshot as before.
+- **During the roll:** the recovery runs once ate-api-server runs 1.18.1.
+  An actor a 1.18.0 resume already crashed this way stays `CRASHED`;
+  `kubectl ate revert` returns it to the golden it borrowed, and its next
+  resume recovers it.
+- **Migration:** none to run.
+- **Goldens:** kept.
 - **Dependencies:** compress v1.20.2 fixes the two-block-frame panic
   GO-2026-6865; no compressed format changes or manual conversion.
-- **Persisted format:** unchanged. No Postgres, CRD or snapshot migration.
 - **Behavior, DNS:** the actor DNS relay forwards only names allowed by
   the actor's HTTP, HTTPS, TLS passthrough or TCP rules. A name outside
   those rules receives NXDOMAIN, including queries on an established TCP
@@ -1439,8 +1493,8 @@ survive it.
   behavior until it is replaced. Policies are refreshed after five
   seconds; after a successful read, a failed refresh retains the last
   policy until atelet can be reached again.
-- **Goldens:** kept. DNS enforcement belongs to the worker, including for
-  an actor restored from an existing snapshot.
+- **Goldens, DNS:** enforcement also applies to an actor restored from an
+  existing snapshot.
 - **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE

@@ -188,17 +188,18 @@ func TestActorEgressTCPByAddress(t *testing.T) {
 	waitForActorRoute(t, ctx, router, actorRef)
 
 	const send, echo = "SSH-2.0-actor\r\n", "echo: SSH-2.0-actor\r\n"
-	want := ""
+	// A gateway without a tcp chain refuses the listed origin too.
+	listedAnswered := dataplane.IsTCPRefusal
 	if dataplane.RelaysTCPRules() {
-		want = echo
+		listedAnswered = func(received string) bool { return received == echo }
 	}
-	received := exchangeTCPThroughEgressActor(t, ctx, router, actorRef, listed.Address(), send, func(received string) bool { return received == want })
-	if received != want {
-		t.Fatalf("TCP to the listed origin %s received %q, want %q", listed.Address(), received, want)
+	received := exchangeTCPThroughEgressActor(t, ctx, router, actorRef, listed.Address(), send, listedAnswered)
+	if !listedAnswered(received) {
+		t.Fatalf("TCP to the listed origin %s received %q, want the echo when the gateway relays tcp rules (%t), else its refusal", listed.Address(), received, dataplane.RelaysTCPRules())
 	}
 	received = exchangeTCPThroughEgressActor(t, ctx, router, actorRef, unlisted.Address(), send, func(string) bool { return true })
-	if received != "" {
-		t.Fatalf("TCP to the unlisted origin %s received %q, want the connection closed with nothing", unlisted.Address(), received)
+	if !dataplane.IsTCPRefusal(received) {
+		t.Fatalf("TCP to the unlisted origin %s received %q, want the gateway's refusal with nothing of the origin's", unlisted.Address(), received)
 	}
 }
 

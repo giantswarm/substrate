@@ -375,6 +375,23 @@ func createAndResumeSubstrateActor(t *testing.T, ctx context.Context, prefix str
 func createAndResume(t *testing.T, ctx context.Context, prefix string, actor *ateapipb.Actor, source, deployWith string, rules []*ateapipb.EgressRule) (string, string, *ateapipb.Actor) {
 	t.Helper()
 	clients := e2e.GetClients()
+	actorRef := createActor(t, ctx, prefix, actor, source, deployWith, rules)
+	actorName := actorRef.GetName()
+
+	resumeResponse, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: actorRef})
+	if err != nil {
+		t.Fatalf("ResumeActor: %v", err)
+	}
+	t.Logf("resumed actor %s/%s", networkingAtespace, actorName)
+	return resumeResponse.GetActor().GetMetadata().GetAtespace(), resumeResponse.GetActor().GetMetadata().GetName(), resumeResponse.GetActor()
+}
+
+// createActor creates the actor at rest in the networking atespace and gives
+// it an EgressPolicy with rules (none when rules is nil); the actor is
+// suspended and deleted when the test ends.
+func createActor(t *testing.T, ctx context.Context, prefix string, actor *ateapipb.Actor, source, deployWith string, rules []*ateapipb.EgressRule) *ateapipb.ObjectRef {
+	t.Helper()
+	clients := e2e.GetClients()
 	actorName := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	actorRef := &ateapipb.ObjectRef{Atespace: networkingAtespace, Name: actorName}
 
@@ -393,13 +410,7 @@ func createAndResume(t *testing.T, ctx context.Context, prefix string, actor *at
 	if rules != nil {
 		e2e.EnsureEgressPolicy(t, ctx, clients, actorRef, rules...)
 	}
-
-	resumeResponse, err := e2e.ResumeActorAwaitCapacity(t, ctx, clients, &ateapipb.ResumeActorRequest{Actor: actorRef})
-	if err != nil {
-		t.Fatalf("ResumeActor: %v", err)
-	}
-	t.Logf("resumed actor %s/%s", networkingAtespace, actorName)
-	return resumeResponse.GetActor().GetMetadata().GetAtespace(), resumeResponse.GetActor().GetMetadata().GetName(), resumeResponse.GetActor()
+	return actorRef
 }
 
 func mustRouterClient(t *testing.T, ctx context.Context) *e2e.RouterClient {
