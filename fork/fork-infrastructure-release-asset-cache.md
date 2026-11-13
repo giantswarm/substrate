@@ -22,6 +22,9 @@ platform, and the installed envtest control plane by version selector and tool
 lockfile. Retry cold downloads with bounded backoff; verify archive checksums
 on both cold and warm runs. Publish a downloaded file only after curl succeeds.
 
+See [CI release asset caches](../docs/dev/ci-release-asset-cache.md) for cache
+paths and keys, retry behavior, checksum failures, and invalidation.
+
 ## Reason
 
 Transient release-download failures must not invalidate cached tools or hold
