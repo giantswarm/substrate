@@ -62,6 +62,27 @@ jobs:
       # this guards, and that happens on the push to main, not on the PR.
       - name: Verify immutable PostgreSQL migrations
         run: hack/verify/postgresql-migrations.sh
+      - name: Release download fault-injection tests
+        run: python3 .github/scripts/release-assets-test.py
+      - name: Resolve release asset versions
+        id: assets
+        run: |
+          echo "weaver=$(sed -n 's/^WEAVER_VERSION="\(.*\)"$/\1/p' hack/verify/metrics.sh)" >> "$GITHUB_OUTPUT"
+          echo "envtest=$(sed -n 's/^const kubeVersion = "\(.*\)"$/\1/p' internal/testenv/testenv.go)" >> "$GITHUB_OUTPUT"
+      - name: Cache Weaver release
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/substrate-release-assets/weaver
+          key: release-assets-v1-${{ runner.os }}-${{ runner.arch }}-weaver-${{ steps.assets.outputs.weaver }}
+      - name: Cache envtest control plane
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local/share/kubebuilder-envtest
+          key: release-assets-v1-${{ runner.os }}-${{ runner.arch }}-envtest-${{ steps.assets.outputs.envtest }}-${{ hashFiles('hack/tools/setup-envtest/go.sum') }}
+      - name: Prepare envtest with retries
+        run: .github/scripts/retry.sh hack/run-tool.sh setup-envtest use '${{ steps.assets.outputs.envtest }}' --print path
+      - name: Prove envtest resolves from the installed cache
+        run: hack/run-tool.sh setup-envtest use '${{ steps.assets.outputs.envtest }}' -i --print path
       # gotestsum wraps go test to emit JUnit; the go test arguments are unchanged.
       - name: unit tests
         run: hack/run-tool.sh gotestsum --junitfile "${ARTIFACTS}/unit.xml"
@@ -124,18 +145,7 @@ jobs:
           path: ${{ env.ARTIFACTS }}
           if-no-files-found: error
       - name: Install the pinned Weaver
-        # Fork: hack/verify/metrics.sh runs a weaver of the version it pins
-        # instead of pulling its Docker Hub image, which the shared runner IPs
-        # are refused.
-        run: |
-          version=$(sed -n 's/^WEAVER_VERSION="\(.*\)"$/\1/p' hack/verify/metrics.sh)
-          archive=weaver-x86_64-unknown-linux-gnu.tar.xz
-          cd "$RUNNER_TEMP"
-          curl -fsSLO "https://github.com/open-telemetry/weaver/releases/download/${version}/${archive}"
-          curl -fsSLO "https://github.com/open-telemetry/weaver/releases/download/${version}/${archive}.sha256"
-          sha256sum -c "${archive}.sha256"
-          sudo tar -xJf "$archive" --strip-components=1 -C /usr/local/bin "${archive%.tar.xz}/weaver"
-          weaver --version
+        run: RELEASE_ASSET_CACHE="$HOME/.cache/substrate-release-assets" .github/scripts/install-release-tool.sh weaver '${{ steps.assets.outputs.weaver }}'
       - name: verify
         run: hack/verify-all.sh
   # One kind cluster exercises BOTH runtimes. Free x86-64 ubuntu-latest runners
