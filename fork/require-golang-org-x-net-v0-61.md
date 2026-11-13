@@ -10,7 +10,7 @@ commits:
 upstream:
   outcome: drops-at-repin
   refs: [agent-substrate/substrate#2401, agent-substrate/substrate#2984, agent-substrate/substrate#3013]
-  exit: 'the x/net v0.61.0 commit is not replayed at the next re-pin (fixed in v0.60.0, which upstream requires); the Go pin commit drops, with pin-go-1-27-3, at the re-pin onto a commit containing 3c9a3cd3 (agent-substrate/substrate#2984: toolchain go1.27.3 in every module, go 1.27.0 kept); the .circleci builder image is the line''s own'
+  exit: 'the x/net v0.61.0 commit is not replayed at the next re-pin (fixed in v0.60.0, which upstream requires); the Go pin commit drops, with pin-go-1-27-3, at the re-pin onto the first upstream commit whose toolchain line in every module names go1.27.4 or later (agent-substrate/substrate#2984, 3c9a3cd3, named go1.27.3); the .circleci builder image is the line''s own'
   class: 2
   destination: 'agent-substrate/substrate#2984 (3c9a3cd3, on upstream main)'
   first_step: 'none; the one-line toolchain pull request drafted on 2026-10-20 is withdrawn'
@@ -21,7 +21,7 @@ upstream:
   draft: ""
   decision: issuecomment-6301335159
 depends_on: []
-verified: 2026-10-23
+verified: 2026-11-13
 ---
 # Require `golang.org/x/net` v0.61.0 in every module that had it below
 
@@ -42,3 +42,5 @@ not for upstream as such: changes versions only and falls away at the re-pin ont
 2026-10-20: decided in the version-pins theme review (decision issuecomment-6301335159): the x/net v0.61.0 commit is class 1 drop (fixed in v0.60.0, which upstream requires; no consumer); the Go pin commit is class 5 upstream PR, uncapped, queued after the kagent one: upstream runs govulncheck on the action's stable (run 39410251559, go1.27.2, clean) and #2401 preserved the go requirement, so the upstream shape is a `toolchain go1.27.3` line, which applies to the main module only; the line's `go 1.27.2` directive is also what forces the kagent line's go directive through its replace, so the reshape precedes the kagent mirror.
 
 2026-10-23: upstream has it: agent-substrate/substrate#2984 (merged 2026-10-20, `3c9a3cd3`, the commit the review read) added `toolchain go1.27.3` to every module and the benchmarking Dockerfiles with `go 1.27.0` kept; the one-line pull request drafted on 2026-10-20 is withdrawn, nothing to file. Class 2: the Go pin commit drops, with pin-go-1-27-3, at the re-pin onto a commit containing `3c9a3cd3`. Upstream automates the next patch in agent-substrate/substrate#3013: #3021 (a verify script that the root and plugin `toolchain` lines agree) and #3025 (`.github/renovate.json5`, the `toolchain` directive of the root and `internal/plugins/*` modules only, no `go` directive, no `hack/tools`, no Dockerfiles), both open on that date and waiting for the Renovate app to be installed on the org. The line's root `renovate.json5` (`enabled: false`) comes before `.github/renovate.json5` in Renovate's config-file order, so the re-pin that brings #3025 keeps Renovate off on the line.
+
+2026-11-13: GO-2026-6859 moves pin-go-1-27-3 to Go 1.27.4; upstream's `toolchain go1.27.3` no longer suffices, so the Go pin commit drops with it only at an upstream commit naming go1.27.4 or later.

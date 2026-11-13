@@ -1439,6 +1439,9 @@ entries in one roll.
   data plane on a refreshed base image, without the `ca-certificates-bundle`
   findings CVE-2026-91403 and CVE-2026-111943. An override pinned to 2.6.5
   keeps them.
+- **Build:** every binary and image is built with Go 1.27.4 (1.27.3
+  before), which fixes GO-2026-6859 in `net/http`. Nothing to configure;
+  a build from source needs Go 1.27.4 or `GOTOOLCHAIN=auto`.
 - **Behavior, sandbox builds:** an actor restored at data scope runs the
   SandboxConfig's current gVisor whatever build its snapshot was taken
   on, also when its snapshot manifest alone says the snapshot holds data
