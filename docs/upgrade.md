@@ -1479,6 +1479,22 @@ entries in one roll.
   resume recovers it.
 - **Migration:** none to run.
 - **Goldens:** kept.
+- **Dependencies:** compress v1.20.2 fixes the two-block-frame panic
+  GO-2026-6865; no compressed format changes or manual conversion.
+- **Behavior, DNS:** the actor DNS relay forwards only names allowed by
+  the actor's HTTP, HTTPS, TLS passthrough or TCP rules. A name outside
+  those rules receives NXDOMAIN, including queries on an established TCP
+  DNS connection. An absent or empty policy allows no names. Add required
+  destinations to the actor's policy before upgrading; DNS no longer
+  provides an unrestricted path around the egress gateway.
+- **During the roll:** update atelet before its workers. New workers use
+  the authenticated node-local policy RPC; until their node's atelet
+  supports it, DNS fails closed. An old worker retains the previous DNS
+  behavior until it is replaced. Policies are refreshed after five
+  seconds; after a successful read, a failed refresh retains the last
+  policy until atelet can be reached again.
+- **Goldens, DNS:** enforcement also applies to an actor restored from an
+  existing snapshot.
 - **Reset:** none. **Conversations lost:** none.
 
 ### After the roll, on GKE

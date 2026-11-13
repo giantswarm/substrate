@@ -15,6 +15,7 @@
 package dns
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -28,7 +29,9 @@ import (
 )
 
 type serverConfig struct {
-	upstreams []string
+	upstreams     []string
+	policy        PolicySource
+	searchDomains []string
 }
 
 type netConn struct {
@@ -149,7 +152,14 @@ func (s *Server) servePacket(ctx context.Context) error {
 			defer func() { <-s.limiter.inFlight }()
 			// A failed query fails the actor's lookup too, often its whole search
 			// list: name the query so the worker's log shows which one and why.
-			answer, err := s.exchangeUDP(ctx, query)
+			answer := checkQuery(ctx, s.config.policy, query, s.config.searchDomains...)
+			var err error
+			if answer == nil {
+				answer, err = s.exchangeUDP(ctx, query)
+			}
+			if len(answer) == 0 && err == nil {
+				return
+			}
 			if err != nil {
 				slog.WarnContext(ctx, "dns relay could not resolve an actor DNS query", questionAttr(query), slog.Any("err", err))
 				return
@@ -245,95 +255,71 @@ func (s *Server) exchangeUDP(ctx context.Context, query []byte) ([]byte, error) 
 	return nil, fmt.Errorf("dns: no upstream resolver answered: %w", errs)
 }
 
-// relayTCP copies a DNS stream without parsing its length-prefixed messages.
+// relayTCP checks every length-prefixed DNS message before opening an upstream
+// connection. A denied message cannot leak through an otherwise allowed stream.
 func (s *Server) relayTCP(ctx context.Context, downstream net.Conn) {
 	defer downstream.Close()
+	stop := context.AfterFunc(ctx, func() { _ = downstream.Close() })
+	defer stop()
+	_ = downstream.SetDeadline(time.Now().Add(dnsTCPTimeout))
+	for {
+		var header [2]byte
+		if _, err := io.ReadFull(downstream, header[:]); err != nil {
+			return
+		}
+		s.queries.Add(1)
+		query := make([]byte, int(binary.BigEndian.Uint16(header[:])))
+		if _, err := io.ReadFull(downstream, query); err != nil {
+			return
+		}
+		answer := checkQuery(ctx, s.config.policy, query, s.config.searchDomains...)
+		if answer == nil {
+			var err error
+			answer, err = s.exchangeTCP(ctx, query)
+			if err != nil {
+				return
+			}
+		}
+		if len(answer) == 0 {
+			return
+		}
+		framed := binary.BigEndian.AppendUint16(nil, uint16(len(answer)))
+		framed = append(framed, answer...)
+		if _, err := io.Copy(downstream, bytes.NewReader(framed)); err != nil {
+			return
+		}
+	}
+}
 
-	var upstream net.Conn
+func (s *Server) exchangeTCP(ctx context.Context, query []byte) ([]byte, error) {
 	var errs error
 	for _, address := range s.config.upstreams {
-		conn, err := s.n.dialer.DialContext(ctx, "tcp", address)
-		if err != nil {
-			errs = errors.Join(errs, err)
-			continue
+		answer, err := func() ([]byte, error) {
+			conn, err := s.n.dialer.DialContext(ctx, "tcp", address)
+			if err != nil {
+				return nil, err
+			}
+			defer conn.Close()
+			stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+			defer stop()
+			_ = conn.SetDeadline(time.Now().Add(dnsExchangeTimeout))
+			framed := binary.BigEndian.AppendUint16(nil, uint16(len(query)))
+			framed = append(framed, query...)
+			if _, err := io.Copy(conn, bytes.NewReader(framed)); err != nil {
+				return nil, err
+			}
+			var header [2]byte
+			if _, err := io.ReadFull(conn, header[:]); err != nil {
+				return nil, err
+			}
+			response := make([]byte, int(binary.BigEndian.Uint16(header[:])))
+			_, err = io.ReadFull(conn, response)
+			return response, err
+		}()
+		if err == nil {
+			return answer, nil
 		}
-		upstream = conn
-		break
+		errs = errors.Join(errs, err)
 	}
-	if upstream == nil {
-		slog.WarnContext(ctx, "dns relay could not reach any resolver for an actor DNS connection", slog.Any("err", errs))
-		return
-	}
-	defer upstream.Close()
-
-	// Cancel active copies on teardown to release the worker's connection slots.
-	relayDone := make(chan struct{})
-	defer close(relayDone)
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = downstream.Close()
-			_ = upstream.Close()
-		case <-relayDone:
-		}
-	}()
-
-	deadline := time.Now().Add(dnsTCPTimeout)
-	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
-		deadline = ctxDeadline
-	}
-	_ = downstream.SetDeadline(deadline)
-	_ = upstream.SetDeadline(deadline)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(upstream, &tcpQueryCounter{r: downstream, queries: &s.queries})
-		if c, ok := upstream.(*net.TCPConn); ok {
-			_ = c.CloseWrite()
-		}
-	}()
-	go func() {
-		defer wg.Done()
-		_, _ = io.Copy(downstream, upstream)
-		if c, ok := downstream.(*net.TCPConn); ok {
-			_ = c.CloseWrite()
-		}
-	}()
-	wg.Wait()
-}
-
-// tcpQueryCounter counts the DNS messages read through it. A DNS stream frames
-// each message with a two-byte length (RFC 1035 4.2.2), so the counter follows
-// the framing and leaves the bytes unchanged.
-type tcpQueryCounter struct {
-	r       io.Reader
-	queries *atomic.Uint64
-
-	header    [2]byte
-	headerLen int
-	// remaining is the length of the current message still to be read.
-	remaining int
-}
-
-func (c *tcpQueryCounter) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	for b := p[:n]; len(b) > 0; {
-		if c.remaining > 0 {
-			skip := min(c.remaining, len(b))
-			c.remaining -= skip
-			b = b[skip:]
-			continue
-		}
-		c.header[c.headerLen] = b[0]
-		c.headerLen++
-		b = b[1:]
-		if c.headerLen == len(c.header) {
-			c.headerLen = 0
-			c.remaining = int(binary.BigEndian.Uint16(c.header[:]))
-			c.queries.Add(1)
-		}
-	}
-	return n, err
+	return nil, errs
 }

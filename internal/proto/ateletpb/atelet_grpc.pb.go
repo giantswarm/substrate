@@ -33,6 +33,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	AteomSupport_GetActorEgressPolicy_FullMethodName = "/atelet.AteomSupport/GetActorEgressPolicy"
 	AteomSupport_MintActorCertificate_FullMethodName = "/atelet.AteomSupport/MintActorCertificate"
 	AteomSupport_RegisterWorker_FullMethodName       = "/atelet.AteomSupport/RegisterWorker"
 	AteomSupport_RequestActorSuspend_FullMethodName  = "/atelet.AteomSupport/RequestActorSuspend"
@@ -48,6 +49,8 @@ const (
 // Called by individual ateom pods over a local connection, authenticated with
 // ateom's k8s pod identity mTLS certificate.
 type AteomSupportClient interface {
+	// Read the DNS destinations of the actor hosted by this worker.
+	GetActorEgressPolicy(ctx context.Context, in *GetActorEgressPolicyRequest, opts ...grpc.CallOption) (*GetActorEgressPolicyResponse, error)
 	// Request an atunnel certificate for the given actor.
 	//
 	// TODO(identity): Rename to MintAtunnelCertificate, as distinct from
@@ -83,6 +86,16 @@ type ateomSupportClient struct {
 
 func NewAteomSupportClient(cc grpc.ClientConnInterface) AteomSupportClient {
 	return &ateomSupportClient{cc}
+}
+
+func (c *ateomSupportClient) GetActorEgressPolicy(ctx context.Context, in *GetActorEgressPolicyRequest, opts ...grpc.CallOption) (*GetActorEgressPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActorEgressPolicyResponse)
+	err := c.cc.Invoke(ctx, AteomSupport_GetActorEgressPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *ateomSupportClient) MintActorCertificate(ctx context.Context, in *MintActorCertificateRequest, opts ...grpc.CallOption) (*MintActorCertificateResponse, error) {
@@ -134,6 +147,8 @@ func (c *ateomSupportClient) ReportActorExit(ctx context.Context, in *ReportActo
 // Called by individual ateom pods over a local connection, authenticated with
 // ateom's k8s pod identity mTLS certificate.
 type AteomSupportServer interface {
+	// Read the DNS destinations of the actor hosted by this worker.
+	GetActorEgressPolicy(context.Context, *GetActorEgressPolicyRequest) (*GetActorEgressPolicyResponse, error)
 	// Request an atunnel certificate for the given actor.
 	//
 	// TODO(identity): Rename to MintAtunnelCertificate, as distinct from
@@ -171,6 +186,9 @@ type AteomSupportServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAteomSupportServer struct{}
 
+func (UnimplementedAteomSupportServer) GetActorEgressPolicy(context.Context, *GetActorEgressPolicyRequest) (*GetActorEgressPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActorEgressPolicy not implemented")
+}
 func (UnimplementedAteomSupportServer) MintActorCertificate(context.Context, *MintActorCertificateRequest) (*MintActorCertificateResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintActorCertificate not implemented")
 }
@@ -202,6 +220,24 @@ func RegisterAteomSupportServer(s grpc.ServiceRegistrar, srv AteomSupportServer)
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&AteomSupport_ServiceDesc, srv)
+}
+
+func _AteomSupport_GetActorEgressPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActorEgressPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AteomSupportServer).GetActorEgressPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AteomSupport_GetActorEgressPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AteomSupportServer).GetActorEgressPolicy(ctx, req.(*GetActorEgressPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _AteomSupport_MintActorCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -283,6 +319,10 @@ var AteomSupport_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "atelet.AteomSupport",
 	HandlerType: (*AteomSupportServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetActorEgressPolicy",
+			Handler:    _AteomSupport_GetActorEgressPolicy_Handler,
+		},
 		{
 			MethodName: "MintActorCertificate",
 			Handler:    _AteomSupport_MintActorCertificate_Handler,

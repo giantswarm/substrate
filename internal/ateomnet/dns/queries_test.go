@@ -15,16 +15,11 @@
 package dns
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"net"
-	"sync/atomic"
 	"testing"
-	"testing/iotest"
 	"time"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 // tcpFrame prefixes msg with its two-byte length, as a DNS stream does.
@@ -39,45 +34,6 @@ func tcpStream(msgs ...[]byte) []byte {
 		stream = append(stream, m...)
 	}
 	return stream
-}
-
-func TestTCPQueryCounterCountsFramedMessages(t *testing.T) {
-	stream := tcpStream(dnsQuery(1), []byte{}, bytes.Repeat([]byte{0x42}, 300), dnsQuery(2))
-	for _, tc := range []struct {
-		name string
-		r    func(io.Reader) io.Reader
-	}{
-		{"whole reads", func(r io.Reader) io.Reader { return r }},
-		// One byte at a time splits every length prefix across two reads.
-		{"one byte per read", iotest.OneByteReader},
-		{"half reads", iotest.HalfReader},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var queries atomic.Uint64
-			got, err := io.ReadAll(&tcpQueryCounter{r: tc.r(bytes.NewReader(stream)), queries: &queries})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if diff := cmp.Diff(stream, got); diff != "" {
-				t.Errorf("the counter changed the stream (-want +got):\n%s", diff)
-			}
-			if n := queries.Load(); n != 4 {
-				t.Errorf("counted %d queries, want 4", n)
-			}
-		})
-	}
-}
-
-func TestTCPQueryCounterCountsAMessageOnceItsLengthIsRead(t *testing.T) {
-	var queries atomic.Uint64
-	// A stream cut inside the second message's length prefix.
-	stream := append(tcpStream(dnsQuery(1)), 0x00)
-	if _, err := io.ReadAll(&tcpQueryCounter{r: bytes.NewReader(stream), queries: &queries}); err != nil {
-		t.Fatal(err)
-	}
-	if n := queries.Load(); n != 1 {
-		t.Errorf("counted %d queries, want 1", n)
-	}
 }
 
 func TestRelayCountsUDPQueriesAnsweredOrNot(t *testing.T) {

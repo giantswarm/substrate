@@ -275,6 +275,8 @@ func createAndResumeActor(t *testing.T, ctx context.Context, clients *e2e.Client
 	// The gateway refuses every tunnel for an actor without a policy. Naming
 	// only the origin also lets the same actor show a denial.
 	e2e.EnsureEgressPolicy(t, ctx, clients, ref,
+		// DNS may resolve the negative host, while its HTTPS is still denied.
+		e2e.EgressAllowHTTP("example.org"),
 		e2e.EgressAllowHTTP(egressOriginHost),
 		e2e.EgressAllowHTTPS(egressOriginHost),
 		e2e.EgressAllowPassthrough(egressOriginPassthroughHost),

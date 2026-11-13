@@ -351,7 +351,7 @@ type SandboxSession struct {
 
 // ServeSandbox builds a sandbox's network and serves egress and DNS from its
 // gateway namespace. A nil server leaves that unserved, which fails closed.
-func ServeSandbox(ctx context.Context, cfg SandboxNetworkConfig, egress egressServer, resolver *dns.Relay) (_ *SandboxSession, retErr error) {
+func ServeSandbox(ctx context.Context, cfg SandboxNetworkConfig, egress egressServer, resolver *dns.Relay, policy dns.PolicySource) (_ *SandboxSession, retErr error) {
 	network, err := SetupSandboxNetwork(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -364,7 +364,7 @@ func ServeSandbox(ctx context.Context, cfg SandboxNetworkConfig, egress egressSe
 	}()
 
 	if resolver != nil {
-		dnsServer, err := resolver.Serve(ctx, network.GatewayNetNS)
+		dnsServer, err := resolver.Serve(ctx, network.GatewayNetNS, policy)
 		if err != nil {
 			return nil, err
 		}

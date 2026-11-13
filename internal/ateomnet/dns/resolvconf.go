@@ -150,3 +150,32 @@ func writeRootfsEtcFile(rootfs, name string, content []byte) error {
 	}
 	return nil
 }
+
+// resolvConfSearchDomains returns only Kubernetes search suffixes. The svc.
+// suffix and its parent must both be present, so an arbitrary node search
+// domain can never widen a DNS allowlist.
+func resolvConfSearchDomains(path string) ([]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("dns: reading search domains: %w", err)
+	}
+	var domains []string
+	for line := range strings.SplitSeq(string(content), "\n") {
+		if i := strings.IndexAny(line, "#;"); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "search" {
+			domains = nil
+			for _, domain := range fields[1:] {
+				domains = append(domains, strings.ToLower(strings.TrimSuffix(domain, ".")))
+			}
+		}
+	}
+	for _, domain := range domains {
+		if parent, ok := strings.CutPrefix(domain, "svc."); ok && parent != "" && slices.Contains(domains, parent) {
+			return clusterSearchDomains(domains), nil
+		}
+	}
+	return nil, nil
+}
