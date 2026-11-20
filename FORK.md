@@ -541,6 +541,10 @@ plans repository.
   or a row of a private list (`.github/scripts/fork-public-links.sh`).
 - **Fork-only changes** (workflows, this file): a pull request from `fork/<topic>` against `giantswarm`, squash-merged.
   A cherry-pick of an upstream commit is rebase-merged (see "Branches").
+- **Commit subjects**: every carried commit must use a Conventional Commits subject (`<type>[optional scope]: <description>`,
+  for example `docs(fork): document commit subject requirements`) of at most 72 characters, including the type and scope.
+  For a squash merge, use that subject as the pull request title and retain it as the squash commit subject. The line's
+  release tooling reads the resulting commit subject to determine the version bump and generate release notes.
 - **The ledger**: a pull request against a line that changes more than this file adds or edits a ledger file of its
   own (`fork/<change>.md`, or `fork/fork-infrastructure-*.md` for CI and tooling) in the same commit as the change, or
   carries the label `no-ledger` with a line `no-ledger: <reason>` in its description. The file needs no pull request
