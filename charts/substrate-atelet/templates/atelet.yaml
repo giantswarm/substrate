@@ -139,7 +139,8 @@ spec:
     spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atelet" .) }}
       priorityClassName: system-cluster-critical
-      # Run on nodes reserved for any WorkerPool sandbox class.
+      # Run on nodes reserved for any WorkerPool sandbox class, and on the
+      # nodes atelet.tolerations admits.
       tolerations:
       - key: ate.dev/sandboxClass
         operator: Exists
@@ -148,6 +149,17 @@ spec:
       - key: cloud.google.com/compute-class
         operator: Exists
         effect: NoSchedule
+{{- with .Values.atelet.tolerations }}
+{{ toYaml . | indent 6 }}
+{{- end }}
+{{- with .Values.atelet.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+{{- end }}
+{{- with .Values.atelet.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+{{- end }}
       {{- with include "substrate.imagePullSecrets" . }}{{- . | nindent 6 }}{{- end }}
       initContainers:
       - name: objectstore-plugin

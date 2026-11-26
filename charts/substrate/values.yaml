@@ -91,6 +91,12 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # Where atelet runs: the DaemonSet's nodeSelector and affinity, and
+  # tolerations added to the chart's fixed ones. Empty runs atelet on every
+  # schedulable node.
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
   resources:
     requests:
       cpu: 50m
