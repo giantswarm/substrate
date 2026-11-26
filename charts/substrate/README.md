@@ -95,6 +95,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderConfig` | `""` | Host path to the kubelet credential provider config; set together with the bin directory |
 | `atelet.imageCredentialProviderConfigYAML` | `""` | Credential provider config as text, rendered into a ConfigMap, for nodes where that file cannot be authored or must differ from the kubelet's; mutually exclusive with the host path |
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
+| `atelet.registryCredentialSecrets` | `[]` | `kubernetes.io/dockerconfigjson` Secrets (`[{name: ...}]`) in the release namespace that atelet pulls actor images with, before the credential provider's; mounted read-only, so rotation needs no restart |
 | `atelet.priorityClassName` | `system-cluster-critical` | PriorityClass of the atelet pods |
 | `atelet.imageCache.pinnedImages` | `[]` | Image references atelet keeps in its cache and pulls at every eviction pass; read from the `atelet-pinned-images` ConfigMap, so a change restarts no atelet |
 | `atelet.updateStrategy` | `RollingUpdate`, `maxUnavailable: 25%` | Update strategy of the atelet DaemonSet; `maxSurge` must stay 0 |

@@ -62,6 +62,12 @@ atelet:
   # either one still needs the bin directory.
   imageCredentialProviderConfigYAML: ""
   imageCredentialProviderBinDir: ""
+  # kubernetes.io/dockerconfigjson Secrets in the release namespace whose
+  # credentials atelet pulls actor images with, tried before the credential
+  # provider's: [{name: my-registry}]. Each is mounted read-only, so a rotated
+  # Secret takes effect without a restart. imagePullSecrets, by contrast, pull
+  # the chart's own pods.
+  registryCredentialSecrets: []
   extraArgs: []
   extraEnv: []
   # Annotations on atelet's ServiceAccount, such as the pod identity an
