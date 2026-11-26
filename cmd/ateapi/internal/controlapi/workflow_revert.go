@@ -57,7 +57,14 @@ func isRevertable(actor *ateapi.Actor) bool {
 // Idempotent: each step keys on a persisted field rather than on the state the
 // actor was reverted from, so a re-entered workflow fast-forwards to wherever
 // the previous attempt stopped.
-func (w *ActorWorkflow) RevertActor(ctx context.Context, actorRef resources.ActorRef) (_ *ateapi.Actor, err error) {
+func (w *ActorWorkflow) RevertActor(ctx context.Context, actorRef resources.ActorRef) (*ateapi.Actor, error) {
+	ctx = preview.ContextWithOptIn(ctx)
+	return w.revertActor(ctx, actorRef, nil)
+}
+
+// revertActor is RevertActor, refused with errRevertNotAccepted when accept,
+// if not nil, rejects the actor as read under the actor lease.
+func (w *ActorWorkflow) revertActor(ctx context.Context, actorRef resources.ActorRef, accept func(*ateapi.Actor) bool) (_ *ateapi.Actor, err error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	start := time.Now()
 	var actor *ateapi.Actor
@@ -83,6 +90,9 @@ func (w *ActorWorkflow) RevertActor(ctx context.Context, actorRef resources.Acto
 	actor, actorTemplate, err = w.loadActorForRevert(leaseCtx, actorRef)
 	if err != nil {
 		return nil, err
+	}
+	if accept != nil && !accept(actor) {
+		return nil, errRevertNotAccepted
 	}
 
 	var marked *ateapi.Actor

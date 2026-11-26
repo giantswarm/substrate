@@ -5269,7 +5269,7 @@ func TestResumeActor_ReleasesStaleWorkerWhenPoolBecomesIneligible(t *testing.T) 
 // change in AssignWorkerStep.Execute: a worker still assigned to the actor from a
 // previous (failed) attempt that has since entered DRAINING must not be reused —
 // it is released and the actor is crashed.
-func TestResumeActor_CrashesIfAssignedWorkerIsDraining(t *testing.T) {
+func TestResumeActor_MovesOffDrainingWorker(t *testing.T) {
 	ns := namespaceForTest("ns-resume-release-draining")
 	tc := setupTest(t, ns)
 	defer tc.cleanup()
@@ -5359,26 +5359,21 @@ func TestResumeActor_CrashesIfAssignedWorkerIsDraining(t *testing.T) {
 		t.Fatalf("worker %s did not reach DRAINING: %v", assignedPod, err)
 	}
 
-	// The resume must fail and crash the actor because its worker is draining.
-	_, err = tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{Actor: &ateapi.ObjectRef{Atespace: testAtespace, Name: id}})
-	if err == nil {
-		t.Fatalf("expected ResumeActor to fail")
-	}
-	if status.Code(err) != codes.Aborted || !strings.Contains(err.Error(), "crashed") {
-		t.Errorf("expected Aborted/crashed error, got %v", err)
-	}
-
-	getResp, err = tc.client.GetActor(context.Background(), &ateapi.GetActorRequest{Actor: &ateapi.ObjectRef{Atespace: testAtespace, Name: id}})
+	// The resume crashes the actor off its draining worker, returns it to its
+	// snapshot and resumes it again on the other worker of the pool.
+	resumed, err := tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{Actor: &ateapi.ObjectRef{Atespace: testAtespace, Name: id}})
 	if err != nil {
-		t.Fatalf("GetActor failed: %v", err)
+		t.Fatalf("ResumeActor failed: %v", err)
 	}
-	if got := getResp.GetStatus().GetState(); got != ateapi.ActorState_ACTOR_STATE_CRASHED {
-		t.Errorf("expected actor state CRASHED, got %v", got)
+	if got := resumed.GetActor().GetStatus().GetState(); got != ateapi.ActorState_ACTOR_STATE_RUNNING {
+		t.Errorf("expected actor state RUNNING, got %v", got)
 	}
-	if got := getResp.GetStatus().GetWorkerAssignment().GetWorkerPod(); got != "" {
-		t.Errorf("expected actor pod name to be empty, got %q", got)
+	if got := resumed.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPod(); got == assignedPod {
+		t.Errorf("expected actor to move off draining worker %q", got)
 	}
-	assertActorCrashStatus(t, tc, id, "resume failed: assigned worker is draining")
+	if crash := resumed.GetActor().GetStatus().GetCrash(); crash != nil {
+		t.Errorf("expected no crash record, got %v", crash)
+	}
 
 	// The draining worker must have been released.
 	listResp, err := tc.client.ListWorkers(context.Background(), &ateapi.ListWorkersRequest{})
@@ -5588,28 +5583,19 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 	// Create Worker Pod B
 	createWorkerPod(t, tc, ns, "worker-b", "node1", "pool1")
 
-	// Call ResumeActor again -> Expect it to fail because it is already CRASHED
-	// by the worker delete.
-	_, err = tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{
+	// The worker delete crashed the actor; the resume returns it to its
+	// snapshot and resumes it on worker B.
+	resumed, err := tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{
 		Actor: &ateapi.ObjectRef{Atespace: testAtespace, Name: name},
 	})
-	if err == nil {
-		t.Fatalf("expected ResumeActor to fail because worker is gone")
-	}
-	if status.Code(err) != codes.FailedPrecondition || !strings.Contains(err.Error(), "ACTOR_STATE_CRASHED") {
-		t.Errorf("expected FailedPrecondition/ACTOR_STATE_CRASHED error, got %v", err)
-	}
-
-	// Verify actor state is CRASHED and worker assignment is empty
-	actor, err = tc.persistence.GetActor(context.Background(), resources.ActorRef{Atespace: testAtespace, Name: name})
 	if err != nil {
-		t.Fatalf("failed to get actor from store: %v", err)
+		t.Fatalf("ResumeActor failed: %v", err)
 	}
-	if actor.GetStatus().GetState() != ateapi.ActorState_ACTOR_STATE_CRASHED {
-		t.Errorf("expected state CRASHED, got %v", actor.GetStatus().GetState())
+	if got := resumed.GetActor().GetStatus().GetState(); got != ateapi.ActorState_ACTOR_STATE_RUNNING {
+		t.Errorf("expected state RUNNING, got %v", got)
 	}
-	if actor.GetStatus().GetWorkerAssignment().GetWorkerPod() != "" {
-		t.Errorf("expected worker to be unassigned, got %v", actor.GetStatus().GetWorkerAssignment().GetWorkerPod())
+	if got := resumed.GetActor().GetStatus().GetWorkerAssignment().GetWorkerPod(); got != "worker-b" {
+		t.Errorf("expected worker-b assigned, got %q", got)
 	}
 }
 

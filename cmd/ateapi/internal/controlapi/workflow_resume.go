@@ -48,10 +48,10 @@ type restoreTelemetry struct {
 	WireFidelity string
 }
 
-// ResumeActor executes the workflow to resume a suspended actor. Idempotent:
-// a re-entered workflow fast-forwards past the steps a previous attempt
-// completed, deriving progress from the persisted actor alone.
-func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef) (_ *ateapi.Actor, resumed bool, err error) {
+// resumeActorOnce executes the workflow to resume a suspended actor.
+// Idempotent: a re-entered workflow fast-forwards past the steps a previous
+// attempt completed, deriving progress from the persisted actor alone.
+func (w *ActorWorkflow) resumeActorOnce(ctx context.Context, actorRef resources.ActorRef) (_ *ateapi.Actor, resumed bool, err error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	start := time.Now()
 	var actor *ateapi.Actor
