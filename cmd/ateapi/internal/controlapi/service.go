@@ -84,6 +84,7 @@ func NewRPCService(
 	instruments *Instruments,
 	egressGatewayAddress string,
 	actorWorkflowDeadline time.Duration,
+	actorRestoreBudget time.Duration,
 	volumePlugins map[string]volume.VolumePluginControlPlane,
 	objectStorePlugin objectstore.ControlProviderClient,
 	actorJWTIssuer string,
@@ -104,7 +105,7 @@ func NewRPCService(
 		actorJWTIssuer:        actorJWTIssuer,
 		actorIDJWTPool:        actorIDJWTPool,
 	}
-	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, objectStorePlugin)
+	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStorePlugin)
 	s.actorWorkflow.clusterSnapshotLocation = snapshotLocation
 	s.workerWorkflow = NewWorkerWorkflow(impl, dialer)
 	return s

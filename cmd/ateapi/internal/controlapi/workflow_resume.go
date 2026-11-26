@@ -811,8 +811,20 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 		EgressGateway:  egressGateway,
 		Resources:      actorResources,
 	}
-	resp, err := client.Restore(ctx, req)
+	var resp *ateletpb.RestoreResponse
+	err = w.restoreWithBudget(ctx, actorRef, func(ctx context.Context) (err error) {
+		resp, err = client.Restore(ctx, req)
+		return err
+	})
 	if err != nil {
+		if timedOut, ok := errors.AsType[*restoreTimedOutError](err); ok {
+			slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its restore keeps exceeding its budget",
+				append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", err))...)
+			if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, timedOut.crashMessage()); cerr != nil {
+				return tele, 0, cerr
+			}
+			return tele, 0, fmt.Errorf("actor %s crashed: %w", actorRef, err)
+		}
 		// The snapshot's node is gone, and atelet found no upload of it.
 		if ctx.Err() == nil && status.Code(err) == codes.NotFound && localElsewhere(snap, assignment.GetNodeName()) {
 			slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed due to Atelet error",

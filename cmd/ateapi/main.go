@@ -116,6 +116,7 @@ var (
 
 	templateResyncInterval = pflag.Duration("template-resync-interval", 20*time.Second, fmt.Sprintf("Interval between actor template resyncs. Must be at least %s.", minResyncInterval))
 	actorWorkflowDeadline  = pflag.Duration("actor-workflow-deadline", 5*time.Minute, "Maximum wall-clock duration of a single Resume/Suspend workflow; raise it for slow image registries.")
+	actorRestoreBudget     = pflag.Duration("actor-restore-budget", 90*time.Second, "Budget of one atelet restore attempt within a Resume workflow, a cold image pull and unpack included. An attempt that exceeds it is retried, up to 3 attempts within --actor-workflow-deadline; an actor whose restore keeps exceeding it is crashed with the budget named in its crash message. 0 leaves an attempt bounded by the workflow deadline alone.")
 
 	showVersion  = pflag.Bool("version", false, "Print version and exit.")
 	previewFlags = pflag.StringSlice("preview", nil, "Preview gates to enable.")
@@ -359,6 +360,7 @@ func main() {
 		instruments,
 		*defaultEgressGatewayAddress,
 		*actorWorkflowDeadline,
+		*actorRestoreBudget,
 		volPlugins,
 		objectstore.NewControlProviderClient(objectStorePluginConn),
 		*actorJWTIssuer,
@@ -524,6 +526,7 @@ func logFlagValues(ctx context.Context) {
 		slog.Duration("drain-delay", *drainDelay),
 		slog.Duration("drain-timeout", *drainTimeout),
 		slog.Duration("actor-workflow-deadline", *actorWorkflowDeadline),
+		slog.Duration("actor-restore-budget", *actorRestoreBudget),
 		slog.String("snapshot-location", *snapshotLocation),
 		slog.Any("preview", *previewFlags),
 	)

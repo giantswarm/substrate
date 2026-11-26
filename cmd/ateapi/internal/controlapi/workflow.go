@@ -115,12 +115,15 @@ type ActorWorkflow struct {
 	egressGatewayAddress    string
 	pluginRegistry          VolumePluginRegistry
 	workflowDeadline        time.Duration
+	restoreBudget           time.Duration
 	objectStorePlugin       objectstore.ControlProviderClient
 	clusterSnapshotLocation string
 }
 
 // NewActorWorkflow creates a new ActorWorkflow. workflowDeadline bounds
-// each Resume/Suspend workflow end-to-end; instruments may be nil.
+// each Resume/Suspend workflow end-to-end; restoreBudget bounds one atelet
+// restore attempt within a Resume (see restoreWithBudget; 0 leaves an attempt
+// bounded by the workflow deadline alone); instruments may be nil.
 //
 // objectStorePlugin may be nil, which leaves external snapshots in place instead
 // of copying and releasing them. Only tests that never reach those steps pass
@@ -134,6 +137,7 @@ func NewActorWorkflow(
 	egressGatewayAddress string,
 	pluginRegistry VolumePluginRegistry,
 	workflowDeadline time.Duration,
+	restoreBudget time.Duration,
 	objectStorePlugin objectstore.ControlProviderClient,
 ) *ActorWorkflow {
 	return &ActorWorkflow{
@@ -146,6 +150,7 @@ func NewActorWorkflow(
 		egressGatewayAddress: egressGatewayAddress,
 		pluginRegistry:       pluginRegistry,
 		workflowDeadline:     workflowDeadline,
+		restoreBudget:        restoreBudget,
 		objectStorePlugin:    objectStorePlugin,
 	}
 }

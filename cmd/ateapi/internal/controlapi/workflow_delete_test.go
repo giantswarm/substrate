@@ -456,7 +456,7 @@ func TestDeleteActor_CollectsInFlightSnapshotWithoutTemplate(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
 	objects := objectstoretest.New()
-	w := NewActorWorkflow(persistence, nil, nil, nil, nil, "", nil, time.Minute, objectstoreplugintest.ControlClient(objects))
+	w := NewActorWorkflow(persistence, nil, nil, nil, nil, "", nil, time.Minute, 0, objectstoreplugintest.ControlClient(objects))
 
 	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
 	actor := storetest.MustCreateActor(t, ctx, persistence, &ateapi.Actor{
@@ -642,7 +642,7 @@ func TestDeleteActorWorkflow_RetryKeepsAdmission(t *testing.T) {
 	ctx := context.Background()
 	persistence := newTestPersistence(t)
 	objects := objectstoretest.New()
-	w := NewActorWorkflow(persistence, nil, nil, nil, nil, "", nil, time.Minute, objectstoreplugintest.ControlClient(objects))
+	w := NewActorWorkflow(persistence, nil, nil, nil, nil, "", nil, time.Minute, 0, objectstoreplugintest.ControlClient(objects))
 
 	actorRef := resources.ActorRef{Atespace: "team-a", Name: "actor-1"}
 	actor := storetest.MustCreateActor(t, ctx, persistence, &ateapi.Actor{

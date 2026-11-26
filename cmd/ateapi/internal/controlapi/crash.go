@@ -43,6 +43,7 @@ const (
 	crashMessageWorkerIneligible         = "assigned worker no longer satisfies the actor's placement constraints"
 	crashMessageWorkerPodGone            = "worker pod went away while hosting the actor"
 	crashMessageWorkerRestarted          = "worker restarted while hosting the actor"
+	crashMessageRestoreTimedOut          = "restore did not finish within its budget"
 )
 
 // maxCrashMessageBytes matches the maxLength on ActorCrash.message.
