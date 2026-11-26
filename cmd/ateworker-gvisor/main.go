@@ -763,6 +763,9 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	if err := rcmd.cmdStart(ctx, pw, ocispec.SandboxID); err != nil {
 		return nil, fmt.Errorf("while starting the sandbox: %w", err)
 	}
+	if err := s.checkSandboxNetwork(ctx, hosted); err != nil {
+		return nil, err
+	}
 
 	// Create and start each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
@@ -790,7 +793,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 
 	// Block until every wakeup-probe-enabled container reports 200.
 	if err := wakeupprobe.WaitAll(ctx, req.GetSpec().GetContainers(), actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid()))); err != nil {
-		return nil, fmt.Errorf("while waiting for container wakeup probe: %w", err)
+		return nil, s.wakeupProbeError(ctx, hosted, err)
 	}
 	if err := s.tunnel.ActivateIngress(attribution, s.sandboxDialer(req.GetActorUid())); err != nil {
 		return nil, err
@@ -1252,6 +1255,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 		if err != nil {
 			return nil, fmt.Errorf("while starting the sandbox: %w", err)
 		}
+		if err := s.checkSandboxNetwork(ctx, hosted); err != nil {
+			return nil, err
+		}
 	case ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY:
 		// Create and restore the sandbox (restores process state and filesystem checkpoint bundles)
 		containersToDelete = append(containersToDelete, ocispec.SandboxID)
@@ -1266,6 +1272,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 		timing.sandboxRestore = lap(&tLast)
 		if err != nil {
 			return nil, fmt.Errorf("while restoring the sandbox: %w", err)
+		}
+		if err := s.checkSandboxNetwork(ctx, hosted); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1310,7 +1319,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	err = wakeupprobe.WaitAll(ctx, containers, actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())))
 	timing.wakeupProbe = lap(&tLast)
 	if err != nil {
-		return nil, fmt.Errorf("while waiting for container wakeup probe: %w", err)
+		return nil, s.wakeupProbeError(ctx, hosted, err)
 	}
 	err = s.tunnel.ActivateIngress(attribution, s.sandboxDialer(req.GetActorUid()))
 	timing.activate += lap(&tLast)

@@ -229,3 +229,24 @@ func (s *AteWorkerService) sandboxDialer(actorUID string) ingress.DialFunc {
 		return session.Dialer()(ctx, network, address)
 	}
 }
+
+// checkSandboxNetwork fails when the actor's sandbox did not take its network
+// (actornet.SandboxSession.CheckRuntimeTaken). runsc takes it when the pause
+// container starts or is restored, so a boot checks right after that, before
+// its wakeup probe would be refused until the deadline.
+func (s *AteWorkerService) checkSandboxNetwork(ctx context.Context, hosted *hostedActor) error {
+	if hosted.network == nil {
+		return fmt.Errorf("actor %s has no sandbox network", hosted.attribution.UID)
+	}
+	return hosted.network.CheckRuntimeTaken(ctx)
+}
+
+// wakeupProbeError adds the state of the actor's network to a missed wakeup
+// probe: whether the sandbox holds it tells a workload that never listened
+// from a sandbox that never took the network the probe reaches it through.
+func (s *AteWorkerService) wakeupProbeError(ctx context.Context, hosted *hostedActor, err error) error {
+	if nerr := s.checkSandboxNetwork(ctx, hosted); nerr != nil {
+		return fmt.Errorf("while waiting for container wakeup probe: %w; %v", err, nerr)
+	}
+	return fmt.Errorf("while waiting for container wakeup probe: %w; the sandbox holds the actor's network", err)
+}

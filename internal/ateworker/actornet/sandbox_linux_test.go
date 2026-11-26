@@ -715,3 +715,43 @@ func TestGatewayDoesNotRouteActorTrafficOverAStrayLink(t *testing.T) {
 		t.Fatal("the probe saw nothing even with forwarding on and no forward chain; this test cannot detect routing")
 	}
 }
+
+func TestSandboxSessionCheckRuntimeTakenAfterClose(t *testing.T) {
+	session := &SandboxSession{}
+	if err := session.CheckRuntimeTaken(t.Context()); !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("check after close: got %v, want closed", err)
+	}
+}
+
+// TestSandboxSessionCheckRuntimeTaken takes the actor's address the way gVisor
+// does when its sandbox starts, and checks that only a network the runtime
+// took passes.
+func TestSandboxSessionCheckRuntimeTaken(t *testing.T) {
+	roottest.Require(t, "creates network namespaces")
+	ctx := t.Context()
+	session, err := ServeSandbox(ctx, SandboxNetworkConfig{
+		ActorUID: "33333333-3333-3333-3333-333333333333", Veth: true, EgressPort: testEgressPort,
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close(context.Background()) })
+
+	err = session.CheckRuntimeTaken(ctx)
+	if err == nil || !strings.HasPrefix(err.Error(), SandboxNetworkNotTaken) {
+		t.Fatalf("check before the runtime took the network: got %v, want %q", err, SandboxNetworkNotTaken)
+	}
+
+	if err := netns.Do(ctx, session.Network.RuntimeNetNS, func(context.Context) error {
+		link, err := netlink.LinkByName(ActorVethName)
+		if err != nil {
+			return err
+		}
+		return netlink.AddrDel(link, ActorVethAddr)
+	}); err != nil {
+		t.Fatalf("taking the actor's address: %v", err)
+	}
+	if err := session.CheckRuntimeTaken(ctx); err != nil {
+		t.Fatalf("check after the runtime took the network: %v", err)
+	}
+}
