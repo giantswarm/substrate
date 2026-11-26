@@ -228,9 +228,64 @@ func runGetEgressPolicy(cmd *cobra.Command, args []string) error {
 	return runner.Run(ctx)
 }
 
-// egressPolicyCreator abstracts CreateActorEgressPolicy RPC calls.
+// egressPolicyContractReader abstracts the RPC that reports the egress policy
+// contract a server speaks.
+type egressPolicyContractReader interface {
+	DescribeEgressPolicyContract(ctx context.Context, req *ateapi.DescribeEgressPolicyContractRequest, opts ...grpc.CallOption) (*ateapi.DescribeEgressPolicyContractResponse, error)
+}
+
+// checkEgressPolicyContract refuses to write policy to a server whose egress
+// policy contract is not this client's: it decodes the same field numbers
+// with another meaning, or drops a field this client sets, and would store
+// the policy as something else without an error on either side. A server
+// that predates the contract RPC is accepted only for a policy that sets no
+// field ahead of upstream's shape.
+func checkEgressPolicyContract(ctx context.Context, reader egressPolicyContractReader, verb string, actor *ateapi.ObjectRef, policy *ateapi.EgressPolicy) error {
+	contract, err := reader.DescribeEgressPolicyContract(ctx, &ateapi.DescribeEgressPolicyContractRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		if field := egressPolicyCarriedField(policy); field != "" {
+			return fmt.Errorf(`refusing to %s the egress policy for actor %q in atespace %q: ate-api reports no egress-policy contract and would drop %s; use the kubectl-ate of the server's release`,
+				verb, actor.GetName(), actor.GetAtespace(), field)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read the egress-policy contract of ate-api: %w", err)
+	}
+	if got := contract.GetVersion(); got != ateapi.EgressPolicyContractVersion {
+		return fmt.Errorf(`refusing to %s the egress policy for actor %q in atespace %q: ate-api speaks egress-policy contract %q, this kubectl-ate speaks %q, and the two give the rules' fields another meaning; use the kubectl-ate of the server's release`,
+			verb, actor.GetName(), actor.GetAtespace(), got, ateapi.EgressPolicyContractVersion)
+	}
+	return nil
+}
+
+// egressPolicyCarriedField names the first field of policy that a server of
+// upstream's contract drops, or "" when it sets none.
+func egressPolicyCarriedField(policy *ateapi.EgressPolicy) string {
+	for i, rule := range policy.GetRules() {
+		if rule.GetTcp() != nil {
+			return fmt.Sprintf("rules[%d].tcp", i)
+		}
+		var effects *ateapi.HttpRuleEffects
+		switch {
+		case rule.GetHttp() != nil:
+			effects = rule.GetHttp().GetEffects()
+		case rule.GetHttps() != nil:
+			effects = rule.GetHttps().GetEffects()
+		}
+		for j, header := range effects.GetReplaceHeaders() {
+			if header.GetPathPrefix() != "" {
+				return fmt.Sprintf("rules[%d].effects.replace_headers[%d].path_prefix", i, j)
+			}
+		}
+	}
+	return ""
+}
+
+// egressPolicyCreator abstracts the RPCs create egress-policy makes.
 type egressPolicyCreator interface {
 	CreateActorEgressPolicy(ctx context.Context, req *ateapi.CreateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapi.EgressPolicy, error)
+	egressPolicyContractReader
 }
 
 // createEgressPolicyRunner executes the create egress-policy command logic.
@@ -243,6 +298,9 @@ type createEgressPolicyRunner struct {
 }
 
 func (r *createEgressPolicyRunner) Run(ctx context.Context) error {
+	if err := checkEgressPolicyContract(ctx, r.creator, "create", r.actor, r.policy); err != nil {
+		return err
+	}
 	created, err := r.creator.CreateActorEgressPolicy(ctx, &ateapi.CreateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if err != nil {
 		return fmt.Errorf("failed to create egress policy for actor %q in atespace %q: %w", r.actor.GetName(), r.actor.GetAtespace(), err)
@@ -280,6 +338,7 @@ func runCreateEgressPolicy(cmd *cobra.Command, args []string) error {
 type egressPolicyUpdater interface {
 	UpdateActorEgressPolicy(ctx context.Context, req *ateapi.UpdateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapi.EgressPolicy, error)
 	actorGetter
+	egressPolicyContractReader
 }
 
 // updateEgressPolicyRunner executes the update egress-policy command logic.
@@ -292,6 +351,9 @@ type updateEgressPolicyRunner struct {
 }
 
 func (r *updateEgressPolicyRunner) Run(ctx context.Context) error {
+	if err := checkEgressPolicyContract(ctx, r.updater, "update", r.actor, r.policy); err != nil {
+		return err
+	}
 	updated, err := r.updater.UpdateActorEgressPolicy(ctx, &ateapi.UpdateActorEgressPolicyRequest{Actor: r.actor, EgressPolicy: r.policy})
 	if status.Code(err) == codes.NotFound {
 		if err := requireActor(ctx, r.updater, r.actor); err != nil {

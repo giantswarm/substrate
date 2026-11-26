@@ -83,6 +83,13 @@ service Control {
     option (method).resource = "EgressPolicy";
   }
 
+  // Get the version of the egress policy contract this server speaks: the
+  // shape in which it decodes EgressPolicy and EgressRule. A client compares
+  // it with its own before it writes an egress policy.
+  rpc DescribeEgressPolicyContract(DescribeEgressPolicyContractRequest) returns (DescribeEgressPolicyContractResponse) {
+    option (method).resource = "EgressPolicy";
+  }
+
   // Create a Substrate-issued JWT asserting the actor identity.
   //
   // * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -2026,6 +2033,21 @@ message DeleteActorEgressPolicyRequest {
   //
   // +k8s:optional
   DeleteOptions options = 3;
+}
+
+// DescribeEgressPolicyContractRequest asks for the server's egress policy
+// contract. The contract is the server's, not a resource's: it names none.
+message DescribeEgressPolicyContractRequest {}
+
+// DescribeEgressPolicyContractResponse names the egress policy contract a
+// server speaks.
+message DescribeEgressPolicyContractResponse {
+  // The contract version: the upstream release whose EgressPolicy and
+  // EgressRule shape the server decodes, plus a "+" suffix for each field the
+  // server carries ahead of that release, such as "v1.0.1+path-prefix+tcp".
+  // Two versions that differ encode the same field numbers with another
+  // meaning, or a field one of them drops.
+  string version = 1;
 }
 
 message GetTagRequest {

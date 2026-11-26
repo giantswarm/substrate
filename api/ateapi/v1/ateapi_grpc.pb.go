@@ -33,48 +33,49 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Control_GetActor_FullMethodName                   = "/substrate.ateapi.v1.Control/GetActor"
-	Control_CreateActor_FullMethodName                = "/substrate.ateapi.v1.Control/CreateActor"
-	Control_UpdateActor_FullMethodName                = "/substrate.ateapi.v1.Control/UpdateActor"
-	Control_SuspendActor_FullMethodName               = "/substrate.ateapi.v1.Control/SuspendActor"
-	Control_ResumeActor_FullMethodName                = "/substrate.ateapi.v1.Control/ResumeActor"
-	Control_RevertActor_FullMethodName                = "/substrate.ateapi.v1.Control/RevertActor"
-	Control_DeleteActor_FullMethodName                = "/substrate.ateapi.v1.Control/DeleteActor"
-	Control_GetActorEgressPolicy_FullMethodName       = "/substrate.ateapi.v1.Control/GetActorEgressPolicy"
-	Control_CreateActorEgressPolicy_FullMethodName    = "/substrate.ateapi.v1.Control/CreateActorEgressPolicy"
-	Control_UpdateActorEgressPolicy_FullMethodName    = "/substrate.ateapi.v1.Control/UpdateActorEgressPolicy"
-	Control_DeleteActorEgressPolicy_FullMethodName    = "/substrate.ateapi.v1.Control/DeleteActorEgressPolicy"
-	Control_MintActorJwt_FullMethodName               = "/substrate.ateapi.v1.Control/MintActorJwt"
-	Control_CreateTag_FullMethodName                  = "/substrate.ateapi.v1.Control/CreateTag"
-	Control_GetTag_FullMethodName                     = "/substrate.ateapi.v1.Control/GetTag"
-	Control_ListTags_FullMethodName                   = "/substrate.ateapi.v1.Control/ListTags"
-	Control_UpdateTag_FullMethodName                  = "/substrate.ateapi.v1.Control/UpdateTag"
-	Control_DeleteTag_FullMethodName                  = "/substrate.ateapi.v1.Control/DeleteTag"
-	Control_ListWorkers_FullMethodName                = "/substrate.ateapi.v1.Control/ListWorkers"
-	Control_GetWorker_FullMethodName                  = "/substrate.ateapi.v1.Control/GetWorker"
-	Control_CreateWorker_FullMethodName               = "/substrate.ateapi.v1.Control/CreateWorker"
-	Control_UpdateWorker_FullMethodName               = "/substrate.ateapi.v1.Control/UpdateWorker"
-	Control_DeleteWorker_FullMethodName               = "/substrate.ateapi.v1.Control/DeleteWorker"
-	Control_DrainWorker_FullMethodName                = "/substrate.ateapi.v1.Control/DrainWorker"
-	Control_MarkWorkerAvailable_FullMethodName        = "/substrate.ateapi.v1.Control/MarkWorkerAvailable"
-	Control_MarkWorkerUnavailable_FullMethodName      = "/substrate.ateapi.v1.Control/MarkWorkerUnavailable"
-	Control_ListWorkerActorAssignments_FullMethodName = "/substrate.ateapi.v1.Control/ListWorkerActorAssignments"
-	Control_ListActors_FullMethodName                 = "/substrate.ateapi.v1.Control/ListActors"
-	Control_CreateAtespace_FullMethodName             = "/substrate.ateapi.v1.Control/CreateAtespace"
-	Control_GetAtespace_FullMethodName                = "/substrate.ateapi.v1.Control/GetAtespace"
-	Control_ListAtespaces_FullMethodName              = "/substrate.ateapi.v1.Control/ListAtespaces"
-	Control_DeleteAtespace_FullMethodName             = "/substrate.ateapi.v1.Control/DeleteAtespace"
-	Control_CreateActorTemplate_FullMethodName        = "/substrate.ateapi.v1.Control/CreateActorTemplate"
-	Control_GetActorTemplate_FullMethodName           = "/substrate.ateapi.v1.Control/GetActorTemplate"
-	Control_ListActorTemplates_FullMethodName         = "/substrate.ateapi.v1.Control/ListActorTemplates"
-	Control_DeleteActorTemplate_FullMethodName        = "/substrate.ateapi.v1.Control/DeleteActorTemplate"
-	Control_GetGlobalAccessPolicy_FullMethodName      = "/substrate.ateapi.v1.Control/GetGlobalAccessPolicy"
-	Control_CreateGlobalAccessPolicy_FullMethodName   = "/substrate.ateapi.v1.Control/CreateGlobalAccessPolicy"
-	Control_UpdateGlobalAccessPolicy_FullMethodName   = "/substrate.ateapi.v1.Control/UpdateGlobalAccessPolicy"
-	Control_GetAtespaceAccessPolicy_FullMethodName    = "/substrate.ateapi.v1.Control/GetAtespaceAccessPolicy"
-	Control_CreateAtespaceAccessPolicy_FullMethodName = "/substrate.ateapi.v1.Control/CreateAtespaceAccessPolicy"
-	Control_UpdateAtespaceAccessPolicy_FullMethodName = "/substrate.ateapi.v1.Control/UpdateAtespaceAccessPolicy"
-	Control_DeleteAtespaceAccessPolicy_FullMethodName = "/substrate.ateapi.v1.Control/DeleteAtespaceAccessPolicy"
+	Control_GetActor_FullMethodName                     = "/substrate.ateapi.v1.Control/GetActor"
+	Control_CreateActor_FullMethodName                  = "/substrate.ateapi.v1.Control/CreateActor"
+	Control_UpdateActor_FullMethodName                  = "/substrate.ateapi.v1.Control/UpdateActor"
+	Control_SuspendActor_FullMethodName                 = "/substrate.ateapi.v1.Control/SuspendActor"
+	Control_ResumeActor_FullMethodName                  = "/substrate.ateapi.v1.Control/ResumeActor"
+	Control_RevertActor_FullMethodName                  = "/substrate.ateapi.v1.Control/RevertActor"
+	Control_DeleteActor_FullMethodName                  = "/substrate.ateapi.v1.Control/DeleteActor"
+	Control_GetActorEgressPolicy_FullMethodName         = "/substrate.ateapi.v1.Control/GetActorEgressPolicy"
+	Control_CreateActorEgressPolicy_FullMethodName      = "/substrate.ateapi.v1.Control/CreateActorEgressPolicy"
+	Control_UpdateActorEgressPolicy_FullMethodName      = "/substrate.ateapi.v1.Control/UpdateActorEgressPolicy"
+	Control_DeleteActorEgressPolicy_FullMethodName      = "/substrate.ateapi.v1.Control/DeleteActorEgressPolicy"
+	Control_DescribeEgressPolicyContract_FullMethodName = "/substrate.ateapi.v1.Control/DescribeEgressPolicyContract"
+	Control_MintActorJwt_FullMethodName                 = "/substrate.ateapi.v1.Control/MintActorJwt"
+	Control_CreateTag_FullMethodName                    = "/substrate.ateapi.v1.Control/CreateTag"
+	Control_GetTag_FullMethodName                       = "/substrate.ateapi.v1.Control/GetTag"
+	Control_ListTags_FullMethodName                     = "/substrate.ateapi.v1.Control/ListTags"
+	Control_UpdateTag_FullMethodName                    = "/substrate.ateapi.v1.Control/UpdateTag"
+	Control_DeleteTag_FullMethodName                    = "/substrate.ateapi.v1.Control/DeleteTag"
+	Control_ListWorkers_FullMethodName                  = "/substrate.ateapi.v1.Control/ListWorkers"
+	Control_GetWorker_FullMethodName                    = "/substrate.ateapi.v1.Control/GetWorker"
+	Control_CreateWorker_FullMethodName                 = "/substrate.ateapi.v1.Control/CreateWorker"
+	Control_UpdateWorker_FullMethodName                 = "/substrate.ateapi.v1.Control/UpdateWorker"
+	Control_DeleteWorker_FullMethodName                 = "/substrate.ateapi.v1.Control/DeleteWorker"
+	Control_DrainWorker_FullMethodName                  = "/substrate.ateapi.v1.Control/DrainWorker"
+	Control_MarkWorkerAvailable_FullMethodName          = "/substrate.ateapi.v1.Control/MarkWorkerAvailable"
+	Control_MarkWorkerUnavailable_FullMethodName        = "/substrate.ateapi.v1.Control/MarkWorkerUnavailable"
+	Control_ListWorkerActorAssignments_FullMethodName   = "/substrate.ateapi.v1.Control/ListWorkerActorAssignments"
+	Control_ListActors_FullMethodName                   = "/substrate.ateapi.v1.Control/ListActors"
+	Control_CreateAtespace_FullMethodName               = "/substrate.ateapi.v1.Control/CreateAtespace"
+	Control_GetAtespace_FullMethodName                  = "/substrate.ateapi.v1.Control/GetAtespace"
+	Control_ListAtespaces_FullMethodName                = "/substrate.ateapi.v1.Control/ListAtespaces"
+	Control_DeleteAtespace_FullMethodName               = "/substrate.ateapi.v1.Control/DeleteAtespace"
+	Control_CreateActorTemplate_FullMethodName          = "/substrate.ateapi.v1.Control/CreateActorTemplate"
+	Control_GetActorTemplate_FullMethodName             = "/substrate.ateapi.v1.Control/GetActorTemplate"
+	Control_ListActorTemplates_FullMethodName           = "/substrate.ateapi.v1.Control/ListActorTemplates"
+	Control_DeleteActorTemplate_FullMethodName          = "/substrate.ateapi.v1.Control/DeleteActorTemplate"
+	Control_GetGlobalAccessPolicy_FullMethodName        = "/substrate.ateapi.v1.Control/GetGlobalAccessPolicy"
+	Control_CreateGlobalAccessPolicy_FullMethodName     = "/substrate.ateapi.v1.Control/CreateGlobalAccessPolicy"
+	Control_UpdateGlobalAccessPolicy_FullMethodName     = "/substrate.ateapi.v1.Control/UpdateGlobalAccessPolicy"
+	Control_GetAtespaceAccessPolicy_FullMethodName      = "/substrate.ateapi.v1.Control/GetAtespaceAccessPolicy"
+	Control_CreateAtespaceAccessPolicy_FullMethodName   = "/substrate.ateapi.v1.Control/CreateAtespaceAccessPolicy"
+	Control_UpdateAtespaceAccessPolicy_FullMethodName   = "/substrate.ateapi.v1.Control/UpdateAtespaceAccessPolicy"
+	Control_DeleteAtespaceAccessPolicy_FullMethodName   = "/substrate.ateapi.v1.Control/DeleteAtespaceAccessPolicy"
 )
 
 // ControlClient is the client API for Control service.
@@ -110,6 +111,10 @@ type ControlClient interface {
 	UpdateActorEgressPolicy(ctx context.Context, in *UpdateActorEgressPolicyRequest, opts ...grpc.CallOption) (*EgressPolicy, error)
 	// Delete the egress policy resource nested under an Actor.
 	DeleteActorEgressPolicy(ctx context.Context, in *DeleteActorEgressPolicyRequest, opts ...grpc.CallOption) (*EgressPolicy, error)
+	// Get the version of the egress policy contract this server speaks: the
+	// shape in which it decodes EgressPolicy and EgressRule. A client compares
+	// it with its own before it writes an egress policy.
+	DescribeEgressPolicyContract(ctx context.Context, in *DescribeEgressPolicyContractRequest, opts ...grpc.CallOption) (*DescribeEgressPolicyContractResponse, error)
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -309,6 +314,16 @@ func (c *controlClient) DeleteActorEgressPolicy(ctx context.Context, in *DeleteA
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(EgressPolicy)
 	err := c.cc.Invoke(ctx, Control_DeleteActorEgressPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controlClient) DescribeEgressPolicyContract(ctx context.Context, in *DescribeEgressPolicyContractRequest, opts ...grpc.CallOption) (*DescribeEgressPolicyContractResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DescribeEgressPolicyContractResponse)
+	err := c.cc.Invoke(ctx, Control_DescribeEgressPolicyContract_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -658,6 +673,10 @@ type ControlServer interface {
 	UpdateActorEgressPolicy(context.Context, *UpdateActorEgressPolicyRequest) (*EgressPolicy, error)
 	// Delete the egress policy resource nested under an Actor.
 	DeleteActorEgressPolicy(context.Context, *DeleteActorEgressPolicyRequest) (*EgressPolicy, error)
+	// Get the version of the egress policy contract this server speaks: the
+	// shape in which it decodes EgressPolicy and EgressRule. A client compares
+	// it with its own before it writes an egress policy.
+	DescribeEgressPolicyContract(context.Context, *DescribeEgressPolicyContractRequest) (*DescribeEgressPolicyContractResponse, error)
 	// Create a Substrate-issued JWT asserting the actor identity.
 	//
 	// * Called by the egress gateway when actor JWT injection is configured for outbound requests.
@@ -785,6 +804,9 @@ func (UnimplementedControlServer) UpdateActorEgressPolicy(context.Context, *Upda
 }
 func (UnimplementedControlServer) DeleteActorEgressPolicy(context.Context, *DeleteActorEgressPolicyRequest) (*EgressPolicy, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteActorEgressPolicy not implemented")
+}
+func (UnimplementedControlServer) DescribeEgressPolicyContract(context.Context, *DescribeEgressPolicyContractRequest) (*DescribeEgressPolicyContractResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DescribeEgressPolicyContract not implemented")
 }
 func (UnimplementedControlServer) MintActorJwt(context.Context, *MintActorJwtRequest) (*MintActorJwtResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintActorJwt not implemented")
@@ -1094,6 +1116,24 @@ func _Control_DeleteActorEgressPolicy_Handler(srv interface{}, ctx context.Conte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ControlServer).DeleteActorEgressPolicy(ctx, req.(*DeleteActorEgressPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Control_DescribeEgressPolicyContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DescribeEgressPolicyContractRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControlServer).DescribeEgressPolicyContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Control_DescribeEgressPolicyContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControlServer).DescribeEgressPolicyContract(ctx, req.(*DescribeEgressPolicyContractRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1706,6 +1746,10 @@ var Control_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteActorEgressPolicy",
 			Handler:    _Control_DeleteActorEgressPolicy_Handler,
+		},
+		{
+			MethodName: "DescribeEgressPolicyContract",
+			Handler:    _Control_DescribeEgressPolicyContract_Handler,
 		},
 		{
 			MethodName: "MintActorJwt",

@@ -135,3 +135,9 @@ func mapEgressPolicyWrite(policy *ateapi.EgressPolicy, err error) (*ateapi.Egres
 		return nil, fmt.Errorf("while writing EgressPolicy: %w", err)
 	}
 }
+
+// DescribeEgressPolicyContract reports the egress policy contract this server
+// decodes EgressPolicy and EgressRule in.
+func (s *RPCService) DescribeEgressPolicyContract(context.Context, *ateapi.DescribeEgressPolicyContractRequest) (*ateapi.DescribeEgressPolicyContractResponse, error) {
+	return &ateapi.DescribeEgressPolicyContractResponse{Version: ateapi.EgressPolicyContractVersion}, nil
+}

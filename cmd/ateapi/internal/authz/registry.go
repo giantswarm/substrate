@@ -265,6 +265,12 @@ var defaultRPCPermissions = map[string]rpcRule{
 		return onActor(RelationCanDeleteEgressPolicy, r.GetActor(), field.NewPath("actor"))
 	})),
 
+	ateapi.Control_DescribeEgressPolicyContract_FullMethodName: rule(checksOf(func(*ateapi.DescribeEgressPolicyContractRequest) ([]check, field.ErrorList) {
+		// The contract is the server's, not a resource's: any authenticated
+		// caller may read it.
+		return nil, nil
+	})),
+
 	// Workers.
 	ateapi.Control_CreateWorker_FullMethodName: rule(checksOf(func(*ateapi.CreateWorkerRequest) ([]check, field.ErrorList) {
 		return onGlobal(RelationCanCreateWorker)

@@ -308,6 +308,10 @@ kubectl ate delete egress-policy <actor-name> -a <atespace> --uid <uid> --versio
   and `version` for the `EgressPolicy` being updated.
 * `delete` with the optional `--uid` and `--version` flags removes the policy only if
   the given values still match what `get -o yaml` reported; the server answers `Aborted` otherwise.
+* `create` and `update` first ask ate-api for its egress-policy contract
+  (`DescribeEgressPolicyContract`) and refuse a server that speaks another one, since it
+  would store the rules with another meaning. A server without the RPC is accepted only
+  for a policy with no `tcp` rule and no `pathPrefix`, which it would drop.
 
 #### `kubectl ate get egress-policy` output columns
 

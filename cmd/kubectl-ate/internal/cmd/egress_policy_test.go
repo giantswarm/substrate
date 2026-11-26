@@ -615,6 +615,7 @@ rules:
 // fakeEgressPolicyCreator records the request it received and answers with a
 // configured policy or error.
 type fakeEgressPolicyCreator struct {
+	fakeContractReader
 	req    *ateapi.CreateActorEgressPolicyRequest
 	policy *ateapi.EgressPolicy
 	err    error
@@ -729,6 +730,7 @@ rules:
 // configured policy or error.
 type fakeEgressPolicyUpdater struct {
 	fakeActorReader
+	fakeContractReader
 	req    *ateapi.UpdateActorEgressPolicyRequest
 	policy *ateapi.EgressPolicy
 	err    error
@@ -1134,5 +1136,65 @@ func TestEgressPolicyFromManifest_NighthawkEgress(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("egressPolicyFromManifest mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// fakeContractReader answers DescribeEgressPolicyContract with version, or this
+// client's own contract when version is empty, or with err.
+type fakeContractReader struct {
+	version string
+	err     error
+}
+
+func (f fakeContractReader) DescribeEgressPolicyContract(context.Context, *ateapi.DescribeEgressPolicyContractRequest, ...grpc.CallOption) (*ateapi.DescribeEgressPolicyContractResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.version == "" {
+		return &ateapi.DescribeEgressPolicyContractResponse{Version: ateapi.EgressPolicyContractVersion}, nil
+	}
+	return &ateapi.DescribeEgressPolicyContractResponse{Version: f.version}, nil
+}
+
+func TestCheckEgressPolicyContract(t *testing.T) {
+	actor := &ateapi.ObjectRef{Atespace: "team-a", Name: "c1"}
+	plain := &ateapi.EgressPolicy{Rules: []*ateapi.EgressRule{{Https: &ateapi.HttpsRule{Hostnames: []string{"api.example.com"}}}}}
+	prefixed := &ateapi.EgressPolicy{Rules: []*ateapi.EgressRule{{Https: &ateapi.HttpsRule{
+		Hostnames: []string{"git.example.com"},
+		Effects: &ateapi.HttpRuleEffects{ReplaceHeaders: []*ateapi.CredentialHeader{
+			{Header: "Authorization", CredentialUri: "ate-secret://k8s.io/a/b"},
+			{Header: "Authorization", PathPrefix: "/api/", CredentialUri: "ate-secret://k8s.io/a/c"},
+		}},
+	}}}}
+	tcp := &ateapi.EgressPolicy{Rules: []*ateapi.EgressRule{{Tcp: &ateapi.TcpRule{
+		Hostnames: []string{"git.example.com"},
+		Ports:     &ateapi.Ports{Numbers: []int32{22}},
+	}}}}
+	unimplemented := status.Error(codes.Unimplemented, "unknown method")
+	for _, tc := range []struct {
+		name    string
+		reader  fakeContractReader
+		policy  *ateapi.EgressPolicy
+		wantErr string
+	}{
+		{name: "same contract", policy: tcp},
+		{name: "other contract", reader: fakeContractReader{version: "v1.0.1"}, policy: plain, wantErr: `speaks egress-policy contract "v1.0.1"`},
+		{name: "no contract, plain policy", reader: fakeContractReader{err: unimplemented}, policy: plain},
+		{name: "no contract, path prefix", reader: fakeContractReader{err: unimplemented}, policy: prefixed, wantErr: "rules[0].effects.replace_headers[1].path_prefix"},
+		{name: "no contract, tcp", reader: fakeContractReader{err: unimplemented}, policy: tcp, wantErr: "rules[0].tcp"},
+		{name: "read fails", reader: fakeContractReader{err: status.Error(codes.Unavailable, "down")}, policy: plain, wantErr: "failed to read the egress-policy contract"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := checkEgressPolicyContract(t.Context(), tc.reader, "create", actor, tc.policy)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("checkEgressPolicyContract() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("checkEgressPolicyContract() = %v, want an error containing %q", err, tc.wantErr)
+			}
+		})
 	}
 }
