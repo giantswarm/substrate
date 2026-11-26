@@ -118,6 +118,32 @@ func TestEvictUnusedSparesPinnedImage(t *testing.T) {
 	}
 }
 
+func TestEvictUnusedEvictsUnpinnedImage(t *testing.T) {
+	_, host := newTestRegistry(t)
+	ref := host + "/test/unpinned:latest"
+	pushImage(t, ref, v1.Config{}, layerFromEntries(t, []tarEntry{
+		{name: "u", typeflag: tar.TypeReg, mode: 0o644, body: strings.Repeat("u", 2048)},
+	}))
+
+	store := newTestStore(t)
+	img := mustEnsure(t, store, ref)
+	backdateStore(t, store, time.Hour)
+	store.PinImage(img)
+	store.UnpinImage(img.Digest.String())
+	store.UnpinImage(img.Digest.String())
+
+	stats, err := store.EvictUnused(t.Context(), math.MaxInt64, false)
+	if err != nil {
+		t.Fatalf("EvictUnused: %v", err)
+	}
+	if stats.EvictedImages != 1 || stats.RootedImages != 0 {
+		t.Errorf("stats=%+v, want the unpinned image evicted and nothing rooted", stats)
+	}
+	if got := layerDirsOnDisk(t, store); len(got) != 0 {
+		t.Errorf("layers on disk after eviction: %v, want none", got)
+	}
+}
+
 func TestEvictUnusedLRUSharedLayersAndRepull(t *testing.T) {
 	_, host := newTestRegistry(t)
 	shared := layerFromEntries(t, []tarEntry{

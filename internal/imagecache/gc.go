@@ -221,6 +221,14 @@ func (s *Store) PinImage(img *Image) {
 	s.pinnedImages[img.Digest.String()] = slices.Clone(img.LayerDirs)
 }
 
+// UnpinImage releases the image PinImage protected under digest, so a later
+// pass may evict it. Unpinning a digest that is not pinned does nothing.
+func (s *Store) UnpinImage(digest string) {
+	s.imagePinMu.Lock()
+	defer s.imagePinMu.Unlock()
+	delete(s.pinnedImages, digest)
+}
+
 func (s *Store) addPinnedImageRoots(rs *RootSet, dbg bool) {
 	s.imagePinMu.Lock()
 	defer s.imagePinMu.Unlock()

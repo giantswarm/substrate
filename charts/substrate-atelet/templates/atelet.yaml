@@ -107,6 +107,19 @@ roleRef:
   name: {{ include "substrate.fullname" (list "atelet-endpointslices" .) }}
   apiGroup: rbac.authorization.k8s.io
 ---
+# atelet reads the pinned images from this mounted file at every pass. A
+# changed list changes the ConfigMap and no pod template, so no atelet restarts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "substrate.fullname" (list "atelet-pinned-images" .) }}
+  namespace: {{ .Release.Namespace }}
+data:
+  pinned-images: |
+{{- range .Values.atelet.imageCache.pinnedImages }}
+    {{ . }}
+{{- end }}
+---
 # Admit critical atelet pods on clusters that restrict system priority classes.
 apiVersion: v1
 kind: ResourceQuota
@@ -228,6 +241,7 @@ spec:
         - --client-ca-certs=/run/podidentity.podcert.ate.dev/trust-bundle.pem
         - '--herder-allowed-spiffe-id=spiffe://cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "substrate.fullname" (list "ate-api-server" .) }}'
         - --ateapi-ca-file=/run/servicedns.podcert.ate.dev/trust-bundle.pem
+        - --image-cache-pinned-images-file=/etc/atelet/image-cache/pinned-images
 {{- with .Values.atelet.extraArgs }}
 {{ toYaml . | indent 8 }}
 {{- end }}
@@ -326,7 +340,14 @@ spec:
 {{- end }}
           readOnly: true
 {{- end }}
+        # Mounted whole, without subPath, so kubelet swaps in a changed list.
+        - name: pinned-images
+          mountPath: /etc/atelet/image-cache
+          readOnly: true
       volumes:
+      - name: pinned-images
+        configMap:
+          name: {{ include "substrate.fullname" (list "atelet-pinned-images" .) }}
       - name: objectstore-plugin
         emptyDir: {}
       # --asset-staging-capacity bounds this volume.

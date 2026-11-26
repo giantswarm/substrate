@@ -107,6 +107,12 @@ atelet:
   # system-cluster-critical pods on clusters that restrict those classes to
   # kube-system.
   priorityClassName: system-cluster-critical
+  imageCache:
+    # Image references atelet pulls at every eviction pass and never evicts,
+    # such as the images of a pool's ActorTemplates. The first actor after an
+    # idle spell then skips a cold pull. atelet reads the list from a mounted
+    # ConfigMap, so a change restarts no atelet pod.
+    pinnedImages: []
   # Where atelet runs: the DaemonSet's nodeSelector and affinity, and
   # tolerations added to the chart's fixed ones. Empty runs atelet on every
   # schedulable node.

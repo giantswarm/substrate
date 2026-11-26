@@ -88,7 +88,7 @@ providers: []`
 				if err := yaml.Unmarshal([]byte(doc), &cm); err != nil {
 					t.Fatal(err)
 				}
-				if cm.Kind == "ConfigMap" {
+				if cm.Kind == "ConfigMap" && cm.Name == "atelet-image-credential-provider" {
 					configMap = &cm
 				}
 			}
@@ -98,9 +98,6 @@ providers: []`
 			if configMap != nil {
 				if got := strings.TrimRight(configMap.Data["config.yaml"], "\n"); got != tc.configYAML {
 					t.Errorf("ConfigMap carries %q, want the configured provider config", got)
-				}
-				if configMap.Name != "atelet-image-credential-provider" {
-					t.Errorf("ConfigMap is named %q", configMap.Name)
 				}
 			}
 			if pod == nil || len(pod.Containers) != 1 {
