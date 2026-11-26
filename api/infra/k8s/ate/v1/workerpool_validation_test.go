@@ -20,9 +20,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const gpuResourceName = corev1.ResourceName("nvidia.com/gpu")
@@ -281,6 +283,51 @@ func TestWorkerPoolValidation(t *testing.T) {
 			wp.Spec.Template = gpuTemplate(corev1.ResourceList{gpuResourceName: resource.MustParse("1")}, nil)
 		},
 		wantErr: false,
+	}, {
+		name: "pod affinity, pod anti-affinity and topology spread constraints",
+		mutate: func(wp *WorkerPool) {
+			poolSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"ate.dev/worker-pool": "test"}}
+			wp.Spec.Template = &WorkerPoolPodTemplate{
+				PodAffinity: &corev1.PodAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+						LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "atelet"}},
+						Namespaces:    []string{"ate-system"},
+						TopologyKey:   "kubernetes.io/hostname",
+					}},
+				},
+				PodAntiAffinity: &corev1.PodAntiAffinity{
+					PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+						Weight: 100,
+						PodAffinityTerm: corev1.PodAffinityTerm{
+							LabelSelector: poolSelector,
+							TopologyKey:   "kubernetes.io/hostname",
+						},
+					}},
+				},
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{{
+					MaxSkew:           1,
+					TopologyKey:       "topology.kubernetes.io/zone",
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+					LabelSelector:     poolSelector,
+				}},
+			}
+		},
+		wantErr: false,
+	}, {
+		name: "too many topology spread constraints",
+		mutate: func(wp *WorkerPool) {
+			constraints := make([]corev1.TopologySpreadConstraint, 9)
+			for i := range constraints {
+				constraints[i] = corev1.TopologySpreadConstraint{
+					MaxSkew:           1,
+					TopologyKey:       fmt.Sprintf("example.com/domain-%d", i),
+					WhenUnsatisfiable: corev1.ScheduleAnyway,
+				}
+			}
+			wp.Spec.Template = &WorkerPoolPodTemplate{TopologySpreadConstraints: constraints}
+		},
+		wantErr: true,
+		errMsg:  "spec.template.topologySpreadConstraints: Too many",
 	}}
 
 	for _, tt := range tests {
@@ -390,5 +437,69 @@ func TestWorkerPoolSandboxClassesUpdate(t *testing.T) {
 				t.Errorf("wrong error:\n  wanted: %q\n     got: %q", tt.wantErr, err.Error())
 			}
 		})
+	}
+}
+
+// TestWorkerPoolSchedulingTemplateRoundTrip checks that the apiserver stores
+// the scheduling fields of spec.template as written. A structural schema
+// prunes undeclared fields, so a pruned constraint would do nothing.
+func TestWorkerPoolSchedulingTemplateRoundTrip(t *testing.T) {
+	ctx := t.Context()
+	poolSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"ate.dev/worker-pool": "test-scheduling-round-trip"}}
+	minDomains := int32(2)
+	honor := corev1.NodeInclusionPolicyHonor
+	tmpl := &WorkerPoolPodTemplate{
+		PodAffinity: &corev1.PodAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{{
+				LabelSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "atelet"}},
+				Namespaces:    []string{"ate-system"},
+				TopologyKey:   "kubernetes.io/hostname",
+			}},
+		},
+		PodAntiAffinity: &corev1.PodAntiAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{{
+				Weight: 50,
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					LabelSelector:     poolSelector,
+					TopologyKey:       "topology.kubernetes.io/zone",
+					MismatchLabelKeys: []string{"pod-template-hash"},
+				},
+			}},
+		},
+		TopologySpreadConstraints: []corev1.TopologySpreadConstraint{{
+			MaxSkew:            1,
+			TopologyKey:        "kubernetes.io/hostname",
+			WhenUnsatisfiable:  corev1.DoNotSchedule,
+			LabelSelector:      poolSelector,
+			MinDomains:         &minDomains,
+			NodeAffinityPolicy: &honor,
+		}, {
+			MaxSkew:           1,
+			TopologyKey:       "topology.kubernetes.io/zone",
+			WhenUnsatisfiable: corev1.ScheduleAnyway,
+			LabelSelector:     poolSelector,
+			MatchLabelKeys:    []string{"pod-template-hash"},
+		}},
+	}
+	wp := &WorkerPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-scheduling-round-trip", Namespace: "default"},
+		Spec: WorkerPoolSpec{
+			Replicas:       1,
+			WorkerImage:    "worker:latest",
+			SandboxClasses: []WorkerPoolSandboxClass{{Name: SandboxClassGvisor}},
+			Template:       tmpl.DeepCopy(),
+		},
+	}
+	if err := k8sClient.Create(ctx, wp); err != nil {
+		t.Fatalf("create WorkerPool: %v", err)
+	}
+	t.Cleanup(func() { _ = k8sClient.Delete(context.Background(), wp) })
+
+	stored := &WorkerPool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wp), stored); err != nil {
+		t.Fatalf("get WorkerPool: %v", err)
+	}
+	if diff := cmp.Diff(tmpl, stored.Spec.Template); diff != "" {
+		t.Errorf("spec.template was not stored as written (-want +got):\n%s", diff)
 	}
 }

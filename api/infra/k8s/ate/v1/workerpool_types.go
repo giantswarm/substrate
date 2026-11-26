@@ -27,8 +27,8 @@ import (
 type WorkerPoolLabelValue string
 
 // WorkerPoolPodTemplate defines optional metadata, scheduling, and resource
-// settings for worker workloads. NodeAffinity is mapped to
-// spec.affinity.nodeAffinity on the pod.
+// settings for worker workloads. NodeAffinity, PodAffinity and
+// PodAntiAffinity are mapped to spec.affinity on the pod.
 type WorkerPoolPodTemplate struct {
 	// labels are added to the generated Deployment and worker pods. Keys in
 	// the ate.dev domain and its subdomains are reserved for controllers.
@@ -70,6 +70,32 @@ type WorkerPoolPodTemplate struct {
 	//
 	// +optional
 	NodeAffinity *corev1.NodeAffinity `json:"nodeAffinity,omitempty"`
+
+	// podAffinity scheduling rules for the worker pods. Mapped to
+	// spec.affinity.podAffinity on the pod. A required term that selects the
+	// atelet pods with topologyKey kubernetes.io/hostname keeps a worker off a
+	// node without an atelet, for example while the atelet DaemonSet rolls.
+	//
+	// +optional
+	PodAffinity *corev1.PodAffinity `json:"podAffinity,omitempty"`
+
+	// podAntiAffinity scheduling rules for the worker pods. Mapped to
+	// spec.affinity.podAntiAffinity on the pod. Select this pool's workers by
+	// the label the controller sets on every worker pod,
+	// ate.dev/worker-pool: <pool name>.
+	//
+	// +optional
+	PodAntiAffinity *corev1.PodAntiAffinity `json:"podAntiAffinity,omitempty"`
+
+	// topologySpreadConstraints for the worker pods. Mapped to
+	// spec.topologySpreadConstraints on the pod. Select this pool's workers by
+	// the label the controller sets on every worker pod,
+	// ate.dev/worker-pool: <pool name>.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	// +listType=atomic
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 
 	// resources are the compute resources allocated for each worker pod.
 	//

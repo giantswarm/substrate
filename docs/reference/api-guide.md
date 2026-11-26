@@ -36,6 +36,9 @@ The `WorkerPool` defines the pool of physical "warm" compute capacity. It manage
 | `tolerations` | `[]Toleration` | `spec.tolerations` (max 16) |
 | `priorityClassName` | `string` | `spec.priorityClassName` |
 | `nodeAffinity` | `NodeAffinity` | `spec.affinity.nodeAffinity` |
+| `podAffinity` | `PodAffinity` | `spec.affinity.podAffinity` |
+| `podAntiAffinity` | `PodAntiAffinity` | `spec.affinity.podAntiAffinity` |
+| `topologySpreadConstraints` | `[]TopologySpreadConstraint` | `spec.topologySpreadConstraints` (max 8) |
 | `resources` | `ResourceRequirements` | `spec.containers[].resources` |
 | `serviceAccountName` | `string` | `spec.serviceAccountName`; defaults to `ateworker`, which the controller creates |
 
@@ -43,6 +46,10 @@ Keys in `ate.dev/` and its subdomains (for example, `policy.ate.dev/`) are
 reserved for controllers and cannot be set in `template.labels` or
 `template.annotations`. Metadata keys and label values must follow Kubernetes
 syntax.
+
+To keep a pool's workers apart or spread them over zones, select them in
+`podAntiAffinity` or `topologySpreadConstraints` by the label the controller
+sets on every worker pod, `ate.dev/worker-pool: <pool name>`.
 
 `template.labels` and `template.annotations` only configure Kubernetes workload
 metadata; they do not affect actor scheduling. Actor selectors match
