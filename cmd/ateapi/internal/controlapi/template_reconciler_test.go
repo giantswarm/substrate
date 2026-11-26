@@ -441,6 +441,8 @@ func TestReconcileOne(t *testing.T) {
 		wantResumes   int
 		wantSuspends  int
 		wantUnchanged bool
+		// wantGoldenDeleted asserts the golden actor was deleted.
+		wantGoldenDeleted bool
 	}{
 		{
 			name:          "golden snapshot disabled is a noop",
@@ -543,6 +545,14 @@ func TestReconcileOne(t *testing.T) {
 			wantMessage:      "crashed before its snapshot was taken: atelet Run: unhandled tar entry",
 		},
 		{
+			name:     "golden actor a rolling worker pool crashed is taken again",
+			template: testTemplate(),
+			control:  &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_CRASHED, goldenCrash: "resume failed: " + crashMessageWorkerDraining},
+			wantErr:  true,
+
+			wantGoldenDeleted: true,
+		},
+		{
 			name:        "resume failure requeues without failing",
 			template:    testTemplate(),
 			control:     &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_SUSPENDED, resumeErr: apierror.Unavailable("no workers")},
@@ -625,6 +635,12 @@ func TestReconcileOne(t *testing.T) {
 			if creates, resumes, suspends := tt.control.callCounts(); creates != tt.wantCreates || resumes != tt.wantResumes || suspends != tt.wantSuspends {
 				t.Errorf("control calls = create:%d resume:%d suspend:%d, want create:%d resume:%d suspend:%d",
 					creates, resumes, suspends, tt.wantCreates, tt.wantResumes, tt.wantSuspends)
+			}
+			tt.control.mu.Lock()
+			deleted := len(tt.control.deleteReqs) > 0
+			tt.control.mu.Unlock()
+			if tt.wantGoldenDeleted && !deleted {
+				t.Error("golden actor was not deleted")
 			}
 			if tt.template == nil {
 				return

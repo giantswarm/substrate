@@ -259,6 +259,12 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 
 		switch state := actor.GetStatus().GetState(); state {
 		case ateapi.ActorState_ACTOR_STATE_CRASHED:
+			if transientCrash(actor) {
+				// A rolling worker pool crashed the golden actor: the take
+				// says nothing about the template. Delete the actor, which
+				// frees any worker it still holds, and take it again.
+				return 0, r.retakeGolden(ctx, goldenActorRef, "golden actor crashed for a transient cause: "+actor.GetStatus().GetCrash().GetMessage())
+			}
 			msg := "golden actor crashed before its snapshot was taken"
 			if crash := actor.GetStatus().GetCrash().GetMessage(); crash != "" {
 				msg += ": " + crash
@@ -496,4 +502,19 @@ func (r *ActorTemplateReconciler) ensureGoldenEgressPolicy(ctx context.Context, 
 		return errGoldenEgressPolicyConflict
 	}
 	return nil
+}
+
+// errGoldenRetake requeues a template whose golden actor was deleted to be
+// taken again, with the work queue's backoff.
+var errGoldenRetake = errors.New("golden actor deleted to be taken again")
+
+// retakeGolden deletes the golden actor at ref, whatever its state, so the
+// next pass takes the golden again, and returns errGoldenRetake naming why.
+func (r *ActorTemplateReconciler) retakeGolden(ctx context.Context, ref *ateapi.ObjectRef, why string) error {
+	slog.WarnContext(ctx, "Deleting the golden actor to take the golden again",
+		slog.String("actor", ref.GetAtespace()+"/"+ref.GetName()), slog.String("reason", why))
+	if _, err := r.control.DeleteActor(ctx, &ateapi.DeleteActorRequest{Actor: ref}); err != nil && apierror.Code(err) != codes.NotFound {
+		return fmt.Errorf("while deleting golden actor to take it again (%s): %w", why, err)
+	}
+	return fmt.Errorf("%w: %s", errGoldenRetake, why)
 }
