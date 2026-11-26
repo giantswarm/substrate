@@ -290,8 +290,12 @@ func main() {
 	if err != nil {
 		serverboot.Fatal(ctx, "Failed to open image cache", err)
 	}
+	imageGC := newImageCacheGC(imageCache, *imageCacheDir)
 	if *imageCacheGCPeriod > 0 {
-		go newImageCacheGC(imageCache, *imageCacheDir).Run(ctx)
+		go imageGC.Run(ctx)
+	} else if len(*imageCachePinned) > 0 {
+		// No pass roots them, but the node still starts warm.
+		go imageGC.ensurePinned(ctx)
 	}
 
 	sandboxAssetCache, err := openSandboxAssetCache(ctx, *sandboxAssetCacheDir, *sandboxAssetCacheMinAge, *sandboxAssetFetchTimeout, nodepath.ActorsDir, nodepath.WorkersDir())

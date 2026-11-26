@@ -235,6 +235,12 @@ type Store struct {
 	// zero, so the map holds only layers pulls are using right now.
 	pinMu sync.Mutex
 	pins  map[string]int
+
+	// imagePinMu guards pinnedImages: digest string -> the layer dirs the
+	// image had when PinImage protected it. InUse folds them into every
+	// root set. In memory only: pins do not survive a restart.
+	imagePinMu   sync.Mutex
+	pinnedImages map[string][]string
 }
 
 // Option configures a Store.

@@ -24,7 +24,7 @@ package imagecache
 //
 //  1. the root set — bundle overlay specs under the actors dir, the same
 //     authority that hands out mounts (atelet cannot see the workers' mount
-//     namespaces);
+//     namespaces), and the images PinImage protects;
 //  2. min-age — records and layers younger than minAge are never touched,
 //     covering the pull → spec-write → mount window;
 //  3. per-victim re-checks against current disk state immediately before
@@ -51,6 +51,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -121,6 +122,7 @@ func (s *Store) InUse() (RootSet, error) {
 	// when suppressed.
 	dbg := slog.Default().Enabled(context.Background(), slog.LevelDebug)
 	rs := RootSet{ImageDigests: map[string]bool{}, LayerHexes: map[string]bool{}, LayerSets: map[string]bool{}}
+	s.addPinnedImageRoots(&rs, dbg)
 	if s.actorsDir == "" {
 		return rs, nil
 	}
@@ -199,6 +201,31 @@ func addImageRoots(rs *RootSet, digest string, layers []string, bundle string, d
 	}
 	if len(hexes) > 0 {
 		rs.LayerSets[layerSetSignature(hexes)] = true
+	}
+}
+
+// PinImage protects img from eviction: its record, layers and exact layer
+// set join every root set InUse computes, next to the bundle specs of placed
+// actors. The eviction pass then keeps it however far the volume is over the
+// high watermark.
+//
+// PinImage neither pulls nor persists. The caller pins what EnsureImage
+// returned, and pins again after a restart. Pinning a digest again replaces
+// its layer set.
+func (s *Store) PinImage(img *Image) {
+	s.imagePinMu.Lock()
+	defer s.imagePinMu.Unlock()
+	if s.pinnedImages == nil {
+		s.pinnedImages = map[string][]string{}
+	}
+	s.pinnedImages[img.Digest.String()] = slices.Clone(img.LayerDirs)
+}
+
+func (s *Store) addPinnedImageRoots(rs *RootSet, dbg bool) {
+	s.imagePinMu.Lock()
+	defer s.imagePinMu.Unlock()
+	for digest, layers := range s.pinnedImages {
+		addImageRoots(rs, digest, layers, "pinned", dbg)
 	}
 }
 
