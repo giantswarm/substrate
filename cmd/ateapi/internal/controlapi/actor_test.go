@@ -653,6 +653,13 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 
 	oneVolume := []*ateapi.Volume{dataVolume}
 	twoVolumes := []*ateapi.Volume{dataVolume, scratchVolume}
+	trustBundleVolume := func(bundle string) *ateapi.Volume {
+		return &ateapi.Volume{Name: "egress-trust", SystemInfo: &ateapi.SystemInfoVolumeSource{
+			DataSources: []*ateapi.SystemInfoDataSource{{TrustBundle: &ateapi.TrustBundleDataSource{Names: []string{bundle}, Path: "ca.crt"}}},
+		}}
+	}
+	trustMount := &ateapi.VolumeMount{Name: "egress-trust", MountPath: "/run/egress"}
+	withTrust := []*ateapi.Volume{dataVolume, trustBundleVolume("egress")}
 
 	tests := []struct {
 		name             string
@@ -723,6 +730,33 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 		name:    "mountless container renamed",
 		oldTmpl: template(oneVolume, container("main", dataMount), container("sidecar")),
 		newTmpl: template(oneVolume, container("main", dataMount), container("helper")),
+	}, {
+		name:    "system_info volume and mount added",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template(withTrust, container("main", dataMount, trustMount)),
+	}, {
+		name:    "system_info volume and mount removed",
+		oldTmpl: template(withTrust, container("main", trustMount, dataMount)),
+		newTmpl: template(oneVolume, container("main", dataMount)),
+	}, {
+		name:    "system_info volume source and mount path changed",
+		oldTmpl: template(withTrust, container("main", dataMount, trustMount)),
+		newTmpl: template([]*ateapi.Volume{dataVolume, trustBundleVolume("other")}, container("main", dataMount, &ateapi.VolumeMount{Name: "egress-trust", MountPath: "/run/other"})),
+	}, {
+		name:    "durable volume added beside a system_info volume",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template([]*ateapi.Volume{dataVolume, trustBundleVolume("egress"), scratchVolume}, container("main", dataMount, trustMount)),
+		wantErr: true,
+	}, {
+		name:    "durable mount path changed beside a system_info volume",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template(withTrust, container("main", &ateapi.VolumeMount{Name: "data", MountPath: "/mnt/data"}, trustMount)),
+		wantErr: true,
+	}, {
+		name:    "durable volume replaced by a system_info volume of the same name",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template([]*ateapi.Volume{{Name: "data", SystemInfo: &ateapi.SystemInfoVolumeSource{}}}, container("main", dataMount)),
+		wantErr: true,
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
