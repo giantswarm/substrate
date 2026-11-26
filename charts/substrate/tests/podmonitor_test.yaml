@@ -1,0 +1,97 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: PodMonitors
+templates:
+- podmonitor.yaml
+tests:
+- it: renders no PodMonitor by default
+  asserts:
+  - hasDocuments:
+      count: 0
+
+- it: renders one PodMonitor per workload that serves metrics
+  set:
+    metrics.podMonitor.enabled: true
+  asserts:
+  - hasDocuments:
+      count: 6
+  - isKind:
+      of: PodMonitor
+
+- it: scrapes each workload on its named metrics port
+  release:
+    name: substrate
+  set:
+    metrics.podMonitor.enabled: true
+  documentSelector:
+    path: metadata.name
+    value: ate-controller
+  asserts:
+  - equal:
+      path: spec.selector.matchLabels.app
+      value: ate-controller
+  - equal:
+      path: spec.podMetricsEndpoints
+      value:
+      - port: metrics
+        path: /metrics
+
+- it: selects the agentgateway stats port of the egress gateway
+  release:
+    name: substrate
+  set:
+    metrics.podMonitor.enabled: true
+  documentSelector:
+    path: metadata.name
+    value: atenet-egress
+  asserts:
+  - equal:
+      path: spec.podMetricsEndpoints[0].port
+      value: stats
+
+- it: selects the credential provider by its release-prefixed label
+  release:
+    name: team
+  set:
+    metrics.podMonitor.enabled: true
+  documentSelector:
+    path: metadata.name
+    value: team-k8s-credential-provider
+  asserts:
+  - equal:
+      path: spec.selector.matchLabels.app
+      value: team-k8s-credential-provider
+
+- it: skips the credential provider when it is disabled
+  set:
+    metrics.podMonitor.enabled: true
+    credentialProvider.enabled: false
+  asserts:
+  - hasDocuments:
+      count: 5
+
+- it: sets the interval and labels on every PodMonitor
+  set:
+    metrics.podMonitor.enabled: true
+    metrics.podMonitor.interval: 30s
+    metrics.podMonitor.labels:
+      example.com/tenant: platform
+  asserts:
+  - equal:
+      path: spec.podMetricsEndpoints[0].interval
+      value: 30s
+  - equal:
+      path: metadata.labels["example.com/tenant"]
+      value: platform

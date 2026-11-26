@@ -109,6 +109,9 @@ See `values.yaml` for the full set; the important keys:
 | `ateApi.extraEnv` | `[]` | Environment variables appended to the ate-api-server container |
 | `ateApi.serviceAccount.annotations` | `{}` | Annotations on the ate-api-server ServiceAccount, e.g. `eks.amazonaws.com/role-arn` |
 | `atelet.serviceAccount.annotations` | `{}` | Annotations on the atelet ServiceAccount, e.g. `eks.amazonaws.com/role-arn` |
+| `metrics.podMonitor.enabled` | `false` | Render a Prometheus Operator PodMonitor for each workload that serves metrics; requires the `monitoring.coreos.com/v1` CRDs |
+| `metrics.podMonitor.interval` | `""` | Scrape interval of the PodMonitors; empty uses the Prometheus default |
+| `metrics.podMonitor.labels` | `{}` | Labels on every PodMonitor |
 | `otel.endpoint` | `""` | Set to an OTLP endpoint to export traces, metrics, the actor lifecycle events and the router access log |
 | `otel.traces.enabled` | `true` | Set to `false` to export no traces from the router; the Go components do not honor this yet |
 | `otel.traces.endpoint` | `""` | OTLP endpoint for traces, overriding `otel.endpoint` |

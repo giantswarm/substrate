@@ -1,0 +1,66 @@
+{{/*
+Copyright 2026 The Agent Substrate Authors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/}}
+{{/*
+One PodMonitor per workload that serves Prometheus metrics. A PodMonitor
+selects a named container port, and the port names differ per workload.
+ate-api-server, atelet and the credential provider serve their own registry.
+ate-controller serves controller-runtime's metrics server on :8080. The router
+and the egress gateway are agentgateway and serve its stats port.
+The atelet monitor also covers an atelet installed by the substrate-atelet
+chart in this namespace.
+*/}}
+{{- if .Values.metrics.podMonitor.enabled }}
+{{- $components := list
+  (dict "app" "ate-api-server" "port" "prometheus")
+  (dict "app" "ate-controller" "port" "metrics")
+  (dict "app" "atelet" "port" "prometheus")
+  (dict "app" "atenet-egress" "port" "stats")
+  (dict "app" "atenet-router" "port" "gw-metrics")
+}}
+{{- if .Values.credentialProvider.enabled }}
+{{- $components = append $components (dict "app" "k8s-credential-provider" "port" "metrics" "fullnameLabel" true) }}
+{{- end }}
+{{- range $components }}
+{{- $label := .app }}
+{{- if .fullnameLabel }}
+{{- $label = include "substrate.fullname" (list .app $) }}
+{{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "substrate.fullname" (list .app $) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app: {{ $label }}
+    {{- with $.Values.metrics.podMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $label }}
+  namespaceSelector:
+    matchNames:
+    - {{ $.Release.Namespace }}
+  podMetricsEndpoints:
+  - port: {{ .port }}
+    path: /metrics
+    {{- with $.Values.metrics.podMonitor.interval }}
+    interval: {{ . }}
+    {{- end }}
+{{- end }}
+{{- end }}

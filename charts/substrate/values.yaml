@@ -216,6 +216,17 @@ credentialProvider:
       cpu: 500m
       memory: 256Mi
 
+# Prometheus Operator PodMonitors for the workloads that serve metrics.
+# Requires the monitoring.coreos.com/v1 CRDs.
+metrics:
+  podMonitor:
+    enabled: false
+    # Scrape interval. Empty uses the Prometheus default.
+    interval: ""
+    # Labels on every PodMonitor, such as the label a podMonitorSelector
+    # matches or a tenant label.
+    labels: {}
+
 # Name of a ConfigMap in the release namespace that supplies per-environment
 # overrides for ate-api-server (ATE_API_POSTGRES_READ_WRITE_CONNECTION_STRING, ...).
 # Mounted via envFrom with optional=true. Created by the chart from these values.
