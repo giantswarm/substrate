@@ -318,7 +318,12 @@ func (s *AteWorkerService) restoreMemoryFidelity(ctx context.Context, p actorBoo
 	}()
 	defer func() {
 		if !untarJoined {
-			<-untarDone
+			// The restore already fails with its own error; the untar's is
+			// only logged, so it does not replace it.
+			if err := <-untarDone; err != nil {
+				slog.WarnContext(ctx, "Background rootfs upper untar failed during restore cleanup",
+					slog.String("actorUID", p.actorUID), slog.Any("err", err))
+			}
 		}
 	}()
 
