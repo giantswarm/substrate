@@ -431,6 +431,11 @@ func (w *ActorWorkflow) assignWorkerAttempt(ctx context.Context, actorRef resour
 	if err != nil {
 		if errors.Is(err, scheduling.ErrNoCapacity) {
 			outcome = ateattr.SchedulerOutcomeNoCapacity
+			// A selector that matches no worker is named, so a label
+			// mismatch does not read as a full pool.
+			if unmatched, ok := errors.AsType[*scheduling.NoMatchingWorkerError](err); ok {
+				return nil, nil, apierror.ResourceExhausted("no worker matches the selector %q (none of the %d worker(s) carries its labels)", unmatched.Selector, unmatched.Workers)
+			}
 			return nil, nil, apierror.ResourceExhausted("%w", errNoWorkerRoom)
 		}
 		return nil, nil, err
