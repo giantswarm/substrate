@@ -149,3 +149,64 @@ func TestDurableRestoreContainers(t *testing.T) {
 		t.Errorf("without fs/ restored = %v, want none", got)
 	}
 }
+
+type fakeExitWaiter struct {
+	statuses map[string]int
+	errs     map[string]error
+}
+
+func (f fakeExitWaiter) cmdWaitExit(ctx context.Context, name string) (int, error) {
+	if err, ok := f.errs[name]; ok {
+		return 0, err
+	}
+	if status, ok := f.statuses[name]; ok {
+		return status, nil
+	}
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
+func TestWatchContainers(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		waiter   fakeExitWaiter
+		stopping bool
+		want     string
+	}{
+		{name: "running containers", waiter: fakeExitWaiter{}},
+		{name: "a container exits", waiter: fakeExitWaiter{statuses: map[string]int{"app": 1}}, want: `container "app" exited with status 1 while the sandbox kept running`},
+		{name: "a container is killed", waiter: fakeExitWaiter{statuses: map[string]int{"app": 137}}, want: `container "app" was killed by signal 9 (SIGKILL) while the sandbox kept running`},
+		{name: "stopped by ateworker", waiter: fakeExitWaiter{statuses: map[string]int{"app": 137}}, stopping: true},
+		{name: "runsc cannot wait", waiter: fakeExitWaiter{errs: map[string]error{"app": errors.New("no such container")}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crashes := make(chan string, 2)
+			hosted := &hostedActor{attribution: resources.ActorAttribution{UID: "actor-a"}, ctx: t.Context()}
+			hosted.stopping.Store(tc.stopping)
+			s := &AteWorkerService{}
+			s.watchContainers(hosted, tc.waiter, []string{"app", "sidecar"}, func(message string) { crashes <- message })
+			select {
+			case got := <-crashes:
+				if got != tc.want {
+					t.Fatalf("crash = %q, want %q", got, tc.want)
+				}
+			case <-time.After(300 * time.Millisecond):
+				if tc.want != "" {
+					t.Fatalf("no crash, want %q", tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestParseWaitResult(t *testing.T) {
+	if got, err := parseWaitResult([]byte(`{"id":"app","exitStatus":3}`)); err != nil || got != 3 {
+		t.Errorf("parseWaitResult() = %d, %v; want 3", got, err)
+	}
+	if _, err := parseWaitResult([]byte(`{"id":"app"}`)); err == nil {
+		t.Error("parseWaitResult() without an exit status succeeded")
+	}
+	if _, err := parseWaitResult([]byte(`not json`)); err == nil {
+		t.Error("parseWaitResult() of garbage succeeded")
+	}
+}

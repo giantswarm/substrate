@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -351,6 +352,34 @@ func (r *runsc) runWait(ctx context.Context, containerName string, extraArgs ...
 func (r *runsc) cmdWait(ctx context.Context, containerName string) error {
 	slog.InfoContext(ctx, "About to run runsc wait", slog.String("container", containerName))
 	return r.runWait(ctx, containerName)
+}
+
+// cmdWaitExit blocks until the given container's process exits and returns
+// the exit status `runsc wait` prints: the exit code, or 128 plus the signal
+// that killed it.
+func (r *runsc) cmdWaitExit(ctx context.Context, containerName string) (int, error) {
+	cmd := exec.CommandContext(ctx, r.path, r.buildArgs("wait", containerName)...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("while running `runsc wait`: %w", err)
+	}
+	return parseWaitResult(out.Bytes())
+}
+
+// parseWaitResult reads the exit status from `runsc wait`'s JSON result.
+func parseWaitResult(out []byte) (int, error) {
+	var result struct {
+		ExitStatus *int `json:"exitStatus"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return 0, fmt.Errorf("while parsing the `runsc wait` result %q: %w", out, err)
+	}
+	if result.ExitStatus == nil {
+		return 0, fmt.Errorf("the `runsc wait` result %q has no exit status", out)
+	}
+	return *result.ExitStatus, nil
 }
 
 // cmdWaitRestore blocks until background page loading from `runsc restore -background` completes.

@@ -807,6 +807,9 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(req.GetSpec().GetContainers())})
 	s.recordInitial(ctx, hosted)
 	s.watchSandbox(ctx, hosted, req.GetRunscPath(), req.GetActorDirs(), req.GetSpec().GetContainers())
+	s.watchContainers(hosted, rcmd, containerNames(req.GetSpec().GetContainers()), func(message string) {
+		s.crashHosted(hosted, req.GetRunscPath(), req.GetActorDirs(), req.GetSpec().GetContainers(), message)
+	})
 
 	return &ateworkerpb.RunWorkloadResponse{WorkerEpoch: epoch}, nil
 }
@@ -1354,6 +1357,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(containers)})
 	s.recordInitial(ctx, hosted)
 	s.watchSandbox(ctx, hosted, req.GetRunscPath(), req.GetActorDirs(), containers)
+	s.watchContainers(hosted, rcmd, containerNames(containers), func(message string) {
+		s.crashHosted(hosted, req.GetRunscPath(), req.GetActorDirs(), containers, message)
+	})
 	s.watchDurableRestore(hosted, rcmd, durableRestoreContainers(checkpointDir, restoreArgs, fidelity, containers), func(message string) {
 		s.crashHosted(hosted, req.GetRunscPath(), req.GetActorDirs(), containers, message)
 	})

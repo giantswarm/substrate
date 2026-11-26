@@ -18,10 +18,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"go.ate.dev/substrate/internal/ateworker/register"
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
@@ -149,4 +152,46 @@ func durableRestoreContainers(checkpointDir string, restoreArgs []string, fideli
 		}
 	}
 	return out
+}
+
+// containerExitWaiter blocks until an application container's process exits
+// and returns its exit status as `runsc wait` reports it. *runsc satisfies it.
+type containerExitWaiter interface {
+	cmdWaitExit(ctx context.Context, containerName string) (int, error)
+}
+
+// watchContainers waits on every application container of an actor that was
+// just booted or restored. The sandbox outlives an application container that
+// exits on its own: the sandbox container keeps it running, so watchSandbox
+// never sees it, and the actor would stay RUNNING with nothing left to answer
+// it. A container found exited calls crash with its exit status, under the
+// same rule as a sandbox exit: an exit ateworker caused while stopping the
+// actor (a checkpoint, a terminate) is never reported. The waits end with
+// hosted.ctx.
+func (s *AteWorkerService) watchContainers(hosted *hostedActor, waiter containerExitWaiter, names []string, crash func(message string)) {
+	for _, name := range names {
+		go func() {
+			status, err := waiter.cmdWaitExit(hosted.ctx, name)
+			if hosted.ctx.Err() != nil || hosted.stopping.Load() || s.shuttingDown.Load() {
+				return
+			}
+			if err != nil {
+				// The sandbox is gone (watchSandbox reports that) or runsc
+				// could not wait on the container; there is no exit status.
+				slog.Debug("Not watching the container for an exit", slog.String("actorUID", hosted.attribution.UID), slog.String("container", name), slog.Any("err", err))
+				return
+			}
+			crash(containerExitReason(name, status))
+		}()
+	}
+}
+
+// containerExitReason words an application container's exit status for the
+// actor's crash message.
+func containerExitReason(name string, status int) string {
+	if status > 128 {
+		signal := unix.Signal(status - 128)
+		return fmt.Sprintf("container %q was killed by signal %d (%s) while the sandbox kept running", name, int(signal), unix.SignalName(signal))
+	}
+	return fmt.Sprintf("container %q exited with status %d while the sandbox kept running", name, status)
 }
