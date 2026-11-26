@@ -144,6 +144,15 @@ metadata:
   labels:
     app: atelet
 spec:
+{{- with .Values.atelet.updateStrategy }}
+{{- with .rollingUpdate }}
+{{- if not (has (toString (.maxSurge | default 0)) (list "0" "0%")) }}
+{{- fail "atelet.updateStrategy.rollingUpdate.maxSurge must stay 0: atelet owns the node's kubelet plugin sockets and /var/lib/ate, so two atelets cannot share a node" }}
+{{- end }}
+{{- end }}
+  updateStrategy:
+{{ toYaml . | indent 4 }}
+{{- end }}
   selector:
     matchLabels:
       app: atelet

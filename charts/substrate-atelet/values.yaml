@@ -80,6 +80,14 @@ atelet:
     # idle spell then skips a cold pull. atelet reads the list from a mounted
     # ConfigMap, so a change restarts no atelet pod.
     pinnedImages: []
+  # The DaemonSet's update strategy, rendered as is. A node's atelet is away
+  # for a few seconds while its actors keep running, so rolling a quarter of
+  # the nodes at a time shortens the roll without a deeper outage per node.
+  # maxSurge must stay 0: two atelets cannot share a node.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
   # Where atelet runs: the DaemonSet's nodeSelector and affinity, and
   # tolerations added to the chart's fixed ones. Empty runs atelet on every
   # schedulable node.

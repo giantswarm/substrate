@@ -97,6 +97,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
 | `atelet.priorityClassName` | `system-cluster-critical` | PriorityClass of the atelet pods |
 | `atelet.imageCache.pinnedImages` | `[]` | Image references atelet keeps in its cache and pulls at every eviction pass; read from the `atelet-pinned-images` ConfigMap, so a change restarts no atelet |
+| `atelet.updateStrategy` | `RollingUpdate`, `maxUnavailable: 25%` | Update strategy of the atelet DaemonSet; `maxSurge` must stay 0 |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty runs it on every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added after the chart's `ate.dev/sandboxClass` and `cloud.google.com/compute-class` tolerations |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |

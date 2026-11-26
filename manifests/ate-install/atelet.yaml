@@ -131,6 +131,12 @@ metadata:
   labels:
     app: atelet
 spec:
+  # A change rolls a quarter of the nodes at a time. maxSurge stays 0: two
+  # atelets cannot share a node.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
   selector:
     matchLabels:
       app: atelet
