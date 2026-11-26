@@ -196,7 +196,7 @@ func TestSandboxLogAttribution(t *testing.T) {
 	var buf syncLogBuffer
 	logger := actorlog.NewActorLogger(&buf, false)
 
-	pw, err := logger.StartJSONLogPipe(attribution, ocispec.SandboxID)
+	pw, err := logger.StartJSONLogPipe(attribution, ocispec.SandboxID, nil)
 	if err != nil {
 		t.Fatalf("StartJSONLogPipe: %v", err)
 	}

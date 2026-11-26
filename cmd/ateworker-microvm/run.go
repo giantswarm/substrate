@@ -597,7 +597,7 @@ func (s *AteWorkerService) coldBootActor(ctx context.Context, p actorBootParams)
 	tContainers := time.Now()
 
 	// Block until every wakeup-probe-enabled container reports 200.
-	if err := wakeupprobe.WaitAll(ctx, containers, actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(actorUID))); err != nil {
+	if err := wakeupprobe.WaitAll(ctx, containers, actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(actorUID)), nil); err != nil {
 		return fmt.Errorf("while waiting for container wakeup probe: %w", err)
 	}
 
@@ -938,8 +938,8 @@ func (s *AteWorkerService) startRootfsContainer(ctx context.Context, ac *kata.Ag
 // concurrent Calls on) alive for forwarding while guaranteeing no goroutine outlives
 // the connection.
 func (s *AteWorkerService) startActorLogForwarding(ac *kata.AgentClient, a resources.ActorAttribution, streamID, containerName string) {
-	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, false), a, containerName)
-	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, true), a, containerName)
+	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, false), a, containerName, nil)
+	go s.actorLogger.WrapContainerLogs(kata.NewStdioReader(context.Background(), ac, streamID, streamID, true), a, containerName, nil)
 }
 
 // errGuestStopped reports that the micro-VM stopped before the kata-agent

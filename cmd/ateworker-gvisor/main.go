@@ -750,7 +750,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	}
 	containersToDelete = append(containersToDelete, ocispec.SandboxID)
 	// Attribute the sandbox's runsc CLI output to the actor.
-	pw, err := s.actorLogger.StartJSONLogPipe(attribution, ocispec.SandboxID)
+	pw, err := s.actorLogger.StartJSONLogPipe(attribution, ocispec.SandboxID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("while starting sandbox log pipe: %w", err)
 	}
@@ -767,6 +767,10 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 		return nil, err
 	}
 
+	// The pipes also keep each container's last lines: a workload that exits
+	// before its wakeup probe answers says why on its way out, and the
+	// deadline error quotes it for the caller.
+	tails := actorlog.OutputTails{}
 	// Create and start each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
 	// The bundle rootfs is composed here, as an overlay of the node's cached
@@ -774,7 +778,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	// capabilities, so ateworker mounts it, and runsc's gofer resolves the
 	// mount in this pod's mount namespace.
 	for _, ac := range req.GetSpec().GetContainers() {
-		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName())
+		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName(), tails.Add(ac.GetName()))
 		if err != nil {
 			return nil, fmt.Errorf("while starting json log pipe for %q: %w", ac.GetName(), err)
 		}
@@ -792,7 +796,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	}
 
 	// Block until every wakeup-probe-enabled container reports 200.
-	if err := wakeupprobe.WaitAll(ctx, req.GetSpec().GetContainers(), actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid()))); err != nil {
+	if err := wakeupprobe.WaitAll(ctx, req.GetSpec().GetContainers(), actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())), tails.Lines); err != nil {
 		return nil, s.wakeupProbeError(ctx, hosted, err)
 	}
 	if err := s.tunnel.ActivateIngress(attribution, s.sandboxDialer(req.GetActorUid())); err != nil {
@@ -1234,7 +1238,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	}
 
 	// Attribute the sandbox's runsc CLI output to the actor.
-	pw, err := s.actorLogger.StartJSONLogPipe(attribution, ocispec.SandboxID)
+	pw, err := s.actorLogger.StartJSONLogPipe(attribution, ocispec.SandboxID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("while starting sandbox log pipe: %w", err)
 	}
@@ -1278,11 +1282,15 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 		}
 	}
 
+	// The pipes also keep each container's last lines: a workload that exits
+	// before its wakeup probe answers says why on its way out, and the
+	// deadline error quotes it for the caller.
+	tails := actorlog.OutputTails{}
 	// Create and restore each application container, each with its own log pipe so
 	// every line is tagged with the originating container (ate.actor.container.name).
 	// app_create includes starting that pipe.
 	for _, ac := range containers {
-		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName())
+		pw, err := s.actorLogger.StartJSONLogPipe(attribution, ac.GetName(), tails.Add(ac.GetName()))
 		timing.appCreate += lap(&tLast)
 		if err != nil {
 			return nil, fmt.Errorf("while starting json log pipe for %q: %w", ac.GetName(), err)
@@ -1316,7 +1324,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	}
 
 	// Block until every wakeup-probe-enabled container reports 200.
-	err = wakeupprobe.WaitAll(ctx, containers, actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())))
+	err = wakeupprobe.WaitAll(ctx, containers, actornet.ActorVethIP, wakeupprobe.DialFunc(s.sandboxDialer(req.GetActorUid())), tails.Lines)
 	timing.wakeupProbe = lap(&tLast)
 	if err != nil {
 		return nil, s.wakeupProbeError(ctx, hosted, err)
