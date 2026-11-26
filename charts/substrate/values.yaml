@@ -209,13 +209,17 @@ atenetEgress:
   #   address: vault-provider.vault.svc:50051
   agentgateway:
     logLevel: info
+    # The gateway writes nothing but its logs, so its ephemeral storage is
+    # bounded too.
     resources:
       requests:
         cpu: 50m
         memory: 128Mi
+        ephemeral-storage: 16Mi
       limits:
         cpu: "2"
         memory: 1Gi
+        ephemeral-storage: 256Mi
 
 # Kubernetes Secret provider and AGW HTTP/HTTPS credential injection.
 # Includes get-only Secret RBAC. HTTPS requires egress-mitm-ca-pool and actor trust.
