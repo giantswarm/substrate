@@ -113,6 +113,43 @@ cluster admin grants its atespace access to the `ns1` namespace.
 * `prefix` is prepended verbatim to the credential — include the separator,
   e.g. `"Bearer "` with the trailing space.
 * `credentialUri` names the credential; see [Credential URIs](#credential-uris).
+* `pathPrefix`, optional, scopes the entry to the requests under a path; see
+  [Credentials per path](#credentials-per-path).
+
+### Credentials per path
+
+One host can serve paths that take different credentials, for example a Git
+server that takes `Basic` for Git over HTTPS and `Bearer` for its REST API
+under `/api/`. A header can then appear more than once, each entry with its
+own `pathPrefix`:
+
+```yaml
+rules:
+- https:
+    hostnames: ["git.example.com"]
+    effects:
+      replaceHeaders:
+      - header: Authorization
+        prefix: "Basic "
+        credentialUri: ate-secret://k8s.io/default/ns1/git-basic/auth
+      - header: Authorization
+        pathPrefix: /api/
+        prefix: "Bearer "
+        credentialUri: ate-secret://k8s.io/default/ns1/git-token/token
+```
+
+For each header, the entry with the longest `pathPrefix` that matches the
+request path applies, and the entry without a `pathPrefix` otherwise; when no
+entry applies, the header is forwarded unchanged. A prefix matches the path
+without its query at a segment boundary: `/api` matches `/api` and `/api/v4`
+but not `/apis`, and `/api/` matches `/api/v4` but not `/api`. A request path
+with a dot segment (`/api/../x`), an empty segment, a backslash, or a
+percent-encoded `.` or `\` matches no prefix, since an origin may resolve it
+outside the prefix it starts with. A percent-encoded `/` is accepted when the
+path has no dot or empty segment either way it is read. Two entries for one
+header and one `pathPrefix` are rejected at admission. The gateway that
+applies `pathPrefix` must support it: an agentgateway build without it
+ignores the field and applies every entry to every path.
 
 ### Credential URIs
 
