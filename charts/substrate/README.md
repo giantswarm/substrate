@@ -103,6 +103,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added after the chart's `ate.dev/sandboxClass` and `cloud.google.com/compute-class` tolerations |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |
 | `credentialProvider.enabled` | `true` | Deploy the Kubernetes Secret provider and route `k8s.io` credential URIs to it. With no provider, every credential injection fails closed |
+| `credentialProvider.rbac.namespaces` | `[]` | Namespaces the provider may read Secrets in; empty binds its Secret reader cluster-wide, set binds it by RoleBinding in each listed namespace only |
 | `credentialProvider.namespacePolicies` | `[]` | Default-deny atespace-to-namespace grants; the chart includes get-only Secret RBAC for the provider. An `ownNamespaceSelector` (a label selector) in place of `atespace` and `allowedNamespaces` lets each matched namespace be read by the atespace of the same name only; an `allowedNamespaceSelector` beside `atespace` grants that atespace every matched namespace. With either, the chart adds list/watch RBAC on namespaces |
 | `ateApi.actorJWTIssuer` | `https://<idp-service>.<namespace>.svc` | Issuer placed in actor JWTs; set a stable URL reachable by relying parties |
 | `objectStorePlugin.extraEnv` | `[]` | Object storage credentials/settings shared by both object-store plugins |
