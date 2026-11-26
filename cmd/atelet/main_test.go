@@ -967,6 +967,48 @@ func assertDirGone(t *testing.T, what, dir string) {
 	t.Errorf("%s %s survived with %d entries: %v", what, dir, len(left), left)
 }
 
+func TestRemoveActorDirsLeavesPopulatedVolumeDir(t *testing.T) {
+	useTempNodeDirs(t)
+	const actorUID = "actor-uid-1"
+
+	if err := actordirs.ResetActorDirs(actorUID); err != nil {
+		t.Fatalf("ResetActorDirs: %v", err)
+	}
+	// A mount that outlived its unmount: its content must survive.
+	busy := ateletpath.ExternalVolumeHostPath(actorUID, "still-mounted")
+	if err := os.MkdirAll(busy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(busy, "data"), []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	empty := ateletpath.ExternalVolumeHostPath(actorUID, "unmounted")
+	if err := os.MkdirAll(empty, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ateletpath.ActorSandboxAssetsFile(actorUID), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := actordirs.RemoveActorDirs(actorUID); err != nil {
+		t.Fatalf("RemoveActorDirs: %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join(busy, "data")); err != nil || string(got) != "keep" {
+		t.Errorf("populated volume dir content = %q, %v; want it kept", got, err)
+	}
+	if _, err := os.Stat(empty); !os.IsNotExist(err) {
+		t.Errorf("empty volume dir survived: stat err = %v", err)
+	}
+	entries, err := os.ReadDir(ateletpath.ActorPath(actorUID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || filepath.Join(ateletpath.ActorPath(actorUID), entries[0].Name()) != ateletpath.ExternalVolumeMountsDir(actorUID) {
+		t.Errorf("actor dir entries = %v, want only the volumes dir", entries)
+	}
+	assertDirGone(t, "actor snapshot dir", ateletpath.ActorSnapshotPath(actorUID))
+}
+
 func TestResetActorDirsCreatesBothTrees(t *testing.T) {
 	useTempNodeDirs(t)
 	const actorUID = "actor-uid-isolation"
@@ -1029,34 +1071,6 @@ func TestRemoveActorDirsKeepsActorDirWhenSnapshotTreeRemains(t *testing.T) {
 	}
 	if _, err := os.Stat(record); err != nil {
 		t.Errorf("sandbox record %s is gone (err=%v), want it kept for a retried Terminate", record, err)
-	}
-}
-
-// TestRemoveActorDirsKeepsPopulatedVolume checks that removing the root does
-// not defeat the mount safety actordirs.ResetActorDirs provides: a volume
-// directory with contents means the unmount did not take, and deleting it would
-// take the mounted volume's data rather than the actor's.
-func TestRemoveActorDirsKeepsPopulatedVolume(t *testing.T) {
-	useTempNodeDirs(t)
-	const actorUID = "actor-uid-1"
-
-	stillMounted := filepath.Join(ateletpath.ExternalVolumeHostPath(actorUID, "data"), "payload")
-	if err := os.MkdirAll(filepath.Dir(stillMounted), 0o755); err != nil {
-		t.Fatalf("creating volume dir: %v", err)
-	}
-	if err := os.WriteFile(stillMounted, []byte("volume contents"), 0o600); err != nil {
-		t.Fatalf("writing volume contents: %v", err)
-	}
-
-	err := actordirs.RemoveActorDirs(actorUID)
-	if err == nil {
-		t.Fatal("RemoveActorDirs succeeded with a populated volume dir, want an error")
-	}
-	if strings.Contains(err.Error(), "%w") {
-		t.Errorf("RemoveActorDirs error %q has a literal %%w", err)
-	}
-	if _, err := os.Stat(stillMounted); err != nil {
-		t.Errorf("RemoveActorDirs deleted the contents of a volume that was still populated: %v", err)
 	}
 }
 

@@ -1370,16 +1370,23 @@ func TestTerminateCanBeRetried(t *testing.T) {
 				t.Fatalf("Checkpoint: %v", err)
 			}
 
-			// A populated volume directory, which resetActorDirs refuses to
-			// delete through.
-			straggler := filepath.Join(ateletpath.ExternalVolumeHostPath(pluginActorUID, "data"), "file")
+			// A snapshot directory whose file cannot be unlinked, which fails
+			// the first Terminate after its worker teardown.
+			stuck := filepath.Join(ateletpath.ActorSnapshotPath(pluginActorUID), "stuck")
 			if tt.failFirst {
-				if err := os.MkdirAll(filepath.Dir(straggler), 0o755); err != nil {
-					t.Fatalf("seeding %s: %v", straggler, err)
+				if os.Geteuid() == 0 {
+					t.Skip("root ignores directory permissions, so no directory can be made undeletable")
 				}
-				if err := os.WriteFile(straggler, []byte("still mounted"), 0o600); err != nil {
-					t.Fatalf("seeding %s: %v", straggler, err)
+				if err := os.MkdirAll(stuck, 0o700); err != nil {
+					t.Fatalf("seeding %s: %v", stuck, err)
 				}
+				if err := os.WriteFile(filepath.Join(stuck, "file"), nil, 0o600); err != nil {
+					t.Fatalf("seeding %s: %v", stuck, err)
+				}
+				if err := os.Chmod(stuck, 0o500); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(stuck, 0o700) })
 			}
 
 			firstReq := &ateletpb.TerminateRequest{
@@ -1394,11 +1401,11 @@ func TestTerminateCanBeRetried(t *testing.T) {
 			_, err := a.s.Terminate(ctx, firstReq)
 			if tt.failFirst {
 				if err == nil {
-					t.Fatal("first Terminate succeeded through a populated volume directory")
+					t.Fatal("first Terminate succeeded through an undeletable snapshot directory")
 				}
-				// The unmount finishes before the second Terminate.
-				if err := os.Remove(straggler); err != nil {
-					t.Fatalf("removing %s: %v", straggler, err)
+				// The directory becomes deletable before the second Terminate.
+				if err := os.Chmod(stuck, 0o700); err != nil {
+					t.Fatal(err)
 				}
 			} else if err != nil {
 				t.Fatalf("first Terminate: %v", err)
