@@ -60,6 +60,10 @@ func TestRecoverableCrash(t *testing.T) {
 	durable := func(gen int32, state ateapi.SnapshotStorageState, locality string) *ateapi.Snapshot {
 		return &ateapi.Snapshot{Generation: gen, Locality: locality, DurableSnapshot: &ateapi.SnapshotStorage{State: state}}
 	}
+	owned := func(snap *ateapi.Snapshot, owner ateapi.SnapshotOwner) *ateapi.Snapshot {
+		snap.Owner = owner
+		return snap
+	}
 	completed := ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED
 	pending := ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_PENDING
 	for _, tc := range []struct {
@@ -71,6 +75,10 @@ func TestRecoverableCrash(t *testing.T) {
 		{"latest snapshot uploaded", crashedActor("resume failed: "+crashMessageWorkerDraining, durable(1, completed, ""), durable(2, completed, "node-a")), true},
 		{"latest snapshot only on its node", crashedActor("resume failed: "+crashMessageWorkerDraining, durable(1, completed, ""), durable(2, pending, "node-a")), false},
 		{"other cause", crashedActor("resume failed: atelet Restore: manifest unknown", durable(1, completed, "")), false},
+		{"running workload lost onto its own snapshot", crashedActor(crashMessageWorkerPodGone, owned(durable(1, completed, ""), ateapi.SnapshotOwner_SNAPSHOT_OWNER_ACTOR)), true},
+		{"suspend cut onto its own earlier snapshot", crashedActor("suspend failed: "+crashMessageWorkerPodGone, owned(durable(1, completed, ""), ateapi.SnapshotOwner_SNAPSHOT_OWNER_ACTOR), durable(2, pending, "")), true},
+		{"running workload lost onto its template's snapshot", crashedActor(crashMessageWorkerPodGone, owned(durable(1, completed, ""), ateapi.SnapshotOwner_SNAPSHOT_OWNER_TAG)), false},
+		{"running workload lost with no snapshot", crashedActor(crashMessageWorkerRestarted), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := recoverableCrash(tc.actor); got != tc.want {

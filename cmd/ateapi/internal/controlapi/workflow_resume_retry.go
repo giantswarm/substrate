@@ -59,12 +59,9 @@ var transientCrashCauses = []string{
 var errRevertNotAccepted = errors.New("actor is not in the state the revert was asked for")
 
 // transientCrashCause returns the part of actor's crash message after the
-// "<operation> failed: " prefix, and the operation, when actor is CRASHED for
-// a cause in transientCrashCauses; ok is false otherwise.
+// "<operation> failed: " prefix, and the operation, when the actor's crash
+// record names a cause in transientCrashCauses; ok is false otherwise.
 func transientCrashCause(actor *ateapi.Actor) (op, cause string, ok bool) {
-	if actor.GetStatus().GetState() != ateapi.ActorState_ACTOR_STATE_CRASHED {
-		return "", "", false
-	}
 	cause = actor.GetStatus().GetCrash().GetMessage()
 	if before, rest, found := strings.Cut(cause, " failed: "); found {
 		op, cause = before, rest
@@ -81,32 +78,53 @@ func transientCrashCause(actor *ateapi.Actor) (op, cause string, ok bool) {
 // transientCrashCauses, whatever operation it was recorded under.
 func transientCrash(actor *ateapi.Actor) bool {
 	_, _, ok := transientCrashCause(actor)
-	return ok
+	return ok && actor.GetStatus().GetState() == ateapi.ActorState_ACTOR_STATE_CRASHED
 }
 
 // recoverableCrash reports whether actor, crashed for a transient cause, can
-// be returned to the snapshot it would resume from without losing any data.
-// That snapshot must be the latest COMPLETED durable one (or the actor has
-// none and cold-boots), so reverting the actor, which drops node-local
-// copies, lands on that same snapshot; and the crash must have cut a resume,
-// so the actor never ran past it. A REVERTING actor is accepted under the
-// same snapshot rule: a revert that did not finish lands on that snapshot.
+// be returned to the snapshot it would resume from without losing anything
+// the crash has not lost already. That snapshot must be the latest COMPLETED
+// durable one (or the actor has none and cold-boots), so reverting the actor,
+// which drops node-local copies and discards a half-written snapshot, lands
+// on that same snapshot. Then:
+//
+//   - a crash that cut a resume is recoverable: the actor never ran past
+//     that snapshot;
+//   - a crash that took a running workload, or a suspend in progress, is
+//     recoverable only onto a snapshot the actor wrote itself: the workload
+//     went with its worker, so that snapshot is the latest state of the
+//     actor that survives. One that holds only its template's or tag's
+//     snapshot, or none, stays CRASHED, since returning it there would reset
+//     it.
+//
+// A REVERTING actor that still holds such a crash record is a recovery that
+// did not finish, and is accepted under the same rules.
 func recoverableCrash(actor *ateapi.Actor) bool {
 	status := actor.GetStatus()
-	if snapshotToResume(status) != findLatestDurableSnapshot(status, ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED) {
+	switch status.GetState() {
+	case ateapi.ActorState_ACTOR_STATE_CRASHED, ateapi.ActorState_ACTOR_STATE_REVERTING:
+	default:
 		return false
 	}
-	if status.GetState() == ateapi.ActorState_ACTOR_STATE_REVERTING {
-		return true
+	snap := snapshotToResume(status)
+	if snap != findLatestDurableSnapshot(status, ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED) {
+		return false
 	}
 	op, _, ok := transientCrashCause(actor)
-	return ok && op == ateattr.OperationResume
+	switch {
+	case !ok:
+		return false
+	case op == ateattr.OperationResume:
+		return true
+	default:
+		return snap.GetOwner() == ateapi.SnapshotOwner_SNAPSHOT_OWNER_ACTOR
+	}
 }
 
 // ResumeActor resumes a suspended actor (see resumeActorOnce). An actor a
 // rolling worker pool crashed (transientCrash), during this resume or before
-// it, is returned to its latest durable snapshot when that loses nothing
-// (recoverableCrash), its worker torn down and freed and its crash cleared,
+// it, while it ran or while it was suspended, is returned to its latest
+// durable snapshot when recoverableCrash allows it, its worker torn down and freed and its crash cleared,
 // and resumed again with backoff on another worker, waiting for one while the
 // rolling pool has none free. A call whose attempts or context run out
 // answers Unavailable naming the crash, so the caller's retry resumes the
@@ -168,9 +186,6 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 		return "", nil
 	}
 	crash = actor.GetStatus().GetCrash().GetMessage()
-	if crash == "" {
-		crash = "an unfinished revert"
-	}
 	if _, err := w.revertActor(ctx, actorRef, recoverableCrash); err != nil {
 		if errors.Is(err, errRevertNotAccepted) {
 			return crash, nil
