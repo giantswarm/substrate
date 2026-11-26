@@ -25,6 +25,12 @@ substrateReleaseName: substrate
 # Preview gates for atelet. Match the substrate release's preview gates.
 preview: []
 
+# Caps the lifetime kubelet requests for every pod certificate the chart
+# projects (3600 to 7862400 seconds). null keeps kubelet's default of 86400.
+# The signers issue at most 24 hours.
+podCertificates:
+  maxExpirationSeconds: null
+
 # Object store the node object-store plugin reads and writes snapshots in. Use
 # the same store as the substrate release. For the substrate chart's bundled
 # RustFS, set endpoint to http://rustfs.<namespace>.svc:9000 (prefixed with the

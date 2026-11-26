@@ -1,0 +1,68 @@
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+suite: pod certificate lifetime
+templates:
+- ate-api-server.yaml
+- ate-controller.yaml
+- atelet.yaml
+- atenet-router.yaml
+tests:
+- it: leaves kubelet's default lifetime when unset
+  template: ate-controller.yaml
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - notExists:
+      path: spec.template.spec.volumes[?(@.name == "podidentity")].projected.sources[0].podCertificate.maxExpirationSeconds
+
+- it: caps the controller's certificate
+  template: ate-controller.yaml
+  set:
+    podCertificates.maxExpirationSeconds: 3600
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.volumes[?(@.name == "podidentity")].projected.sources[0].podCertificate.maxExpirationSeconds
+      value: 3600
+
+- it: caps atelet's certificate
+  template: atelet.yaml
+  set:
+    podCertificates.maxExpirationSeconds: 3600
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - equal:
+      path: spec.template.spec.volumes[?(@.name == "podidentity")].projected.sources[0].podCertificate.maxExpirationSeconds
+      value: 3600
+
+- it: caps both router certificates
+  template: atenet-router.yaml
+  set:
+    podCertificates.maxExpirationSeconds: 7200
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.template.spec.volumes[?(@.name == "podidentity")].projected.sources[0].podCertificate.maxExpirationSeconds
+      value: 7200
+  - equal:
+      path: spec.template.spec.volumes[?(@.name == "servicedns")].projected.sources[0].podCertificate.maxExpirationSeconds
+      value: 7200

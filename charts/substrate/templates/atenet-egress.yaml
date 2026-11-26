@@ -189,6 +189,7 @@ spec:
         projected:
           sources:
           - podCertificate:
+{{- include "substrate.podCertificateMaxExpiration" $ | nindent 14 }}
               signerName: servicedns.podcert.ate.dev/identity
               keyType: ECDSAP256
               credentialBundlePath: credential-bundle.pem
@@ -202,6 +203,7 @@ spec:
         projected:
           sources:
           - podCertificate:
+{{- include "substrate.podCertificateMaxExpiration" $ | nindent 14 }}
               signerName: podidentity.podcert.ate.dev/identity
               keyType: ECDSAP256
               credentialBundlePath: credential-bundle.pem

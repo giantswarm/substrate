@@ -27,6 +27,12 @@ createNamespace: false
 # ExternalVolumes is required for external volume APIs and mounts.
 preview: []
 
+# Caps the lifetime kubelet requests for every pod certificate the chart
+# projects (3600 to 7862400 seconds). null keeps kubelet's default of 86400.
+# The signers issue at most 24 hours.
+podCertificates:
+  maxExpirationSeconds: null
+
 postgres:
   # Project database login certificates only when the connection strings use them.
   clientCertificates:

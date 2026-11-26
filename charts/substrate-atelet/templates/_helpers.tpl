@@ -123,3 +123,14 @@ imagePullSecrets:
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+
+{{/*
+maxExpirationSeconds of a podCertificate projected-volume source, when
+podCertificates.maxExpirationSeconds is set. Renders nothing otherwise, which
+keeps kubelet's default.
+*/}}
+{{- define "substrate.podCertificateMaxExpiration" -}}
+{{- with .Values.podCertificates.maxExpirationSeconds }}
+maxExpirationSeconds: {{ int . }}
+{{- end }}
+{{- end -}}

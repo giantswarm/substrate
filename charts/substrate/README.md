@@ -109,6 +109,7 @@ See `values.yaml` for the full set; the important keys:
 | `ateApi.extraEnv` | `[]` | Environment variables appended to the ate-api-server container |
 | `ateApi.serviceAccount.annotations` | `{}` | Annotations on the ate-api-server ServiceAccount, e.g. `eks.amazonaws.com/role-arn` |
 | `atelet.serviceAccount.annotations` | `{}` | Annotations on the atelet ServiceAccount, e.g. `eks.amazonaws.com/role-arn` |
+| `podCertificates.maxExpirationSeconds` | `null` | Caps the lifetime kubelet requests for every pod certificate the chart projects; `null` keeps kubelet's default of 86400 |
 | `metrics.podMonitor.enabled` | `false` | Render a Prometheus Operator PodMonitor for each workload that serves metrics; requires the `monitoring.coreos.com/v1` CRDs |
 | `metrics.podMonitor.interval` | `""` | Scrape interval of the PodMonitors; empty uses the Prometheus default |
 | `metrics.podMonitor.labels` | `{}` | Labels on every PodMonitor |
