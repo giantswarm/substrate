@@ -254,6 +254,7 @@ const (
 // +genclient
 // +kubebuilder:object:generate=true
 // +kubebuilder:object:root=true
+// +kubebuilder:metadata:annotations="helm.sh/resource-policy=keep"
 // +kubebuilder:resource:scope=Namespaced,shortName=workerpool
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector

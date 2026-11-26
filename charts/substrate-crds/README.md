@@ -8,6 +8,10 @@ Install this chart before the `substrate` and `substrate-atelet` charts:
 helm upgrade --install substrate-crds ./charts/substrate-crds
 ```
 
+Uninstalling the release keeps the CRDs (`helm.sh/resource-policy: keep`), so
+it deletes no WorkerPool, SandboxConfig or CSIDriverConfig. Delete the CRDs
+with kubectl to remove them.
+
 Then install the other charts as described in the
 [substrate chart README](../substrate/README.md).
 
