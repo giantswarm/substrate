@@ -48,6 +48,49 @@ credentialProvider:
     allowedNamespaces: [team-a-secrets]
 ```
 
+A policy can select namespaces by label instead of listing them. With an
+`ownNamespaceSelector` (a Kubernetes label selector, `matchLabels` and
+`matchExpressions`) in place of `atespace` and `allowedNamespaces`, each
+namespace the selector matches may be read by the atespace of the same name,
+and by no other atespace:
+
+```yaml
+credentialProvider:
+  namespacePolicies:
+  - ownNamespaceSelector:
+      matchExpressions:
+      - {key: example.com/tenant, operator: Exists}
+```
+
+The provider watches namespaces and matches each request against the
+namespace's labels at that moment, so a namespace created, labeled or unlabeled
+after startup is granted or refused without a restart; while the provider
+cannot watch namespaces (an API server outage, RBAC removed) it keeps the
+labels it saw last. A `secretSelector` on
+the policy narrows it as it narrows a listed grant. The selector must name at
+least one requirement.
+
+An atespace that serves the actors of many namespaces opts in to them with an
+`allowedNamespaceSelector` beside `atespace` (and any `allowedNamespaces`): it
+may read every namespace the selector matches, matched the same way:
+
+```yaml
+credentialProvider:
+  namespacePolicies:
+  - atespace: shared-agents
+    allowedNamespaces: [kagent]
+    allowedNamespaceSelector:
+      matchExpressions:
+      - {key: example.com/tenant, operator: Exists}
+```
+
+The provider sees only the atespace, so this grant lets every actor in it read
+every matched namespace. Grant it only to an atespace whose egress policies
+name the right namespace for each actor.
+
+The chart adds list/watch RBAC on namespaces only when a policy has an
+`ownNamespaceSelector` or an `allowedNamespaceSelector`.
+
 The Helm chart always deploys the provider and configures AGW's HTTP route and
 HTTPS interception route. Namespace grants default to an empty list.
 Policy changes roll the provider's Pods. Resource names and the injector identity
