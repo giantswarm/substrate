@@ -118,6 +118,10 @@ global:
   # -- Fallback imagePullPolicy where a container does not set one.
   imagePullPolicy: ""
 
+# Labels added to every long-running pod the chart renders, next to the
+# chart's own `app` label, which they cannot replace.
+podLabels: {}
+
 # Pull secrets for every pod this chart renders. Merged with global.imagePullSecrets.
 imagePullSecrets: []
 

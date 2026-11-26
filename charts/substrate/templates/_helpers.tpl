@@ -312,3 +312,17 @@ keeps kubelet's default.
 maxExpirationSeconds: {{ int . }}
 {{- end }}
 {{- end -}}
+
+{{/*
+podLabels for a pod template, as YAML map entries. Renders nothing when
+podLabels is empty. The chart's `app` label selects every workload, so
+podLabels cannot set it.
+*/}}
+{{- define "substrate.podLabels" -}}
+{{- with .Values.podLabels -}}
+{{- if hasKey . "app" -}}
+{{- fail "podLabels must not set app: it is the selector label of the chart's workloads" -}}
+{{- end -}}
+{{- toYaml . -}}
+{{- end -}}
+{{- end -}}

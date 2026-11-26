@@ -35,6 +35,10 @@ postgresClientServiceAccount: ate-api-server
 # Each entry uses namespace/service-account=username[,username] form.
 postgresClients: []
 
+# Labels added to every long-running pod the chart renders, next to the
+# chart's own `app` label, which they cannot replace.
+podLabels: {}
+
 global:
   imageRegistry: ""
   imagePullSecrets: []

@@ -45,6 +45,8 @@ chart over resources still owned by the application release fails Helm ownership
 validation. Perform the release split during a planned installation update;
 do not delete the existing CA-pool Secrets.
 
+`podLabels` adds labels to the controller pod, next to its `app` label.
+
 Set `resources.requests` and `resources.limits` on this release to size the
 controller container. Defaults are `10m` CPU and `64Mi` memory requests, with
 `500m` CPU and `256Mi` memory limits. For example:
