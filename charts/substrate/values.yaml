@@ -91,6 +91,11 @@ atelet:
   storageBackend: s3
   extraArgs: []
   extraEnv: []
+  # Annotations on atelet's ServiceAccount, such as the pod identity an
+  # external object store trusts (eks.amazonaws.com/role-arn for IRSA,
+  # iam.gke.io/gcp-service-account for Workload Identity).
+  serviceAccount:
+    annotations: {}
   # Where atelet runs: the DaemonSet's nodeSelector and affinity, and
   # tolerations added to the chart's fixed ones. Empty runs atelet on every
   # schedulable node.
@@ -133,6 +138,12 @@ ateApi:
   # Defaults to the in-cluster IdP URL; set a stable issuer for external consumers.
   actorJWTIssuer: ""
   extraArgs: []
+  # Appended to the ate-api-server container's env.
+  extraEnv: []
+  # Annotations on ate-api-server's ServiceAccount, such as the pod identity
+  # an external object store trusts (see atelet.serviceAccount.annotations).
+  serviceAccount:
+    annotations: {}
   resources:
     requests:
       cpu: 100m
