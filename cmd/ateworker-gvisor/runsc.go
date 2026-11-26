@@ -127,25 +127,52 @@ func (r *runsc) writeSpec(containerName string) error {
 
 // createArgs builds the argv for `runsc create <container>`. Factored out so
 // the argument construction can be unit-tested without executing runsc.
-func (r *runsc) createArgs(containerName string, additionalArgs []string) []string {
+// sandboxLogPath is where runsc finds the sandbox log a create passes it: the
+// command's first extra file.
+const sandboxLogPath = "/proc/self/fd/3"
+
+// createArgs builds the argv for `runsc create <container>`. With sandboxLog,
+// runsc writes its fatal errors to the file a create passes as its first extra
+// file (`-log`), and the sandbox the sandbox container's create boots writes
+// its log there (`-debug-log`, which runsc donates to the boot process alone
+// with `-debug-command boot`): the sandbox's stderr is /dev/null and `-log`
+// carries only fatal errors, so without the debug log what the sentry warns
+// about, such as an application process it kills, is dropped. The level stays
+// the default, so the sentry logs a few lines per boot and restore and its
+// warnings. Operator-configured global flags come later and win.
+func (r *runsc) createArgs(containerName string, additionalArgs []string, sandboxLog bool) []string {
 	args := append(noRootContainerArgs(containerName),
 		"-bundle", ociBundlePath(r.actorDirs, containerName),
 		"-pid-file", pidFilePath(r.actorDirs, containerName),
 	)
 	args = append(args, additionalArgs...)
-	return r.buildArgs("create", containerName, args...)
+	full := r.buildArgs("create", containerName, args...)
+	if !sandboxLog {
+		return full
+	}
+	return append([]string{
+		"-log", sandboxLogPath,
+		"-debug-log", sandboxLogPath,
+		"-debug-command", "boot",
+	}, full...)
 }
 
-func (r *runsc) cmdCreate(ctx context.Context, out io.Writer, containerName string, additionalArgs []string) error {
+// cmdCreate creates containerName. A non-nil sandboxLog receives runsc's
+// fatal errors and, for the sandbox container, the log of the sandbox its
+// create boots, which keeps the file until it exits.
+func (r *runsc) cmdCreate(ctx context.Context, out io.Writer, containerName string, additionalArgs []string, sandboxLog *os.File) error {
 	slog.InfoContext(ctx, "About to run runsc create", slog.String("container", containerName))
 
 	if err := r.writeSpec(containerName); err != nil {
 		return fmt.Errorf("while writing the OCI spec for %q: %w", containerName, err)
 	}
 
-	cmd := exec.CommandContext(ctx, r.path, r.createArgs(containerName, additionalArgs)...)
+	cmd := exec.CommandContext(ctx, r.path, r.createArgs(containerName, additionalArgs, sandboxLog != nil)...)
 	cmd.Stdout = out
 	cmd.Stderr = out
+	if sandboxLog != nil {
+		cmd.ExtraFiles = []*os.File{sandboxLog}
+	}
 
 	err := cmd.Run()
 	if err != nil {

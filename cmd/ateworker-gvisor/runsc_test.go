@@ -323,9 +323,16 @@ func TestCreateArgs(t *testing.T) {
 			"app",
 		},
 	}} {
-		if got := r.createArgs(tc.container, tc.extra); !reflect.DeepEqual(got, tc.want) {
+		if got := r.createArgs(tc.container, tc.extra, false); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("createArgs(%q) = %v, want %v", tc.container, got, tc.want)
 		}
+	}
+
+	// The sandbox's create hands runsc and the sandbox it boots the log file.
+	got := r.createArgs(ocispec.SandboxID, nil, true)
+	wantPrefix := []string{"-log", sandboxLogPath, "-debug-log", sandboxLogPath, "-debug-command", "boot", "-global1"}
+	if !reflect.DeepEqual(got[:len(wantPrefix)], wantPrefix) {
+		t.Errorf("createArgs(sandbox, log) = %v, want it to start with %v", got, wantPrefix)
 	}
 }
 

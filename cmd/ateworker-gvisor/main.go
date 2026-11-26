@@ -755,7 +755,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 		return nil, fmt.Errorf("while starting sandbox log pipe: %w", err)
 	}
 	defer pw.Close()
-	if err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, nil); err != nil {
+	if err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, nil, pw); err != nil {
 		return nil, fmt.Errorf("while creating the sandbox: %w", err)
 	}
 	s.pinSandbox(ctx, hosted, req.GetActorDirs())
@@ -787,7 +787,7 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 			return nil, fmt.Errorf("while composing %q rootfs: %w", ac.GetName(), err)
 		}
 		containersToDelete = append(containersToDelete, ac.GetName())
-		if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil); err != nil {
+		if err := rcmd.cmdCreate(ctx, pw, ac.GetName(), nil, nil); err != nil {
 			return nil, fmt.Errorf("while creating %q application container: %w", ac.GetName(), err)
 		}
 		if err := rcmd.cmdStart(ctx, pw, ac.GetName()); err != nil {
@@ -1247,7 +1247,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	case ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES, ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS:
 		// Create and start the sandbox (cold boot with filesystem checkpoint bundles restored)
 		containersToDelete = append(containersToDelete, ocispec.SandboxID)
-		err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, restoreArgs)
+		err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, restoreArgs, pw)
 		timing.sandboxCreate = lap(&tLast)
 		if err != nil {
 			return nil, fmt.Errorf("while creating the sandbox: %w", err)
@@ -1265,7 +1265,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	case ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY:
 		// Create and restore the sandbox (restores process state and filesystem checkpoint bundles)
 		containersToDelete = append(containersToDelete, ocispec.SandboxID)
-		err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, restoreArgs)
+		err := rcmd.cmdCreate(ctx, pw, ocispec.SandboxID, restoreArgs, pw)
 		timing.sandboxCreate = lap(&tLast)
 		if err != nil {
 			return nil, fmt.Errorf("while creating the sandbox: %w", err)
@@ -1302,7 +1302,7 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 			return nil, fmt.Errorf("while composing %q rootfs: %w", ac.GetName(), err)
 		}
 		containersToDelete = append(containersToDelete, ac.GetName())
-		err = rcmd.cmdCreate(ctx, pw, ac.GetName(), nil)
+		err = rcmd.cmdCreate(ctx, pw, ac.GetName(), nil, nil)
 		timing.appCreate += lap(&tLast)
 		if err != nil {
 			return nil, fmt.Errorf("while creating %q application container: %w", ac.GetName(), err)
