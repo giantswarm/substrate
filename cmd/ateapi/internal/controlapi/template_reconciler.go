@@ -51,7 +51,6 @@ const (
 	reasonGoldenEgressPolicyConflict = "GoldenEgressPolicyConflict"
 	reasonGoldenActorInvalid         = "GoldenActorInvalid"
 	reasonGoldenActorCrashed         = "GoldenActorCrashed"
-	reasonUnexpectedState            = "GoldenActorUnexpectedState"
 )
 
 // maxGoldenErrorMessageLen is the maxLength of
@@ -332,9 +331,11 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, err
 			}
 		case ateapi.ActorState_ACTOR_STATE_DELETING, ateapi.ActorState_ACTOR_STATE_REVERTING:
-			// Nothing in the golden flow deletes or reverts the actor before
-			// the snapshot is taken; someone else interfered.
-			return 0, r.fail(ctx, tmpl, reasonUnexpectedState, fmt.Sprintf("golden actor in unexpected state %v", state))
+			// Nothing in the golden flow reverts the actor before the
+			// snapshot is taken, and a DELETING one is a retake's delete that
+			// was cut: neither says anything about the template. Delete the
+			// actor, which also finishes a cut delete, and take it again.
+			return 0, r.retakeGolden(ctx, goldenActorRef, fmt.Sprintf("golden actor in stray state %v", state))
 
 		default:
 			return r.resyncInterval, nil

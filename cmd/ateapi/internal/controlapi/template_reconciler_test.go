@@ -566,11 +566,20 @@ func TestReconcileOne(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:             "deleting golden actor fails the template",
-			template:         testTemplate(),
-			control:          &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_DELETING},
-			wantFailedReason: reasonUnexpectedState,
-			wantMessage:      "unexpected state",
+			name:     "deleting golden actor is deleted and taken again",
+			template: testTemplate(),
+			control:  &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_DELETING},
+			wantErr:  true,
+
+			wantGoldenDeleted: true,
+		},
+		{
+			name:     "reverting golden actor is deleted and taken again",
+			template: testTemplate(),
+			control:  &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_REVERTING},
+			wantErr:  true,
+
+			wantGoldenDeleted: true,
 		},
 		{
 			name:           "unspecified actor state checks back later",
