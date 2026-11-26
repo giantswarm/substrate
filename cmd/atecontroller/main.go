@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
@@ -96,6 +97,9 @@ var (
 	ateapiClientCert = pflag.String("ateapi-client-cert", "", "Credential bundle presented as the client certificate when dialing ateapi. Required.")
 
 	workerSyncConcurrency = pflag.Int("worker-sync-concurrency", 2, "Number of concurrent worker goroutines reconciling worker pods into the Worker registry. Defaults to 2.")
+
+	busyWorkerAnnotations = pflag.StringToString("busy-worker-annotations", nil, "Annotations set on a worker pod while it hosts at least one Actor, and removed once it hosts none, e.g. karpenter.sh/do-not-disrupt=true. The pod also carries the label ate.dev/busy=true while marked. Empty disables the marking.")
+	busyWorkerSyncPeriod  = pflag.Duration("busy-worker-sync-period", 5*time.Second, "How often the worker pods' busy marking is converged with the registry: the longest an Actor runs on an unmarked worker.")
 
 	dnsEgressPolicy = pflag.String("dns-egress-policy", "", "DNS egress policy enforcement mode propagated to worker pods (must be "+egresspolicy.DNSEgressPolicyEnforceInAtunnel+").")
 )
@@ -325,6 +329,9 @@ func main() {
 	// factory does: the initial list then synthesizes an Add for every pod that
 	// already exists, and no explicit startup re-list is needed.
 	workersync.NewWorkerPoolSyncer(ateapiClient, k8sClient.CoreV1(), k8sClient.AppsV1(), workerPodInformer, workerPoolInformer.Informer(), *workerSyncConcurrency).Start(runCtx)
+	if len(*busyWorkerAnnotations) > 0 {
+		workersync.NewBusyMarker(ateapiClient, k8sClient.CoreV1(), workerPodInformer, *busyWorkerAnnotations, *busyWorkerSyncPeriod).Start(runCtx)
+	}
 
 	workerPodInformerFactory.Start(runCtx.Done())
 	ateFactory.Start(runCtx.Done())

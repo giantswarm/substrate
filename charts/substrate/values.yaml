@@ -188,6 +188,16 @@ ateController:
     limits:
       cpu: "1"
       memory: 512Mi
+  busyWorker:
+    # Annotations ate-controller sets on a worker pod while it hosts at least
+    # one Actor, and removes once it hosts none. The pod also carries the label
+    # ate.dev/busy=true while marked. On a Karpenter cluster,
+    # {karpenter.sh/do-not-disrupt: "true"} keeps disruption off a node while a
+    # worker on it is busy. Empty disables the marking.
+    annotations: {}
+    # How often the marking follows the registry: the longest an Actor runs on
+    # an unmarked worker.
+    syncPeriod: 5s
 
 atenetRouter:
   requestParking:
