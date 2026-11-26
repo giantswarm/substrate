@@ -68,13 +68,35 @@ func (m suspendMode) uploadMode() ateletpb.UploadMode {
 	return ateletpb.UploadMode_UPLOAD_MODE_IMMEDIATE
 }
 
-// SuspendActor executes the workflow to suspend an actor. A running actor is
+// SuspendActor suspends the actor (see suspendActorOnce). A suspend whose
+// checkpoint a rolling worker pool cut returns the actor to its last durable
+// snapshot when recoverableCrash allows it, and answers Unavailable naming
+// the crash, also while that recovery is unfinished, so the caller's retry
+// finds the actor at rest. Any other failure is returned as it is.
+func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, mode suspendMode) (*ateapi.Actor, error) {
+	ctx = preview.ContextWithOptIn(ctx)
+	actor, err := w.suspendActorOnce(ctx, actorRef, mode)
+	if err == nil {
+		return actor, nil
+	}
+	crash, rerr := w.recoverTransientCrash(ctx, actorRef)
+	if crash == "" {
+		return nil, err
+	}
+	if rerr != nil {
+		slog.LogAttrs(ctx, slog.LevelWarn, "Failed to recover an actor from a transient checkpoint crash; the next resume recovers it",
+			append(ateattr.ActorRefLogAttrs(actorRef), slog.Any("err", rerr))...)
+	}
+	return nil, apierror.Unavailable("suspend of actor %s was interrupted by its worker (%s); the actor returns to its last durable snapshot, suspended", actorRef, crash)
+}
+
+// suspendActorOnce executes the workflow to suspend an actor. A running actor is
 // checkpointed on its worker: a sync suspend uploads the snapshot before
 // returning, an async suspend uploads it in the background. A SUSPENDED actor
 // is returned as it is, whatever the mode. Idempotent: a re-entered workflow
 // fast-forwards past the steps a previous attempt completed, deriving
 // progress from the persisted actor alone.
-func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, mode suspendMode) (_ *ateapi.Actor, err error) {
+func (w *ActorWorkflow) suspendActorOnce(ctx context.Context, actorRef resources.ActorRef, mode suspendMode) (_ *ateapi.Actor, err error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	start := time.Now()
 	var actor *ateapi.Actor
@@ -267,6 +289,18 @@ func (w *ActorWorkflow) ensureAteletSuspended(ctx context.Context, actorRef reso
 		// A snapshot conflict leaves the actor and its assignment intact for a retry.
 		if ctx.Err() == nil && status.Code(err) == codes.Aborted {
 			return wireFidelity, nil, apierror.Aborted("while calling atelet Checkpoint: %w", err)
+		}
+		// A checkpoint its worker's drain or replacement cut is named for
+		// that cause (transientCrash).
+		if ateletErrorCrashesActor(ctx, false, err) {
+			if cause := workerLeavingCause(ctx, w.store, assignment); cause != "" {
+				slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its worker left during the checkpoint",
+					append(ateattr.ActorRefLogAttrs(actorRef), slog.String("cause", cause), slog.Any("err", err))...)
+				if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationSuspend, cause+": "+ateletCrashMessage("Checkpoint", err)); cerr != nil {
+					return wireFidelity, nil, cerr
+				}
+				return wireFidelity, nil, fmt.Errorf("actor %s crashed: %w", actorRef, err)
+			}
 		}
 		return wireFidelity, nil, handleAteletError(ctx, w.store, actorRef, ateattr.OperationSuspend, "Checkpoint", false, err)
 	}

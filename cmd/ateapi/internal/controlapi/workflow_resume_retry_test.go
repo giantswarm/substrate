@@ -21,7 +21,9 @@ import (
 	"go.ate.dev/substrate/api/ateapi/v1"
 	"go.ate.dev/substrate/cmd/ateapi/internal/store"
 	"go.ate.dev/substrate/cmd/ateapi/internal/store/storetest"
+	"go.ate.dev/substrate/internal/apierror"
 	"go.ate.dev/substrate/internal/resources"
+	"google.golang.org/grpc/codes"
 )
 
 func crashedActor(message string, snaps ...*ateapi.Snapshot) *ateapi.Actor {
@@ -158,5 +160,33 @@ func TestWorkerLeavingCause(t *testing.T) {
 				t.Errorf("workerLeavingCause() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSuspendActorCutByWorkerLoss(t *testing.T) {
+	ctx := t.Context()
+	st, cleanup := storetest.SetupTestStore(t)
+	defer cleanup()
+	w := newTestActorWorkflow(t, st, "ns", "tmpl1")
+	actorRef := resources.ActorRef{Atespace: "team-a", Name: "id1"}
+	seedWorkflowActor(t, ctx, st, actorRef, "ns", "tmpl1", ateapi.ActorState_ACTOR_STATE_CRASHED, func(a *ateapi.Actor) {
+		a.Status.Crash = &ateapi.ActorCrash{Message: "suspend failed: " + crashMessageWorkerPodGone}
+		a.Status.Snapshots = []*ateapi.Snapshot{newDurableSnapshot(1, ateapi.SnapshotOwner_SNAPSHOT_OWNER_ACTOR, ateapi.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, "", "snap-1",
+			someActorSnapshotURI(t, testStorageLocation, actorRef.Atespace, "snap-1"), ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED)}
+	})
+
+	_, err := w.SuspendActor(ctx, actorRef, suspendSync)
+	if got := apierror.Code(err); got != codes.Unavailable {
+		t.Fatalf("SuspendActor() = %v (code %v), want Unavailable", err, got)
+	}
+	got, err := st.GetActor(ctx, actorRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetStatus().GetState() != ateapi.ActorState_ACTOR_STATE_SUSPENDED || got.GetStatus().GetCrash() != nil {
+		t.Errorf("actor = %v with crash %v, want SUSPENDED without a crash", got.GetStatus().GetState(), got.GetStatus().GetCrash())
+	}
+	if snap := findLatestDurableSnapshot(got.GetStatus(), ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED); snap.GetUuid() != "snap-1" {
+		t.Errorf("latest durable snapshot = %v, want snap-1", snap)
 	}
 }
