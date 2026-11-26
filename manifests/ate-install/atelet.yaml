@@ -372,6 +372,10 @@ spec:
           readOnly: true
         - name: kubelet-plugins
           mountPath: /var/lib/kubelet/plugins
+          # kubelet stages CSI volumes under this directory. A private copy of those
+          # mounts would keep each volume's filesystem open after kubelet unmounts it,
+          # so the volume could not be unstaged while atelet runs.
+          mountPropagation: HostToContainer
         - name: device-plugins
           mountPath: /var/lib/kubelet/device-plugins
         - name: host-dev
