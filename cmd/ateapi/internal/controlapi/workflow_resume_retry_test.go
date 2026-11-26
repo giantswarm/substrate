@@ -15,9 +15,11 @@
 package controlapi
 
 import (
+	"context"
 	"testing"
 
 	"go.ate.dev/substrate/api/ateapi/v1"
+	"go.ate.dev/substrate/cmd/ateapi/internal/store"
 	"go.ate.dev/substrate/cmd/ateapi/internal/store/storetest"
 	"go.ate.dev/substrate/internal/resources"
 )
@@ -114,6 +116,38 @@ func TestRecoverTransientCrash(t *testing.T) {
 			}
 			if (got.GetStatus().GetCrash() != nil) != tc.wantCrash {
 				t.Errorf("crash record = %v, want present: %v", got.GetStatus().GetCrash(), tc.wantCrash)
+			}
+		})
+	}
+}
+
+type fakeWorkerGetter struct {
+	worker *ateapi.Worker
+	err    error
+}
+
+func (f fakeWorkerGetter) GetWorker(context.Context, string) (*ateapi.Worker, error) {
+	return f.worker, f.err
+}
+
+func TestWorkerLeavingCause(t *testing.T) {
+	assignment := &ateapi.WorkerAssignment{Worker: &ateapi.ObjectRef{Name: "w1"}, WorkerPodUid: "pod-1"}
+	worker := func(state ateapi.WorkerState, podUID string) *ateapi.Worker {
+		return &ateapi.Worker{WorkerPodUid: podUID, Status: &ateapi.WorkerStatus{State: state}}
+	}
+	for _, tc := range []struct {
+		name   string
+		getter fakeWorkerGetter
+		want   string
+	}{
+		{"serving", fakeWorkerGetter{worker: worker(ateapi.WorkerState_WORKER_STATE_ACTIVE, "pod-1")}, ""},
+		{"draining", fakeWorkerGetter{worker: worker(ateapi.WorkerState_WORKER_STATE_DRAINING, "pod-1")}, crashMessageWorkerDraining},
+		{"pod replaced", fakeWorkerGetter{worker: worker(ateapi.WorkerState_WORKER_STATE_ACTIVE, "pod-2")}, crashMessageWorkerPodGone},
+		{"record gone", fakeWorkerGetter{err: store.ErrNotFound}, crashMessageWorkerPodGone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := workerLeavingCause(t.Context(), tc.getter, assignment); got != tc.want {
+				t.Errorf("workerLeavingCause() = %q, want %q", got, tc.want)
 			}
 		})
 	}

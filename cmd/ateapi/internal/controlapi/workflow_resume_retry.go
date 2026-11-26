@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"go.ate.dev/substrate/api/ateapi/v1"
+	"go.ate.dev/substrate/cmd/ateapi/internal/store"
 	"go.ate.dev/substrate/internal/apierror"
 	"go.ate.dev/substrate/internal/ateattr"
 	"go.ate.dev/substrate/internal/preview"
@@ -179,4 +180,27 @@ func (w *ActorWorkflow) recoverTransientCrash(ctx context.Context, actorRef reso
 	slog.LogAttrs(ctx, slog.LevelInfo, "Recovered actor from a transient crash",
 		append(ateattr.ActorRefLogAttrs(actorRef), slog.String("crash", crash))...)
 	return crash, nil
+}
+
+// workerLeavingCause names, as one of transientCrashCauses, why the worker
+// the assignment names is leaving: it is draining, its record is gone, or its
+// pod was replaced. It returns "" for a worker that keeps serving, or one it
+// could not read.
+func workerLeavingCause(ctx context.Context, st interface {
+	GetWorker(context.Context, string) (*ateapi.Worker, error)
+}, assignment *ateapi.WorkerAssignment) string {
+	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), crashRecordTimeout)
+	defer cancel()
+	worker, err := st.GetWorker(readCtx, assignment.GetWorker().GetName())
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return crashMessageWorkerPodGone
+	case err != nil:
+		return ""
+	case worker.GetStatus().GetState() == ateapi.WorkerState_WORKER_STATE_DRAINING:
+		return crashMessageWorkerDraining
+	case assignment.GetWorkerPodUid() != "" && worker.GetWorkerPodUid() != assignment.GetWorkerPodUid():
+		return crashMessageWorkerPodGone
+	}
+	return ""
 }

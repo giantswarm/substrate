@@ -832,6 +832,18 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 			message := fmt.Sprintf("%s: %s", crashMessageLocalSnapshotNodeGone, ateletCrashMessage("Restore", err))
 			return tele, 0, crashActorAndFail(ctx, w.store, actorRef, ateattr.OperationResume, message)
 		}
+		// A restore its worker's drain or replacement cut is named for that
+		// cause, which returns the actor to its snapshot (transientCrash).
+		if ateletErrorCrashesActor(ctx, false, err) {
+			if cause := workerLeavingCause(ctx, w.store, assignment); cause != "" {
+				slog.LogAttrs(ctx, slog.LevelError, "Setting Actor to crashed: its worker left during the restore",
+					append(ateattr.ActorRefLogAttrs(actorRef), slog.String("cause", cause), slog.Any("err", err))...)
+				if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, cause+": "+ateletCrashMessage("Restore", err)); cerr != nil {
+					return tele, 0, cerr
+				}
+				return tele, 0, fmt.Errorf("actor %s crashed: %w", actorRef, err)
+			}
+		}
 		return tele, 0, handleAteletError(ctx, w.store, actorRef, ateattr.OperationResume, "Restore", false, err)
 	}
 	return tele, resp.GetWorkerEpoch(), nil
