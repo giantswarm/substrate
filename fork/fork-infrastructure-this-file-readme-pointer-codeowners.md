@@ -38,6 +38,7 @@ commits:
   - 'ci: pin giantswarm/architect orb 10.10.0'
   - 'ci: skip the alignment-managed files in the boilerplate check'
   - 'ci(fork): the sync cancels the runs the mirror starts and opens hand-over PRs in this repository'
+  - 'ci(fork): mirror upstream''s tags under upstream/ and probe the ref fork/upstream-ref names'
   - 'ci(fork): the sync workflow pushes as the HeraldBot GitHub App'
   - 'Bootstrap the Giant Swarm line: CI on the giantswarm branch, publishing to ghcr.io/giantswarm/substrate, upstream sync, ledger'
   - 'test: throwaway private link, reverted in the next commit'

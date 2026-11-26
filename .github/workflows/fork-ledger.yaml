@@ -63,6 +63,7 @@ jobs:
           .github/scripts/fork-public-links-test.sh
           .github/scripts/ledger-header-test.sh
           .github/scripts/fork-closing-keywords-test.sh
+          .github/scripts/fork-pin-test.sh
       # A closing keyword in a description or a landed commit closes the issue
       # it names, an upstream one included.
       - name: No issue closed by keyword
@@ -72,10 +73,13 @@ jobs:
             jq -r '.pull_request.title, (.pull_request.body // "")' "${GITHUB_EVENT_PATH}"
             git log --format=%B HEAD^1..HEAD^2
           } | .github/scripts/fork-closing-keywords.sh
+      # The carried commits sit on the pin, the nearest upstream release tag
+      # (FORK.md, "Pin"); upstream's tags are fetched under upstream/, where
+      # the sync mirrors them.
       - name: Every ledger file opens with a valid header, every carried commit has its file
         run: |
-          git fetch --quiet --no-tags origin main:refs/remotes/origin/main
-          .github/scripts/ledger-header.sh substrate fork --complete origin/main
+          git fetch --quiet --no-tags https://github.com/kagent-dev/substrate.git '+refs/tags/v*:refs/tags/upstream/v*'
+          .github/scripts/ledger-header.sh substrate fork --complete "refs/tags/upstream/$(.github/scripts/fork-pin.sh HEAD)"
       # The line publishes from CircleCI to gsoci only; a re-pin replays
       # upstream's workflow files, which publish to GitHub's container
       # registry. The bracket keeps this file out of its own match.

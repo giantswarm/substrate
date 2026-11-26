@@ -40,7 +40,7 @@
 # still fails.
 #
 # With --complete, every non-merge commit between the merge base of HEAD and
-# <upstream-ref> (the mirror of upstream `main`) and HEAD whose subject no
+# <upstream-ref> (the pin: refs/tags/upstream/<the tag fork-pin.sh prints>) and HEAD whose subject no
 # prefix of <dir>/EXEMPT covers must be named by exactly one file.
 set -eu
 
