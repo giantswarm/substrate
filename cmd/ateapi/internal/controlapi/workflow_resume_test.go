@@ -241,6 +241,37 @@ func TestFinalizeRunning_ReplacedWorkerProcess(t *testing.T) {
 	}
 }
 
+// A restore whose worker started draining under it does not commit RUNNING:
+// the actor is crashed for that transient cause, which ResumeActor recovers.
+func TestFinalizeRunning_LeavingWorker(t *testing.T) {
+	ctx := context.Background()
+	persistence := newTestPersistence(t)
+	seedFinalizeActor(t, ctx, persistence, 1, []string{"10.0.0.1"})
+	worker, err := persistence.GetWorker(ctx, testWorkerUID("pod-1"))
+	if err != nil {
+		t.Fatalf("GetWorker: %v", err)
+	}
+	if _, err := persistence.UpdateWorker(ctx, worker.GetMetadata().GetName(), store.PreconditionFrom(worker), func(toUpdate *ateapi.Worker) error {
+		toUpdate.Status.State = ateapi.WorkerState_WORKER_STATE_DRAINING
+		return nil
+	}); err != nil {
+		t.Fatalf("UpdateWorker: %v", err)
+	}
+	w := &ActorWorkflow{store: persistence}
+
+	_, err = w.finalizeRunning(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, 1)
+	if got := apierror.Code(err); got != codes.Aborted {
+		t.Fatalf("finalizeRunning() = %v (err %v), want Aborted", got, err)
+	}
+	actor, err := persistence.GetActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"})
+	if err != nil {
+		t.Fatalf("GetActor: %v", err)
+	}
+	if !transientCrash(actor) {
+		t.Errorf("actor = %v with crash %q, want CRASHED for a transient cause", actor.GetStatus().GetState(), actor.GetStatus().GetCrash().GetMessage())
+	}
+}
+
 // A restore from the upload of a snapshot on a deleted node commits RUNNING
 // even when the record can't take the upload, since the workload already runs.
 func TestFinalizeRunning_UnrecordableUploadStillRuns(t *testing.T) {

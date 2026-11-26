@@ -893,6 +893,17 @@ func (w *ActorWorkflow) finalizeRunning(ctx context.Context, actorRef resources.
 	if err != nil {
 		return nil, fmt.Errorf("while getting worker %s: %w", workerName, err)
 	}
+	// A worker that started leaving while the restore ran is not handed to
+	// the caller as the actor's home: the crash is transient, so ResumeActor
+	// returns the actor to its snapshot and places it on another worker.
+	if cause := workerLeavingCause(ctx, staticWorker{worker}, latestActor.GetStatus().GetWorkerAssignment()); cause != "" {
+		slog.WarnContext(ctx, "Worker started leaving while the actor was restored; crashing it",
+			slog.String("worker", workerName), slog.String("cause", cause))
+		if cerr := crashActor(ctx, w.store, actorRef, ateattr.OperationResume, cause); cerr != nil {
+			return nil, cerr
+		}
+		return nil, apierror.Aborted("actor %s crashed: %s", actorRef, cause)
+	}
 	switch registered := worker.GetStatus().GetRegisteredEpoch(); {
 	case workerEpoch < registered:
 		slog.WarnContext(ctx, "Worker process that ran the actor has been replaced; restoring it again",

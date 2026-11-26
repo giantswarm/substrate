@@ -219,3 +219,10 @@ func workerLeavingCause(ctx context.Context, st interface {
 	}
 	return ""
 }
+
+// staticWorker serves a worker already read to workerLeavingCause.
+type staticWorker struct{ worker *ateapi.Worker }
+
+func (s staticWorker) GetWorker(context.Context, string) (*ateapi.Worker, error) {
+	return s.worker, nil
+}
