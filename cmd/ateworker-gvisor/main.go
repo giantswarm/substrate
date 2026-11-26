@@ -1337,6 +1337,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	s.setSession(req.GetActorUid(), &workloadSession{rcmd: rcmd, containers: containerNames(containers)})
 	s.recordInitial(ctx, hosted)
 	s.watchSandbox(ctx, hosted, req.GetRunscPath(), req.GetActorDirs(), containers)
+	s.watchDurableRestore(hosted, rcmd, durableRestoreContainers(checkpointDir, restoreArgs, fidelity, containers), func(message string) {
+		s.crashHosted(hosted, req.GetRunscPath(), req.GetActorDirs(), containers, message)
+	})
 
 	return &ateworkerpb.RestoreWorkloadResponse{WorkerEpoch: epoch}, nil
 }

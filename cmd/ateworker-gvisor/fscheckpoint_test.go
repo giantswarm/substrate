@@ -23,6 +23,9 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+
+	"go.ate.dev/substrate/internal/apierror"
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 )
 
@@ -316,5 +319,36 @@ func TestFSRestoreContainers(t *testing.T) {
 		if got := fsRestoreContainers(tc.fidelity, containers); !slices.Equal(got, tc.want) {
 			t.Errorf("fsRestoreContainers(%v) = %v, want %v", tc.fidelity, got, tc.want)
 		}
+	}
+}
+
+func TestFSRestoreArgsRefusesUnrestorableDurableData(t *testing.T) {
+	write := func(t *testing.T, path string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		files []string
+	}{
+		{name: "legacy single durable tar", files: []string{"durable-dir.tar"}},
+		{name: "legacy per-volume durable tar", files: []string{"durable-dir-workspace.tar", "fs/fscheckpoint.pb", "fs/pages.img"}},
+		{name: "fs data without its manifest", files: []string{"fs/pages.img"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tc.files {
+				write(t, filepath.Join(dir, f))
+			}
+			_, err := fsRestoreArgs(dir, ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES)
+			if got := apierror.Code(err); got != codes.FailedPrecondition {
+				t.Fatalf("fsRestoreArgs() error = %v (code %v), want FailedPrecondition", err, got)
+			}
+		})
 	}
 }

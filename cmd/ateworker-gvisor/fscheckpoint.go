@@ -22,7 +22,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"go.ate.dev/substrate/internal/apierror"
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 	"go.ate.dev/substrate/internal/resources"
 )
@@ -68,13 +70,66 @@ func durableSnapshotFiles(snapshotFiles []string) []string {
 	return out
 }
 
+// legacyDurableTarPrefix and legacyDurableTarSuffix bound the names of the
+// tars that held durable-dir volumes before they were captured as runsc
+// filesystem checkpoints in fs/. Nothing restores those tars, so a restore
+// dir holding one would bring the actor up with empty volumes.
+const (
+	legacyDurableTarPrefix = "durable-dir"
+	legacyDurableTarSuffix = ".tar"
+)
+
+// refuseUnrestorableDurableData returns FailedPrecondition when checkpointDir
+// holds durable volume data that fsRestoreArgs would not restore: a tar in the
+// legacy durable-dir layout, or files in fs/ without the fs/fscheckpoint.pb
+// manifest that runsc needs to restore them.
+func refuseUnrestorableDurableData(checkpointDir string) error {
+	entries, err := os.ReadDir(checkpointDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("while listing checkpoint dir %q: %w", checkpointDir, err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() && strings.HasPrefix(name, legacyDurableTarPrefix) && strings.HasSuffix(name, legacyDurableTarSuffix) {
+			return apierror.FailedPrecondition("snapshot holds durable volume data as %q, a layout this worker does not restore; re-snapshot from a running actor or reset the golden snapshot", name)
+		}
+	}
+	fsDir := filepath.Join(checkpointDir, resources.FSCheckpointSubdir)
+	fsEntries, err := os.ReadDir(fsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("while listing filesystem checkpoint dir %q: %w", fsDir, err)
+	}
+	if len(fsEntries) == 0 {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(fsDir, fsCheckpointManifest)); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return apierror.FailedPrecondition("snapshot holds durable volume data in %s/ without its %s; restoring it would bring the actor up with empty volumes", resources.FSCheckpointSubdir, fsCheckpointManifest)
+		}
+		return fmt.Errorf("while checking filesystem checkpoint manifest in %q: %w", fsDir, err)
+	}
+	return nil
+}
+
 // fsRestoreArgs returns repeatable `--fs-restore-image-path` arguments for the
 // filesystem checkpoint bundles in checkpointDir that apply at the requested
 // fidelity:
 //   - ROOTFS and MEMORY require `<checkpointDir>/rootfs/fscheckpoint.pb`.
 //   - Every fidelity uses `<checkpointDir>/fs` when
 //     `<checkpointDir>/fs/fscheckpoint.pb` exists.
+//
+// It refuses, before anything is restored, a checkpointDir whose durable data
+// would not be restored (see refuseUnrestorableDurableData).
 func fsRestoreArgs(checkpointDir string, fidelity ateworkerpb.SnapshotFidelity) ([]string, error) {
+	if err := refuseUnrestorableDurableData(checkpointDir); err != nil {
+		return nil, err
+	}
 	var subdirs []string
 	if fidelity == ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_ROOTFS ||
 		fidelity == ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY {

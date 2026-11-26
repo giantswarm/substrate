@@ -18,8 +18,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -84,5 +87,65 @@ func TestWatchSandboxIgnoresExpectedExits(t *testing.T) {
 			case <-time.After(500 * time.Millisecond):
 			}
 		})
+	}
+}
+
+type fakeFSRestoreWaiter struct {
+	errs map[string]error
+}
+
+func (f fakeFSRestoreWaiter) cmdWaitFSRestore(_ context.Context, containerName string) error {
+	return f.errs[containerName]
+}
+
+func TestWatchDurableRestore(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		errs       map[string]error
+		stopping   bool
+		wantReport bool
+	}{
+		{name: "every volume restored"},
+		{name: "runsc restored no filesystem", errs: map[string]error{"app": errors.New("no filesystems restored for container app")}, wantReport: true},
+		{name: "stopped by ateworker", errs: map[string]error{"app": errors.New("killed")}, stopping: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			crashes := make(chan string, 1)
+			hosted := &hostedActor{attribution: resources.ActorAttribution{UID: "actor-a"}, ctx: t.Context()}
+			hosted.stopping.Store(tc.stopping)
+			s := &AteWorkerService{}
+			s.watchDurableRestore(hosted, fakeFSRestoreWaiter{errs: tc.errs}, []string{"app"}, func(message string) { crashes <- message })
+			select {
+			case msg := <-crashes:
+				if !tc.wantReport {
+					t.Fatalf("reported %q, want no report", msg)
+				}
+				if msg != durableRestoreFailedMessage {
+					t.Errorf("reported %q, want %q", msg, durableRestoreFailedMessage)
+				}
+			case <-time.After(500 * time.Millisecond):
+				if tc.wantReport {
+					t.Fatal("actor was not reported crashed")
+				}
+			}
+		})
+	}
+}
+
+func TestDurableRestoreContainers(t *testing.T) {
+	checkpointDir := "/ckpt"
+	containers := []*ateworkerpb.Container{
+		{Name: "app", DurableDirVolumeMounts: []*ateworkerpb.VolumeMount{{Name: "data", MountPath: "/data"}}},
+		{Name: "sidecar"},
+	}
+	fsArgs := []string{"--fs-restore-image-path", filepath.Join(checkpointDir, resources.FSCheckpointSubdir)}
+	if got := durableRestoreContainers(checkpointDir, fsArgs, ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES, containers); !slices.Equal(got, []string{"app"}) {
+		t.Errorf("VOLUMES = %v, want [app]", got)
+	}
+	if got := durableRestoreContainers(checkpointDir, fsArgs, ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_MEMORY, containers); !slices.Equal(got, []string{"app"}) {
+		t.Errorf("MEMORY = %v, want [app]", got)
+	}
+	if got := durableRestoreContainers(checkpointDir, nil, ateworkerpb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES, containers); len(got) != 0 {
+		t.Errorf("without fs/ restored = %v, want none", got)
 	}
 }
