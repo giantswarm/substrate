@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 )
 
 // A restore spends most of its download blocked on the socket: 450 MB of snapshot
@@ -36,6 +37,29 @@ const (
 	// downloadConcurrency is how many ranges are in flight.
 	downloadConcurrency = 8
 )
+
+// maxRangedDownloads bounds the ranged downloads that run at once in the process.
+// Each one holds downloadConcurrency buffers of downloadChunkSize (128 MiB) and
+// already spreads over several connections, so running more of them at once adds
+// memory and no throughput: a node whose actors all restore together would
+// otherwise buffer one image per actor and outgrow its memory limit. An object of
+// at most one chunk is never read through a rangedReader, so it never waits.
+const maxRangedDownloads = 2
+
+// rangedDownloads holds one token per running ranged download.
+var rangedDownloads = make(chan struct{}, maxRangedDownloads)
+
+// acquireDownloadSlot blocks until a ranged download may allocate its buffers or
+// ctx ends. The caller calls release exactly once when its buffers are no longer
+// in use.
+func acquireDownloadSlot(ctx context.Context) (release func(), err error) {
+	select {
+	case rangedDownloads <- struct{}{}:
+		return func() { <-rangedDownloads }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
 // fetchRangeFunc reads the object's [off, off+n) into buf. i is the range's index,
 // which backends whose client holds a single connection use to spread ranges over a
@@ -56,6 +80,11 @@ type rangedReader struct {
 	// stopErr is why schedule stopped before issuing every range. It is set
 	// before ordered is closed, so Read may use it once ordered is closed.
 	stopErr error
+
+	// mu guards the download slot schedule takes and Close gives back.
+	mu      sync.Mutex
+	release func()
+	closed  bool
 }
 
 type rangeResult struct {
@@ -64,8 +93,9 @@ type rangeResult struct {
 }
 
 // newRangedReader starts fetching size bytes as chunks, at most downloadConcurrency
-// of them in flight. head supplies the first chunk when the caller already opened it
-// and is closed with the returned reader.
+// of them in flight, once a download slot is free (see acquireDownloadSlot). head
+// supplies the first chunk when the caller already opened it and is closed with the
+// returned reader.
 func newRangedReader(ctx context.Context, size int64, head io.ReadCloser, fetch fetchRangeFunc) *rangedReader {
 	ctx, cancel := context.WithCancel(ctx)
 	r := &rangedReader{
@@ -75,16 +105,30 @@ func newRangedReader(ctx context.Context, size int64, head io.ReadCloser, fetch 
 		ordered: make(chan chan rangeResult, downloadConcurrency),
 		free:    make(chan []byte, downloadConcurrency),
 	}
-	for range downloadConcurrency {
-		r.free <- make([]byte, downloadChunkSize)
-	}
 	go r.schedule(ctx, size, head, fetch)
 	return r
 }
 
-// schedule issues the ranges in order, bounded by the free buffers.
+// schedule takes a download slot, allocates the buffers and issues the ranges in
+// order, bounded by the free buffers. The slot is held until Close.
 func (r *rangedReader) schedule(ctx context.Context, size int64, head io.Reader, fetch fetchRangeFunc) {
 	defer close(r.ordered)
+	release, err := acquireDownloadSlot(ctx)
+	if err != nil {
+		r.stop(ctx, 0, size)
+		return
+	}
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		release()
+		return
+	}
+	r.release = release
+	r.mu.Unlock()
+	for range downloadConcurrency {
+		r.free <- make([]byte, downloadChunkSize)
+	}
 	for i, off := 0, int64(0); off < size; i, off = i+1, off+downloadChunkSize {
 		var buf []byte
 		select {
@@ -135,11 +179,14 @@ func (r *rangedReader) Read(p []byte) (int, error) {
 			if r.stopErr != nil {
 				r.err = r.stopErr
 			}
+			r.releaseSlot()
 			return 0, r.err
 		}
 		res := <-out
 		if res.err != nil {
 			r.err = res.err
+			r.cancel()
+			r.releaseSlot()
 			return 0, r.err
 		}
 		r.cur = res.buf
@@ -158,11 +205,25 @@ func (r *rangedReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
+// releaseSlot gives the download slot back once the reader's buffers are no
+// longer in use: at its end, its first error, or Close, whichever comes first. A
+// schedule still waiting for a slot gives one it gets back at once.
+func (r *rangedReader) releaseSlot() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	if r.release != nil {
+		r.release()
+		r.release = nil
+	}
+}
+
 // ObjectSize implements SizedReader.
 func (r *rangedReader) ObjectSize() int64 { return r.size }
 
 func (r *rangedReader) Close() error {
 	r.cancel()
+	r.releaseSlot()
 	if r.head != nil {
 		return r.head.Close()
 	}

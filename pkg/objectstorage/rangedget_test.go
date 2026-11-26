@@ -84,3 +84,55 @@ func TestRangedReaderCancelIsNotEOF(t *testing.T) {
 		t.Errorf("read %d of %d bytes, err %v, want context.Canceled", n, r.ObjectSize(), err)
 	}
 }
+
+// TestRangedReadersShareDownloadSlots checks that no more than
+// maxRangedDownloads readers hold their buffers at once, that a waiting reader
+// starts once one closes, and that a reader closed while waiting never starts.
+func TestRangedReadersShareDownloadSlots(t *testing.T) {
+	started := make(chan int, maxRangedDownloads+2)
+	open := func(id int) *rangedReader {
+		// No head: the first range is fetched, so a fetch marks a start.
+		return newRangedReader(t.Context(), 2*downloadChunkSize, nil, func(ctx context.Context, i int, _, _ int64, _ []byte) error {
+			if i == 0 {
+				started <- id
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		})
+	}
+	readers := make([]*rangedReader, 0, maxRangedDownloads)
+	for id := range maxRangedDownloads {
+		readers = append(readers, open(id))
+	}
+	for range maxRangedDownloads {
+		select {
+		case <-started:
+		case <-time.After(5 * time.Second):
+			t.Fatal("a reader within the bound did not start")
+		}
+	}
+	waiting := open(100)
+	closedWhileWaiting := open(200)
+	select {
+	case id := <-started:
+		t.Fatalf("reader %d started beyond the bound", id)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if err := closedWhileWaiting.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := readers[0].Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-started:
+		if id != 100 {
+			t.Fatalf("reader %d started, want the waiting one", id)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the waiting reader did not start once a slot was free")
+	}
+	for _, r := range append(readers[1:], waiting) {
+		_ = r.Close()
+	}
+}
