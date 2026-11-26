@@ -43,6 +43,7 @@ func TestTransientCrash(t *testing.T) {
 		{crashMessageWorkerPodGone, true},
 		{crashMessageWorkerRestarted, true},
 		{"resume failed: " + crashMessageWorkerPodGone + ": atelet Restore: runsc start: signal: killed", true},
+		{"resume failed: atelet Restore: while restoring: " + sandboxNetworkNotTaken + ": eth0 in its namespace still carries 169.254.17.2", true},
 		{"resume failed: " + crashMessageWorkerIneligible, false},
 		{"resume failed: atelet Restore: manifest unknown", false},
 		{"killed for exceeding its memory limit", false},

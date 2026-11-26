@@ -54,6 +54,12 @@ var transientCrashCauses = []string{
 	crashMessageWorkerRestarted,
 }
 
+// sandboxNetworkNotTaken is the worker's answer to a boot whose sandbox did
+// not take the actor's network (actornet.SandboxNetworkNotTaken), which an
+// atelet error quotes. The cause is the worker's: the workload never got an
+// interface to answer on, so the next boot outlives it.
+const sandboxNetworkNotTaken = "the sandbox did not take the actor's network"
+
 // errRevertNotAccepted is revertActor's refusal of an actor its accept
 // function rejects.
 var errRevertNotAccepted = errors.New("actor is not in the state the revert was asked for")
@@ -70,6 +76,9 @@ func transientCrashCause(actor *ateapi.Actor) (op, cause string, ok bool) {
 		if strings.HasPrefix(cause, c) {
 			return op, cause, true
 		}
+	}
+	if strings.Contains(cause, sandboxNetworkNotTaken) {
+		return op, cause, true
 	}
 	return "", "", false
 }
