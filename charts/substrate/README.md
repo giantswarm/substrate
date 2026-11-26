@@ -95,6 +95,7 @@ See `values.yaml` for the full set; the important keys:
 | `atelet.imageCredentialProviderConfig` | `""` | Host path to the kubelet credential provider config; set together with the bin directory |
 | `atelet.imageCredentialProviderConfigYAML` | `""` | Credential provider config as text, rendered into a ConfigMap, for nodes where that file cannot be authored or must differ from the kubelet's; mutually exclusive with the host path |
 | `atelet.imageCredentialProviderBinDir` | `""` | Host path to the kubelet credential provider binaries; both paths are mounted read-only |
+| `atelet.priorityClassName` | `system-cluster-critical` | PriorityClass of the atelet pods |
 | `atelet.nodeSelector` | `{}` | Nodes the atelet DaemonSet runs on; empty runs it on every schedulable node |
 | `atelet.tolerations` | `[]` | Tolerations of the atelet pods, added after the chart's `ate.dev/sandboxClass` and `cloud.google.com/compute-class` tolerations |
 | `atelet.affinity` | `{}` | Affinity of the atelet pods |

@@ -144,7 +144,7 @@ spec:
         prometheus.io/port: "9090"
     spec:
       serviceAccountName: {{ include "substrate.fullname" (list "atelet" .) }}
-      priorityClassName: system-cluster-critical
+      priorityClassName: {{ .Values.atelet.priorityClassName | default "system-cluster-critical" }}
       # Run on nodes reserved for any WorkerPool sandbox class, and on the
       # nodes atelet.tolerations admits.
       tolerations:

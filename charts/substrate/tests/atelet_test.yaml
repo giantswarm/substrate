@@ -102,3 +102,23 @@ tests:
         name: kubelet-plugins
         mountPath: /var/lib/kubelet/plugins
         mountPropagation: HostToContainer
+
+- it: runs atelet as system-cluster-critical by default
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  asserts:
+  - equal:
+      path: spec.template.spec.priorityClassName
+      value: system-cluster-critical
+
+- it: takes the configured PriorityClass
+  documentSelector:
+    path: kind
+    value: DaemonSet
+  set:
+    atelet.priorityClassName: ate-node-critical
+  asserts:
+  - equal:
+      path: spec.template.spec.priorityClassName
+      value: ate-node-critical

@@ -102,6 +102,11 @@ atelet:
   # iam.gke.io/gcp-service-account for Workload Identity).
   serviceAccount:
     annotations: {}
+  # PriorityClass of the atelet pods. Every actor on a node depends on its
+  # atelet. The chart's ResourceQuota admits system-node-critical and
+  # system-cluster-critical pods on clusters that restrict those classes to
+  # kube-system.
+  priorityClassName: system-cluster-critical
   # Where atelet runs: the DaemonSet's nodeSelector and affinity, and
   # tolerations added to the chart's fixed ones. Empty runs atelet on every
   # schedulable node.
