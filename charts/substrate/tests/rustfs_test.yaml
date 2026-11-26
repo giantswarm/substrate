@@ -43,3 +43,15 @@ tests:
   - matchRegex:
       path: spec.template.spec.containers[0].image
       pattern: '^mirror\.example\.com/rustfs/rustfs:'
+- it: stops the old pod before it starts the new one
+  documentSelector:
+    path: kind
+    value: Deployment
+  asserts:
+  - equal:
+      path: spec.strategy
+      value:
+        type: RollingUpdate
+        rollingUpdate:
+          maxSurge: 0
+          maxUnavailable: 1
