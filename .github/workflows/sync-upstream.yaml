@@ -16,9 +16,13 @@
 # in step with upstream (FORK.md, "Re-pin"). Weekly and on demand it
 #   1. mirrors upstream `main` into this fork's `main` — kagent-dev/substrate
 #      rewrites its main when it rebases onto agent-substrate/substrate, so the
-#      mirror is a forced update of the one branch nobody edits here;
-#   2. probes whether the carried patches of the line still rebase onto
-#      upstream `main` and names the first one that would conflict;
+#      mirror is a forced update of the one branch nobody edits here — and
+#      every upstream tag as `upstream/<tag>`: the bare `v*` names are the
+#      line's releases, and an upstream tag that moved stops the run;
+#   2. probes whether the carried patches of the line still rebase onto the
+#      upstream ref fork/upstream-ref names (upstream `main`, a release branch
+#      such as `release-1.0`, or a tag) and names the first one that would
+#      conflict;
 #   3. on `workflow_dispatch` with a `pin`, builds a re-pin candidate: rebases
 #      the carried patches onto the new upstream tag (a patch upstream has
 #      merged falls away), builds and tests, pushes the candidate to
@@ -51,7 +55,7 @@ on:
   workflow_dispatch:
     inputs:
       pin:
-        description: "Upstream release tag (or commit) to re-pin the line onto, e.g. v0.0.27: pushes a candidate and opens its pull request. Empty: mirror main and probe the rebase only."
+        description: "Upstream release tag (or commit) to re-pin the line onto, e.g. v1.0.1, resolved as upstream/v1.0.1: pushes a candidate and opens its pull request. Empty: mirror main and the tags, probe the rebase onto the ref fork/upstream-ref names."
         required: false
       land:
         description: "A candidate branch (sync/<date>-<pin>) to land on the line once its required checks passed"
@@ -104,7 +108,26 @@ jobs:
         run: |
           set -o errexit -o nounset -o pipefail
           git remote add upstream "https://github.com/${UPSTREAM_REPO}.git"
-          git fetch --quiet upstream main 'refs/tags/v*:refs/tags/v*'
+          # Upstream's tags land under refs/tags/upstream/: the bare v* names
+          # are the line's releases (FORK.md, "Pin"). --no-tags keeps them from
+          # following under those names.
+          git fetch --quiet --no-tags upstream '+refs/heads/*:refs/remotes/upstream/*' '+refs/tags/v*:refs/tags/upstream/v*'
+          # The ref the probe follows; a maintenance line without the file follows main.
+          ref=refs/heads/main
+          [ ! -f fork/upstream-ref ] || ref=$(sed -n '/^[[:space:]]*#/d; /[^[:space:]]/{s/[[:space:]]//g; p; q;}' fork/upstream-ref)
+          case "${ref}" in
+            refs/heads/?*) follow="refs/remotes/upstream/${ref#refs/heads/}" ;;
+            refs/tags/?*) follow="refs/tags/upstream/${ref#refs/tags/}" ;;
+            *) echo "::error::fork/upstream-ref: '${ref}' is not a full upstream ref (refs/heads/<branch> or refs/tags/<tag>)"; exit 1 ;;
+          esac
+          if ! git rev-parse --verify --quiet "${follow}^{commit}" >/dev/null; then
+            echo "::error::fork/upstream-ref names ${ref}, which ${UPSTREAM_REPO} does not have"
+            exit 1
+          fi
+          {
+            echo "FOLLOW=${follow}"
+            echo "FOLLOW_NAME=${ref#refs/*/}"
+          } >> "$GITHUB_ENV"
           git config user.name "HeraldBot[bot]"
           git config user.email "149080493+heraldbot[bot]@users.noreply.github.com"
 
@@ -125,29 +148,63 @@ jobs:
           echo "- main: \`${fork:0:12}\` → \`${up:0:12}\` (${kind})" >> "$GITHUB_STEP_SUMMARY"
           if [ "${DRY_RUN}" != true ]; then
             echo "pushed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+            echo main >> "${RUNNER_TEMP}/mirrored"
             git push --force-with-lease="refs/heads/main:${fork}" origin "${up}:refs/heads/main"
+          fi
+
+      - name: Mirror upstream's tags under upstream/
+        id: tags
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -o errexit -o nounset -o pipefail
+          # A tag the fork holds under upstream/ at the same object is current;
+          # at another object, upstream moved it, and the mirror moves no ref.
+          declare -A fork_tag=()
+          while read -r sha ref; do
+            fork_tag[${ref}]=${sha}
+          done < <(git ls-remote origin 'refs/tags/upstream/*' | grep -v '\^{}$' || true)
+          refspecs=()
+          moved=()
+          while read -r sha ref; do
+            if [ -n "${fork_tag[${ref}]:-}" ]; then
+              [ "${fork_tag[${ref}]}" = "${sha}" ] || moved+=("${ref#refs/tags/}")
+              continue
+            fi
+            refspecs+=("${ref}:${ref}")
+          done < <(git for-each-ref --format='%(objectname) %(refname)' 'refs/tags/upstream/')
+          if [ ${#moved[@]} -gt 0 ]; then
+            echo "::error::upstream moved ${moved[*]}: the mirror moves no tag (FORK.md, \"Pin\")"
+            exit 1
+          fi
+          echo "- tags: ${#refspecs[@]} new upstream tag(s) under upstream/" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${DRY_RUN}" != true ] && [ ${#refspecs[@]} -gt 0 ]; then
+            echo "pushed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "${refspecs[@]%%:*}" | sed 's|^refs/tags/||' >> "${RUNNER_TEMP}/mirrored"
+            git push --quiet origin "${refspecs[@]}"
           fi
 
       - name: Cancel the runs upstream's workflow files start on the mirror
         # The mirrored commits carry upstream's workflow files, whose push
         # triggers name `main`; on this fork they would test upstream's tree on
         # hosted runners for nothing (and fail on upstream's environment
-        # assumptions). Cancel what the push started; runs appear a few seconds
-        # after the push.
-        if: steps.mirror.outputs.pushed_at != ''
+        # assumptions). Cancel what the push of main or of a mirrored tag
+        # started; runs appear a few seconds after the push.
+        if: steps.mirror.outputs.pushed_at != '' || steps.tags.outputs.pushed_at != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          PUSHED_AT: ${{ steps.mirror.outputs.pushed_at }}
+          PUSHED_AT: ${{ steps.mirror.outputs.pushed_at || steps.tags.outputs.pushed_at }}
         run: |
           set -o errexit -o nounset -o pipefail
           cancelled=0
           for _ in 1 2 3 4 5 6; do
             sleep 10
-            for id in $(gh run list --repo "$GITHUB_REPOSITORY" --branch main --event push --created ">=${PUSHED_AT}" --json databaseId,status -q '.[] | select(.status != "completed") | .databaseId'); do
+            for id in $(gh run list --repo "$GITHUB_REPOSITORY" --event push --created ">=${PUSHED_AT}" --limit 100 --json databaseId,status,headBranch |
+              jq -r --rawfile mirrored "${RUNNER_TEMP}/mirrored" '($mirrored | split("\n")) as $refs | .[] | select(.status != "completed" and (.headBranch as $b | $refs | index($b))) | .databaseId'); do
               gh run cancel --repo "$GITHUB_REPOSITORY" "$id" && cancelled=$((cancelled + 1))
             done
           done
-          echo "- mirror: cancelled ${cancelled} run(s) upstream's workflow files started on main" >> "$GITHUB_STEP_SUMMARY"
+          echo "- mirror: cancelled ${cancelled} run(s) upstream's workflow files started on the mirrored refs" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve the pin and the carried patches
         id: line
@@ -156,55 +213,48 @@ jobs:
         run: |
           set -o errexit -o nounset -o pipefail
           # The pin is the nearest upstream release tag reachable from the
-          # branch, prereleases included (the line can pin one). Only
-          # upstream's tags count: the line's own tags (v1.0.0, …) version the
-          # package, not the software (FORK.md, "Versions"), and they share the
-          # v* namespace — a tag reachable from HEAD is the pin only when
-          # upstream has it. Nearest by commit distance, since a version sort
-          # orders a prerelease after its release. (upstream main is rebased
-          # onto agent-substrate and has no release tag as an ancestor, so the
-          # merge-base with it cannot serve.)
-          upstream_tags=$(git ls-remote --tags --refs upstream 'refs/tags/v[0-9]*' | awk -F/ '{ print $NF }')
-          # grep exits 1 when no reachable tag is upstream's; the run says so
-          # instead of ending on a bare exit code.
-          current=$(git tag --merged HEAD --list 'v[0-9]*' | grep -Fx -f <(printf '%s\n' "${upstream_tags}") |
-            while read -r tag; do echo "$(git rev-list --count "${tag}..HEAD") ${tag}"; done | sort -n | awk 'NR == 1 { print $2 }') || true
-          if [ -z "${current}" ]; then
+          # branch, prereleases included (the line can pin one), among
+          # upstream's tags under refs/tags/upstream/ (FORK.md, "Pin").
+          if ! current=$(.github/scripts/fork-pin.sh HEAD); then
             echo "::error::no release tag of ${UPSTREAM_REPO} is reachable from ${LINE_BRANCH}: the line's pin is not an upstream tag (FORK.md, \"Pin\")"
             exit 1
           fi
           new="${INPUT_PIN:-${current}}"
-          if ! git rev-parse --verify --quiet "${new}^{commit}" >/dev/null; then
+          new_ref="refs/tags/upstream/${new}"
+          git rev-parse --verify --quiet "${new_ref}^{commit}" >/dev/null || new_ref="${new}"
+          if ! git rev-parse --verify --quiet "${new_ref}^{commit}" >/dev/null; then
             echo "::error::pin '${new}' is not a known upstream tag or commit"
             exit 1
           fi
           {
             echo "current=${current}"
+            echo "current_ref=refs/tags/upstream/${current}"
             echo "new=${new}"
+            echo "new_ref=${new_ref}"
             echo "head=$(git rev-parse HEAD)"
           } >> "$GITHUB_OUTPUT"
           {
             echo "- pin: \`${current}\` → \`${new}\`"
             echo "- carried patches on \`${LINE_BRANCH}\`:"
-            git log --reverse --format='  - `%h` %s' "${current}..HEAD"
+            git log --reverse --format='  - `%h` %s' "refs/tags/upstream/${current}..HEAD"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Probe the rebase onto upstream main
+      - name: Probe the rebase onto the upstream ref the line follows
         if: steps.line.outputs.new == steps.line.outputs.current
         env:
-          CURRENT: ${{ steps.line.outputs.current }}
+          CURRENT_REF: ${{ steps.line.outputs.current_ref }}
           HEAD_SHA: ${{ steps.line.outputs.head }}
         run: |
           set -o errexit -o nounset -o pipefail
-          up=$(git rev-parse --short upstream/main)
-          if git rebase --quiet --onto upstream/main "${CURRENT}" >/dev/null 2>&1; then
-            echo "- probe: the carried patches rebase cleanly onto upstream main \`${up}\`" >> "$GITHUB_STEP_SUMMARY"
+          up=$(git rev-parse --short "${FOLLOW}^{commit}")
+          if git rebase --quiet --onto "${FOLLOW}" "${CURRENT_REF}" >/dev/null 2>&1; then
+            echo "- probe: the carried patches rebase cleanly onto upstream ${FOLLOW_NAME} \`${up}\`" >> "$GITHUB_STEP_SUMMARY"
           else
             conflict=$(git rev-parse --short REBASE_HEAD 2>/dev/null || echo unknown)
             git rebase --abort
             subject=$(git log -1 --format=%s "${conflict}" 2>/dev/null || true)
-            echo "- probe: rebasing onto upstream main \`${up}\` conflicts at \`${conflict}\` ${subject}" >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning::carried patch ${conflict} (${subject}) conflicts with upstream main; the next re-pin needs a hand"
+            echo "- probe: rebasing onto upstream ${FOLLOW_NAME} \`${up}\` conflicts at \`${conflict}\` ${subject}" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::carried patch ${conflict} (${subject}) conflicts with upstream ${FOLLOW_NAME}; the next re-pin needs a hand"
           fi
           git checkout --quiet "${HEAD_SHA}"
 
@@ -213,7 +263,9 @@ jobs:
         if: steps.line.outputs.new != steps.line.outputs.current
         env:
           CURRENT: ${{ steps.line.outputs.current }}
+          CURRENT_REF: ${{ steps.line.outputs.current_ref }}
           NEW: ${{ steps.line.outputs.new }}
+          NEW_REF: ${{ steps.line.outputs.new_ref }}
           HEAD_SHA: ${{ steps.line.outputs.head }}
           DRY_RUN: ${{ inputs.dry_run }}
           GH_TOKEN: ${{ steps.app.outputs.token }}
@@ -222,16 +274,16 @@ jobs:
           branch="sync/$(date -u +%Y%m%d)-${NEW}"
           [ "${LINE_BRANCH}" = giantswarm ] || branch="sync/$(date -u +%Y%m%d)-${LINE_BRANCH}-${NEW}"
           land="Actions → sync-upstream → Run workflow with \`land\` = \`${branch}\` and \`line\` = \`${LINE_BRANCH}\`"
-          if git rebase --onto "${NEW}" "${CURRENT}"; then
+          if git rebase --onto "${NEW_REF}" "${CURRENT_REF}"; then
             echo "- re-pin: the carried patches rebased onto \`${NEW}\`" >> "$GITHUB_STEP_SUMMARY"
-            git log --reverse --format='  - `%h` %s' "${NEW}..HEAD" >> "$GITHUB_STEP_SUMMARY"
+            git log --reverse --format='  - `%h` %s' "${NEW_REF}..HEAD" >> "$GITHUB_STEP_SUMMARY"
             go build ./...
             go test ./...
             title="sync: re-pin ${LINE_BRANCH} onto ${NEW}"
             {
               echo "Re-pin candidate of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\`: the carried patches replayed, \`go build ./... && go test ./...\` passed."
               echo
-              git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+              git log --reverse --format='- `%h` %s' "${NEW_REF}..HEAD"
               echo
               echo "The push of this branch runs the line's required checks (${REQUIRED_CHECKS}) on its head. Review the candidate here; once they are green, land it with ${land}, which pushes exactly this head to \`${LINE_BRANCH}\` and closes this pull request. Do not merge it: the line is a rebased branch, a merge would fold the old pin back in (FORK.md, \"Re-pin\")."
               echo
@@ -244,13 +296,13 @@ jobs:
             conflict=$(git rev-parse REBASE_HEAD)
             git rebase --abort
             git checkout --quiet --detach "${conflict}^"
-            git rebase --quiet --onto "${NEW}" "${CURRENT}"
+            git rebase --quiet --onto "${NEW_REF}" "${CURRENT_REF}"
             title="sync: re-pin ${LINE_BRANCH} onto ${NEW} (hand-over: a carried patch conflicts)"
             {
               echo "Re-pin of \`${LINE_BRANCH}\` from \`${CURRENT}\` onto \`${NEW}\` stopped at a conflicting carried patch."
               echo
               echo "Replayed on this branch:"
-              git log --reverse --format='- `%h` %s' "${NEW}..HEAD"
+              git log --reverse --format='- `%h` %s' "${NEW_REF}..HEAD"
               echo
               echo "Conflicting: \`$(git rev-parse --short "${conflict}")\` $(git log -1 --format=%s "${conflict}")"
               echo
