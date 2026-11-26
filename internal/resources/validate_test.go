@@ -29,6 +29,7 @@ import (
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/api/operation"
 	"k8s.io/apimachinery/pkg/api/validate"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -81,6 +82,9 @@ func TestDeepEqual(t *testing.T) {
 	a := &ateapi.ObjectRef{Atespace: "a", Name: "x"}
 	b := &ateapi.ObjectRef{Atespace: "a", Name: "x"}
 	_ = a.String() // populates a's internal state, not b's
+	// A marshal fills the size cache of every element of a repeated field.
+	sized := []*ateapi.ObjectRef{{Atespace: "a", Name: "x"}}
+	_ = proto.Size(sized[0])
 
 	tests := []struct {
 		name string
@@ -90,6 +94,10 @@ func TestDeepEqual(t *testing.T) {
 		{name: "equal protos", got: DeepEqual(a, b), want: true},
 		{name: "different protos", got: DeepEqual(a, &ateapi.ObjectRef{Atespace: "a", Name: "y"}), want: false},
 		{name: "nil protos", got: DeepEqual[*ateapi.ObjectRef](nil, nil), want: true},
+		{name: "equal repeated protos", got: DeepEqual(sized, []*ateapi.ObjectRef{{Atespace: "a", Name: "x"}}), want: true},
+		{name: "different repeated protos", got: DeepEqual(sized, []*ateapi.ObjectRef{{Atespace: "a", Name: "y"}}), want: false},
+		{name: "repeated protos of different lengths", got: DeepEqual(sized, nil), want: false},
+		{name: "nil and empty repeated protos", got: DeepEqual([]*ateapi.ObjectRef{}, nil), want: true},
 		{name: "equal non-protos", got: DeepEqual([]string{"a"}, []string{"a"}), want: true},
 		{name: "different non-protos", got: DeepEqual(1, 2), want: false},
 	}
