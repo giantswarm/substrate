@@ -45,7 +45,20 @@ cannot reach the collector until the actor has an `http` egress rule for it. See
 | any | WebSocket | Blocked | atunnel -> egress gateway | `403 Forbidden` |
 | any | Standard HTTP(S) CONNECT (forward-proxy tunnel) | Blocked | atunnel -> egress gateway | `403 Forbidden` |
 | 53 | DNS to the sandbox's gateway | Allowed for hostnames matching the actor's egress policy | sandbox DNS relay -> worker pod's resolvers | `NXDOMAIN` |
+| any | Other TCP matching a `tcp` rule (SSH, PostgreSQL, Redis, or a server-first protocol) | Relayed to the address and port the actor connected to, without being read | atunnel -> egress gateway -> that address and port | Closed with no bytes returned. Only the gateway logs the refusal. |
 | any | Any other TCP | Blocked | atunnel -> egress gateway | A client that sends first gets `400 Bad Request` before the connection closes. If the client waits for the server to speak first, the connection closes after about 1 second with no data. Only the gateway logs the refusal. |
+
+The gateway decides a connection by its first bytes: a TLS ClientHello by the
+`https` and `tls_passthrough` rules, an HTTP request by the `http` rules, and
+anything else, or nothing before its protocol detection ends, by the `tcp`
+rules. A `tcp` rule never decides TLS or HTTP to the same destination. It
+matches a CIDR containing the address the actor connected to, or a hostname the
+gateway resolves to that address (the actor's own resolution plays no part).
+The addresses of the gateway and its node (loopback, link-local, the clouds'
+metadata and platform services, the gateway's own address, and their NAT64
+forms) are reached only through a CIDR inside their range, never through a
+hostname or a wider CIDR. The gateway must support `tcp` rules: an agentgateway
+build without them refuses such connections.
 
 See the [Network Egress Contract](network-egress.md#refusal-responses-and-policy-changes)
 for refusal status codes, policy-refresh semantics, and the distinction between DNS

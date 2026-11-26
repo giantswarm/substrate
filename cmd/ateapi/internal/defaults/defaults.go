@@ -104,8 +104,8 @@ func applyEgressPolicyDefaults(p *ateapi.EgressPolicy) {
 }
 
 // applyEgressRuleDefaults fills the port of an http or https rule that
-// names none: the protocol's well-known port. A tls_passthrough rule has no
-// default; validation requires its ports.
+// names none: the protocol's well-known port. A tls_passthrough or tcp rule
+// has no default; validation requires its ports.
 func applyEgressRuleDefaults(rules []*ateapi.EgressRule) {
 	for _, r := range rules {
 		switch {
