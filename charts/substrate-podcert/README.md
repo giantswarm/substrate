@@ -23,6 +23,8 @@ hack/install-postgres.sh --kind
 Then prepare the application authentication resources and install the Substrate
 application chart. The controller's namespace is the Helm release namespace;
 if selecting another namespace, provision all CA-pool Secrets there.
+With `createNamespace: true`, the chart renders the namespace with
+`helm.sh/resource-policy: keep`, so uninstalling the release keeps the CA pools.
 
 Set `postgresClientNamespace` to the namespace containing the Substrate API
 server. It defaults to `ate-system`. Set `postgresClientServiceAccount` to the API

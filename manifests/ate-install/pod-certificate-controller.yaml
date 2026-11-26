@@ -15,10 +15,16 @@
 # DO NOT EDIT — generated from charts/substrate-podcert by hack/render-manifests.sh.
 # Run `hack/render-manifests.sh` to regenerate.
 
+# Uninstalling the release keeps the namespace. It holds the CA pools, which
+# the chart does not render, while the signers' ClusterTrustBundles are
+# cluster-scoped and stay too. Deleting only the pools would make the next
+# install mint new roots that no running component trusts.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: podcertificate-controller-system
+  annotations:
+    helm.sh/resource-policy: keep
 ---
 apiVersion: v1
 kind: ServiceAccount
