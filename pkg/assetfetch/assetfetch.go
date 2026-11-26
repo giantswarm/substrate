@@ -393,6 +393,11 @@ func replace(root *os.Root, rel string, perm fs.FileMode, staged io.Reader, uri,
 	if _, err := copyToTemp(tmp, staged); err != nil {
 		return toStatus(fmt.Errorf("while writing asset %s next to write path %q: %w", uri, shown, err))
 	}
+	// Flushed pages are reclaimable rather than dirty page cache charged to
+	// the caller's memory limit, and the file is durable before the exchange.
+	if err := tmp.Sync(); err != nil {
+		return toStatus(fmt.Errorf("while syncing a file next to write path %q: %w", shown, err))
+	}
 	if err := tmp.Close(); err != nil {
 		return toStatus(fmt.Errorf("while closing a file next to write path %q: %w", shown, err))
 	}
