@@ -258,17 +258,7 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 
 		switch state := actor.GetStatus().GetState(); state {
 		case ateapi.ActorState_ACTOR_STATE_CRASHED:
-			if transientCrash(actor) {
-				// A rolling worker pool crashed the golden actor: the take
-				// says nothing about the template. Delete the actor, which
-				// frees any worker it still holds, and take it again.
-				return 0, r.retakeGolden(ctx, goldenActorRef, "golden actor crashed for a transient cause: "+actor.GetStatus().GetCrash().GetMessage())
-			}
-			msg := "golden actor crashed before its snapshot was taken"
-			if crash := actor.GetStatus().GetCrash().GetMessage(); crash != "" {
-				msg += ": " + crash
-			}
-			return 0, r.fail(ctx, tmpl, reasonGoldenActorCrashed, msg)
+			return 0, r.goldenActorCrashed(ctx, tmpl, goldenActorRef, actor)
 
 		case ateapi.ActorState_ACTOR_STATE_RUNNING:
 			takeAt := goldenSnapshotStatus.GetSnapshotTime()
@@ -321,7 +311,16 @@ func (r *ActorTemplateReconciler) reconcileOne(ctx context.Context, ref resource
 				return 0, fmt.Errorf("while ensuring golden egress policy: %w", err)
 			}
 			if _, err := r.control.ResumeActor(ctx, &ateapi.ResumeActorRequest{Actor: goldenActorRef}); err != nil {
-				// A crash during resume is observed as CRASHED on the retry.
+				// A resume that crashed the golden actor (an image the
+				// registry refuses, a container with no runnable process)
+				// recorded the cause on the actor: act on it now rather than
+				// on a later pass after the requeue backoff.
+				if crashed, gerr := r.control.GetActor(ctx, &ateapi.GetActorRequest{Actor: goldenActorRef}); gerr == nil &&
+					crashed.GetStatus().GetState() == ateapi.ActorState_ACTOR_STATE_CRASHED {
+					return 0, r.goldenActorCrashed(ctx, tmpl, goldenActorRef, crashed)
+				}
+				// Anything else is retried; a crash the resume did not report
+				// is observed as CRASHED on the retry.
 				return 0, fmt.Errorf("while resuming golden actor: %w", err)
 			}
 			deadline := time.Now().Add(goldenSnapshotWarmupFor(tmpl.GetContainers()))
@@ -503,6 +502,23 @@ func (r *ActorTemplateReconciler) ensureGoldenEgressPolicy(ctx context.Context, 
 		return errGoldenEgressPolicyConflict
 	}
 	return nil
+}
+
+// goldenActorCrashed handles a CRASHED golden actor: one a rolling worker
+// pool crashed is deleted and taken again (retakeGolden); any other fails the
+// template with the crash the control plane recorded on the actor, which
+// names the atelet call and the registry's or the worker's own answer.
+func (r *ActorTemplateReconciler) goldenActorCrashed(ctx context.Context, tmpl *ateapi.ActorTemplate, ref *ateapi.ObjectRef, actor *ateapi.Actor) error {
+	if transientCrash(actor) {
+		// The take says nothing about the template. Deleting the actor frees
+		// any worker it still holds.
+		return r.retakeGolden(ctx, ref, "golden actor crashed for a transient cause: "+actor.GetStatus().GetCrash().GetMessage())
+	}
+	msg := "golden actor crashed before its snapshot was taken"
+	if crash := actor.GetStatus().GetCrash().GetMessage(); crash != "" {
+		msg += ": " + crash
+	}
+	return r.fail(ctx, tmpl, reasonGoldenActorCrashed, msg)
 }
 
 // errGoldenRetake requeues a template whose golden actor was deleted to be

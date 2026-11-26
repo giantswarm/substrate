@@ -167,6 +167,9 @@ type fakeGoldenControl struct {
 	goldenState    ateapi.ActorState
 	goldenSnapshot string
 	goldenCrash    string
+	// resumeCrash, with resumeErr, is the crash a failed resume records on
+	// the golden actor.
+	resumeCrash string
 	// snapshot is the external snapshot a completed suspend produces; empty
 	// simulates a suspend that wrote none.
 	snapshot string
@@ -238,6 +241,10 @@ func (c *fakeGoldenControl) ResumeActor(_ context.Context, req *ateapi.ResumeAct
 	defer c.mu.Unlock()
 	c.resumeReqs = append(c.resumeReqs, req)
 	if c.resumeErr != nil {
+		if c.resumeCrash != "" {
+			c.goldenState = ateapi.ActorState_ACTOR_STATE_CRASHED
+			c.goldenCrash = c.resumeCrash
+		}
 		return nil, c.resumeErr
 	}
 	c.goldenState = ateapi.ActorState_ACTOR_STATE_RUNNING
@@ -551,6 +558,14 @@ func TestReconcileOne(t *testing.T) {
 			wantErr:  true,
 
 			wantGoldenDeleted: true,
+		},
+		{
+			name:             "resume that crashed the golden actor fails the template in the same pass",
+			template:         testTemplate(),
+			control:          &fakeGoldenControl{exists: true, goldenState: ateapi.ActorState_ACTOR_STATE_SUSPENDED, resumeErr: apierror.Internal("crashed"), resumeCrash: "resume failed: atelet Run: MANIFEST_UNKNOWN: manifest unknown"},
+			wantResumes:      1,
+			wantFailedReason: reasonGoldenActorCrashed,
+			wantMessage:      "MANIFEST_UNKNOWN: manifest unknown",
 		},
 		{
 			name:        "resume failure requeues without failing",
