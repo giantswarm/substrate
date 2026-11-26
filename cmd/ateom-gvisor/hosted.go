@@ -87,7 +87,7 @@ func (s *AteomService) hostActor(ctx context.Context, attribution resources.Acto
 		ActorUID:   uid,
 		Veth:       true,
 		EgressPort: s.tunnel.EgressPort,
-	}, s.tunnel.Egress, s.tunnel.DNSRelay)
+	}, s.tunnel.Egress, s.tunnel.DNSRelay, s.tunnel.ActorEgressPolicy(attribution))
 	if err != nil {
 		s.actorsMu.Lock()
 		delete(s.actors, uid)

@@ -78,7 +78,7 @@ func TestRelayForwardsUDPVerbatim(t *testing.T) {
 	}
 	client := serveRelayUDP(t, relay)
 
-	query := []byte{0xab, 0xcd, 0x01, 0x00, 0x00, 0x01}
+	query := dnsQuery(0xabcd)
 	if _, err := client.Write(query); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRelayFallsBackToTheNextResolver(t *testing.T) {
 	}
 	client := serveRelayUDP(t, relay)
 
-	if _, err := client.Write([]byte("query")); err != nil {
+	if _, err := client.Write(dnsQuery(1)); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(readWithin(t, client)); got != "answered" {
@@ -178,6 +178,10 @@ func newSilentResolver(t *testing.T) (address string, asked <-chan struct{}) {
 
 // serveLoopback runs the relay on loopback sockets and stops it on cleanup.
 func serveLoopback(t *testing.T, relay *Relay) (*Server, net.Addr, net.Addr) {
+	return serveLoopbackPolicy(t, relay, withPolicy)
+}
+
+func serveLoopbackPolicy(t *testing.T, relay *Relay, policy PolicySource) (*Server, net.Addr, net.Addr) {
 	t.Helper()
 	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
@@ -192,7 +196,7 @@ func serveLoopback(t *testing.T, relay *Relay) (*Server, net.Addr, net.Addr) {
 		dialer:      *relay.dialer,
 		udp:         pc,
 		tcpListener: lis,
-	})
+	}, policy)
 	t.Cleanup(func() { _ = srv.Stop(context.Background()) })
 	return srv, pc.LocalAddr(), lis.Addr()
 }
@@ -245,7 +249,7 @@ func TestRelayForwardsAnswersLargerThanTheCommonBuffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := serveRelayUDP(t, relay)
-	if _, err := client.Write([]byte("query")); err != nil {
+	if _, err := client.Write(dnsQuery(1)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -292,7 +296,7 @@ func TestRelayDropsQueriesBeyondItsInFlightLimit(t *testing.T) {
 	client := serveRelayUDP(t, relay)
 
 	for range maxInFlightDNS * 4 {
-		if _, err := client.Write([]byte("query")); err != nil {
+		if _, err := client.Write(dnsQuery(1)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -374,6 +378,9 @@ func TestRelayRefusesTCPConnectionsBeyondItsLimit(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { conn.Close() })
+		if _, err := conn.Write(tcpStream(dnsQuery(1))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	waitFor(t, "the relay to fill up", func() bool { return held.Load() == maxDNSConnections })
 
@@ -407,6 +414,9 @@ func TestRelayClosesTCPConnectionsWhenServingEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	if _, err := conn.Write(tcpStream(dnsQuery(1))); err != nil {
+		t.Fatal(err)
+	}
 	waitFor(t, "the connection to reach an upstream", func() bool { return held.Load() == 1 })
 	if got := len(relay.limiter.connections); got != 1 {
 		t.Fatalf("%d connection slots held before Stop, want 1", got)

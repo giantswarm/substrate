@@ -428,6 +428,7 @@ func main() {
 		ateomFacingSrv := grpc.NewServer(grpc.Creds(credentials.NewTLS(ateomFacingTLS)))
 		ateletpb.RegisterAteomSupportServer(ateomFacingSrv, &ateomSupportServer{
 			workers: workers,
+			control: ateapipb.NewControlClient(ateapiConn),
 		})
 		if *actorDirGCPeriod > 0 {
 			go newActorDirGC(workers).Run(ctx)

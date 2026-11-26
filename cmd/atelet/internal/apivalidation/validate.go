@@ -55,3 +55,8 @@ func ValidateCustom_Limits(_ context.Context, _ operation.Operation, fldPath *fi
 func ateDeepEqual[T any](a, b T) bool {
 	return resources.DeepEqual(a, b)
 }
+
+// ValidateGetActorEgressPolicyRequest runs the generated request validation.
+func ValidateGetActorEgressPolicyRequest(ctx context.Context, req *ateletpb.GetActorEgressPolicyRequest) field.ErrorList {
+	return Validate_GetActorEgressPolicyRequest(ctx, operation.Operation{Type: operation.Create}, nil, req, nil)
+}
