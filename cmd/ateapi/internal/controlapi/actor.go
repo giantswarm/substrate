@@ -490,13 +490,7 @@ func (s *RPCService) ResumeActor(ctx context.Context, req *ateapi.ResumeActorReq
 
 	actor, resumed, err := s.actorWorkflow.ResumeActor(ctx, actorRef)
 	if err != nil {
-		if errors.Is(err, store.ErrVersionConflict) {
-			return nil, apierror.Aborted("concurrent update conflict, please retry")
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, apierror.NotFound("Actor %s not found", actorRef)
-		}
-		return nil, err
+		return nil, s.lifecycleError(ctx, actorRef, err)
 	}
 
 	setSpanActorAttributes(ctx, actor)
@@ -512,16 +506,33 @@ func (s *RPCService) SuspendActor(ctx context.Context, req *ateapi.SuspendActorR
 
 	actor, err := s.actorWorkflow.SuspendActor(ctx, actorRef, suspendModeFromOptions(req.GetOptions()))
 	if err != nil {
-		if errors.Is(err, store.ErrVersionConflict) {
-			return nil, apierror.Aborted("concurrent update conflict, please retry")
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, apierror.NotFound("Actor %s not found", actorRef)
-		}
-		return nil, err
+		return nil, s.lifecycleError(ctx, actorRef, err)
 	}
 	setSpanActorAttributes(ctx, actor)
 	return &ateapi.SuspendActorResponse{Actor: actor}, nil
+}
+
+// errLifecycleRecordGone marks a Resume, Suspend or Revert of an actor that
+// exists, whose workflow found another record it read gone (its worker, a
+// worker's assignment of it): a concurrent change the caller can retry from a
+// fresh read. NotFound would tell the caller the actor itself is gone.
+var errLifecycleRecordGone = errors.New("a record the operation read is gone")
+
+// lifecycleError maps the error of an actor lifecycle workflow to the Control
+// API's answer. A store.ErrNotFound reads NotFound only when the actor's own
+// record is gone; any other missing record is errLifecycleRecordGone, Aborted.
+func (s *RPCService) lifecycleError(ctx context.Context, actorRef resources.ActorRef, err error) error {
+	if errors.Is(err, store.ErrVersionConflict) {
+		return apierror.Aborted("concurrent update conflict, please retry")
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	if _, getErr := s.impl.GetActor(ctx, actorRef); errors.Is(getErr, store.ErrNotFound) {
+		return apierror.NotFound("Actor %s not found", actorRef)
+	}
+	// %v, not %w: the answer must no longer match store.ErrNotFound.
+	return apierror.Aborted("%w for Actor %s, please retry: %v", errLifecycleRecordGone, actorRef, err)
 }
 
 // CrashActorReportedByWorker crashes a RUNNING actor whose sandbox died, on
@@ -548,13 +559,7 @@ func (s *RPCService) RevertActor(ctx context.Context, req *ateapi.RevertActorReq
 
 	actor, err := s.actorWorkflow.RevertActor(ctx, actorRef)
 	if err != nil {
-		if errors.Is(err, store.ErrVersionConflict) {
-			return nil, apierror.Aborted("concurrent update conflict, please retry")
-		}
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, apierror.NotFound("Actor %s not found", actorRef)
-		}
-		return nil, err
+		return nil, s.lifecycleError(ctx, actorRef, err)
 	}
 	setSpanActorAttributes(ctx, actor)
 	return &ateapi.RevertActorResponse{Actor: actor}, nil
