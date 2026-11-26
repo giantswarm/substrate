@@ -3849,8 +3849,19 @@ func TestResumeActor_AteletTransportErrorLeavesActorResuming(t *testing.T) {
 			tc.fakeAtelet.FailRestore = nil
 			tc.fakeAtelet.RestoreDelay = 0
 			tc.fakeAtelet.Lock.Unlock()
-			if _, err := tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{Actor: ref}); err != nil {
-				t.Fatalf("retried ResumeActor failed: %v", err)
+			// A workflow outlives its caller's deadline and holds the actor's
+			// lease until it finishes: the retry is Aborted until then.
+			retryUntil := time.Now().Add(10 * time.Second)
+			for {
+				_, err := tc.client.ResumeActor(context.Background(), &ateapi.ResumeActorRequest{Actor: ref})
+				if status.Code(err) == codes.Aborted && time.Now().Before(retryUntil) {
+					time.Sleep(50 * time.Millisecond)
+					continue
+				}
+				if err != nil {
+					t.Fatalf("retried ResumeActor failed: %v", err)
+				}
+				break
 			}
 			actor, err = tc.persistence.GetActor(context.Background(), actorRef)
 			if err != nil {

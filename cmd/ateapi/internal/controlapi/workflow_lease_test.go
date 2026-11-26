@@ -48,3 +48,24 @@ func TestAcquireActorLeaseWorkflowDeadline(t *testing.T) {
 		t.Fatal("workflow context did not reach its deadline")
 	}
 }
+
+type ctxKey struct{}
+
+func TestAcquireActorLeaseOutlivesCallerCancellation(t *testing.T) {
+	w := &ActorWorkflow{store: leaseStore{}, workflowDeadline: time.Minute}
+	caller, cancel := context.WithCancel(context.WithValue(t.Context(), ctxKey{}, "peer"))
+
+	ctx, lease, err := w.acquireActorLease(caller, resources.ActorRef{Atespace: "space", Name: "actor"})
+	if err != nil {
+		t.Fatalf("acquireActorLease: %v", err)
+	}
+	t.Cleanup(lease.Close)
+	cancel()
+
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("workflow context ended with its caller: %v", err)
+	}
+	if got := ctx.Value(ctxKey{}); got != "peer" {
+		t.Errorf("workflow context value = %v, want the caller's", got)
+	}
+}

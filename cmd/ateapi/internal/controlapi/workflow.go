@@ -269,8 +269,14 @@ func actorLeaseKey(actorRef resources.ActorRef) string {
 	return "lease:actor:" + actorRef.Atespace + ":" + actorRef.Name
 }
 
+// acquireActorLease takes the actor's lease for one workflow. The workflow
+// context it returns outlives the caller's cancellation, carrying its values
+// on: a workflow that durably claimed a worker and moved the actor into a
+// transition finishes its atelet call, rather than leaving the actor there
+// for every retry to restart the same work and die the same way. It is
+// bounded by the workflow deadline and by the lease.
 func (w *ActorWorkflow) acquireActorLease(ctx context.Context, actorRef resources.ActorRef) (context.Context, *store.Lease, error) {
-	workflowCtx, cancel := context.WithTimeout(ctx, w.workflowDeadline)
+	workflowCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.workflowDeadline)
 	leaseCtx, lease, err := acquireLease(workflowCtx, w.store, actorLeaseKey(actorRef), "actor")
 	if err != nil {
 		cancel()
