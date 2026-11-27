@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+
+# Copyright 2026 The Agent Substrate Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Fork (giantswarm/substrate): lints the ledger (FORK.md and the ledger files
+# of fork/; the workflow fork-ledger runs it on every pull request against a
+# line).
+#
+#   fork-ledger.sh pr   <pull-request.json> <FORK.md> [<fork/>]
+#       the pull request has its row in the ledger;
+#   fork-ledger.sh line <merged-pull-requests.json> <FORK.md> [<fork/>]
+#       every pull request merged into the line does (a maintenance branch:
+#       its own copy of FORK.md is its ledger; a path that does not exist,
+#       such as fork/ there, is skipped).
+#
+# A pull request's row is a ledger line naming its number as #<n> or as a
+# link, or a ledger file of fork/ the pull request itself adds or edits: the
+# number is read from the pull request, so one commit carries a change with
+# its file, and the merged pull request's file list ties the file to its
+# number on the line.
+#
+# The JSON is what `gh pr view --json` / `gh pr list --json` print with the
+# fields number, title, body, labels, files, headRefName and author. A pull
+# request needs no row when it changes the ledger alone (FORK.md, fork/), its title is
+# `docs(fork)…`, it comes from a re-pin candidate (`sync/…`, closed by the
+# landing, never merged), a bot opened it, or it carries the label
+# `no-ledger` with a line `no-ledger: <reason>` in its description.
+# Exit 1 names every missing number.
+
+set -o errexit -o nounset -o pipefail
+
+usage() {
+  echo "usage: $0 pr|line <json> <FORK.md> [<fork/>]" >&2
+  exit 2
+}
+
+# Whether one of the ledger files a pull request adds or edits (base names,
+# space-separated) is a file of a ledger directory: the pull request's own row.
+own_row() {
+  local own="$1" path name
+  shift
+  [[ -n "${own}" ]] || return 1
+  for path in "$@"; do
+    [[ -d "${path}" ]] || continue
+    for name in ${own}; do
+      [[ -f "${path}/${name}" ]] && return 0
+    done
+  done
+  return 1
+}
+
+# The pull requests of the JSON (one object or an array) that need a row and
+# have none, one per line as "<number>\t<reason the exemption failed>".
+missing() {
+  local json="$1"
+  shift
+  local -a ledger=("$@")
+  local n why own
+  while IFS=$'\t' read -r n why own; do
+    if ! own_row "${own}" "${ledger[@]}" &&
+      ! grep -rqE "(^|[^[:alnum:]/_.-])#${n}([^0-9]|$)|/pull/${n}([^0-9]|$)" "${ledger[@]}"; then
+      printf '%s\t%s\n' "${n}" "${why}"
+    fi
+  done < <(jq -r '
+    if type == "array" then .[] else . end
+    | select((.headRefName // "") | startswith("sync/") | not)
+    | select(.author.is_bot // false | not)
+    | select((.title // "") | test("^docs\\(fork\\)") | not)
+    | select([.files[]?.path] | any(. != "FORK.md" and (startswith("fork/") | not)))
+    | (([.labels[]?.name] | index("no-ledger")) != null) as $labelled
+    | ((.body // "") | test("(?m)^\\s*no-ledger:\\s*\\S")) as $reason
+    | select(($labelled and $reason) | not)
+    | [.number,
+       (if $labelled then "labelled no-ledger without a \"no-ledger: <reason>\" line in the description"
+        else "no row names it" end),
+       ([.files[]?.path | select(test("^fork/[^/]+[.]md$")) | ltrimstr("fork/")] | join(" "))]
+    | @tsv' "${json}")
+}
+
+[[ $# -ge 3 ]] || usage
+mode="$1" json="$2"
+shift 2
+[[ -f "${json}" && -f "$1" ]] || usage
+ledger=()
+for path in "$@"; do
+  [[ -e "${path}" ]] && ledger+=("${path}")
+done
+
+case "${mode}" in
+pr | line) ;;
+*) usage ;;
+esac
+
+result="$(missing "${json}" "${ledger[@]}")"
+if [[ -z "${result}" ]]; then
+  echo "fork-ledger: every pull request checked has its row in ${ledger[*]}"
+  exit 0
+fi
+
+while IFS=$'\t' read -r n why; do
+  echo "::error file=FORK.md::#${n} is missing from the ledger (${why}): add a ledger file of its own under fork/ (or a row naming #${n}), or label the pull request no-ledger with a line \"no-ledger: <reason>\" in its description"
+done <<<"${result}"
+echo "fork-ledger: missing $(cut -f1 <<<"${result}" | sed 's/^/#/' | paste -sd' ')" >&2
+exit 1

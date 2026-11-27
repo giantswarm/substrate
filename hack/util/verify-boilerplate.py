@@ -110,7 +110,7 @@ def main():
         filename = os.path.basename(filepath)
 
         # Skip non-source-code files
-        if ext in ['.md', '.txt', '.png', '.jpg', '.jpeg', '.gif', '.mp4', '.json', '.pdf', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.svg']:
+        if ext in ['.md', '.txt', '.png', '.jpg', '.jpeg', '.gif', '.mp4', '.json', '.json5', '.pdf', '.ico', '.woff', '.woff2', '.ttf', '.otf', '.svg']:
             continue
         if filename in ['LICENSE', 'NOTICE', 'CODEOWNERS', 'CNAME', '.gitignore', 'go.mod', 'go.sum', 'Cargo.lock']:
             continue
@@ -130,6 +130,15 @@ def main():
 
         # exclude github config
         if filepath in [".github/dependabot.yml"]:
+            continue
+
+        # exclude the files giantswarm/github's alignment writes into this fork
+        # (generated workflows, pre-commit, yamllint, nancy, DCO, the
+        # auto-release cliff.toml): Giant Swarm fork infrastructure, regenerated
+        # by the align-files workflow, no header.
+        if filepath.startswith(".github/workflows/zz_generated.") or filepath in [
+            ".pre-commit-config.yaml", ".yamllint.yaml", ".nancy-ignore.generated", "DCO", "cliff.toml",
+        ]:
             continue
 
         if not verify_file(filepath):
