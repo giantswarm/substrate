@@ -31,13 +31,26 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// ErrorDomain is the AIP-193 ErrorInfo domain of the reasons a substrate
+// server gives, the domain the router's resume path reads.
+const ErrorDomain = "ate.dev"
+
+// ReasonTerminalState is the ErrorInfo reason of a refusal for a state only an
+// explicit operation on the resource changes, such as a resume of a CRASHED
+// actor: no retry outlives it, so a router parking the request answers it at
+// once.
+const ReasonTerminalState = "TERMINAL_STATE"
+
 type apiError struct {
 	code codes.Code
 	err  error
+	// info is the AIP-193 ErrorInfo the status carries, if any.
+	info *errdetails.ErrorInfo
 }
 
 func (e *apiError) Error() string { return e.err.Error() }
@@ -68,6 +81,16 @@ func AlreadyExists(format string, args ...any) error {
 // requires. Retrying is pointless until that state changes.
 func FailedPrecondition(format string, args ...any) error {
 	return newf(codes.FailedPrecondition, format, args...)
+}
+
+// TerminalState reports a FailedPrecondition for a state only an explicit
+// operation changes, with ErrorInfo{ErrorDomain, ReasonTerminalState}.
+func TerminalState(format string, args ...any) error {
+	return &apiError{
+		code: codes.FailedPrecondition,
+		err:  fmt.Errorf(format, args...),
+		info: &errdetails.ErrorInfo{Domain: ErrorDomain, Reason: ReasonTerminalState},
+	}
 }
 
 // Aborted reports a request that lost a concurrency conflict, such as a
@@ -135,7 +158,13 @@ func FromError(err error) (s *status.Status, ok bool) {
 	}
 	var apiErr *apiError
 	if errors.As(err, &apiErr) {
-		return status.New(apiErr.code, apiErr.Error()), true
+		st := status.New(apiErr.code, apiErr.Error())
+		if apiErr.info != nil {
+			if withInfo, err := st.WithDetails(apiErr.info); err == nil {
+				st = withInfo
+			}
+		}
+		return st, true
 	}
 	if s := status.FromContextError(err); s.Code() != codes.Unknown {
 		return s, true

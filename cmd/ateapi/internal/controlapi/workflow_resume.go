@@ -100,6 +100,11 @@ func (w *ActorWorkflow) resumeActorOnce(ctx context.Context, actorRef resources.
 	if actor, err = w.ensureFencingTokenAdmitted(leaseCtx, actorRef, actor, token); err != nil {
 		return nil, false, err
 	}
+	if actor.GetStatus().GetState() == ateapi.ActorState_ACTOR_STATE_CRASHED {
+		// Only an explicit RevertActor or DeleteActor takes the actor out of
+		// CRASHED, so no retry of the resume outlives the refusal.
+		return nil, false, apierror.TerminalState("Actor %s is %s: revert or delete it", actorRef, ateapi.ActorState_ACTOR_STATE_CRASHED)
+	}
 	if wasRunning = actor.GetStatus().GetState() == ateapi.ActorState_ACTOR_STATE_RUNNING; wasRunning {
 		return actor, false, nil
 	}

@@ -41,6 +41,7 @@ import (
 	"go.ate.dev/substrate/internal/volume"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -784,8 +785,8 @@ func TestResumeActorWorkflow_RejectedAndIdempotentPaths(t *testing.T) {
 	}{
 		{
 			// The resume edge only exists from SUSPENDED and RESUMING; a
-			// CRASHED actor is rejected by ensureWorkerAssigned
-			// and its state is left untouched.
+			// CRASHED actor is refused as a terminal state and its state is
+			// left untouched.
 			name:      "crashed rejected",
 			seedState: ateapi.ActorState_ACTOR_STATE_CRASHED,
 			wantErr:   true,
@@ -819,8 +820,15 @@ func TestResumeActorWorkflow_RejectedAndIdempotentPaths(t *testing.T) {
 
 			actor, resumed, err := w.ResumeActor(ctx, resources.ActorRef{Atespace: "team-a", Name: "id1"}, nil)
 			if tc.wantErr {
-				if got := apierror.Code(err); got != codes.FailedPrecondition {
-					t.Fatalf("apierror.Code(err) = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
+				st, _ := apierror.FromError(err)
+				if st.Code() != codes.FailedPrecondition {
+					t.Fatalf("apierror.Code(err) = %v, want %v (err: %v)", st.Code(), codes.FailedPrecondition, err)
+				}
+				if tc.seedState == ateapi.ActorState_ACTOR_STATE_CRASHED {
+					info, ok := errorInfoOf(st)
+					if !ok || info.GetDomain() != apierror.ErrorDomain || info.GetReason() != apierror.ReasonTerminalState {
+						t.Errorf("ErrorInfo = %v, want {%s, %s}", info, apierror.ErrorDomain, apierror.ReasonTerminalState)
+					}
 				}
 			} else {
 				if err != nil {
@@ -3526,4 +3534,13 @@ func TestAssignWorkerAttempt_RefusesChangedOverhead(t *testing.T) {
 	if _, _, err := w.assignWorkerAttempt(context.Background(), resources.ActorRef{Atespace: "team-a", Name: "id1"}, actor, tmpl); err != nil {
 		t.Fatalf("assignWorkerAttempt() with an unchanged overhead = %v", err)
 	}
+}
+
+func errorInfoOf(st *status.Status) (*errdetails.ErrorInfo, bool) {
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok {
+			return info, true
+		}
+	}
+	return nil, false
 }

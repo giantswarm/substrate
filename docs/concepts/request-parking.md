@@ -132,6 +132,12 @@ When parking is **disabled** (`--parked-request-max=0`), the router fails fast:
 admission cap, and only `Aborted` (concurrent-resume) conflicts are retried,
 within a `15s` budget.
 
+A resume of a CRASHED actor is refused with `FailedPrecondition` carrying the
+AIP-193 `ErrorInfo` `{domain: "ate.dev", reason: "TERMINAL_STATE"}`: only an
+explicit `RevertActor` or `DeleteActor` changes that state. The agentgateway
+dataplane parks a `FailedPrecondition` only when it lacks that reason, so the
+request is answered at once instead of waiting out the parking budget.
+
 ### Parked requests survive router shutdown
 
 A request parked when the router pod receives SIGTERM is **not** reset: the

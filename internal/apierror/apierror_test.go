@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"testing"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -207,5 +208,25 @@ func TestNotAGRPCStatus(t *testing.T) {
 	err := fmt.Errorf("while reading tier 1: %w", NotFound("tier 1 not found"))
 	if s, ok := status.FromError(err); ok || s.Code() != codes.Unknown {
 		t.Errorf("status.FromError() = %v, %v, want Unknown, false", s.Code(), ok)
+	}
+}
+
+func TestTerminalState(t *testing.T) {
+	err := fmt.Errorf("resume: %w", TerminalState("Actor %s is CRASHED", "team-a/id1"))
+	st, ok := FromError(err)
+	if !ok || st.Code() != codes.FailedPrecondition {
+		t.Fatalf("FromError = %v, %v; want FailedPrecondition", st, ok)
+	}
+	var infos []*errdetails.ErrorInfo
+	for _, d := range st.Details() {
+		if info, ok := d.(*errdetails.ErrorInfo); ok {
+			infos = append(infos, info)
+		}
+	}
+	if len(infos) != 1 || infos[0].GetDomain() != ErrorDomain || infos[0].GetReason() != ReasonTerminalState {
+		t.Fatalf("ErrorInfo = %v, want one {%s, %s}", infos, ErrorDomain, ReasonTerminalState)
+	}
+	if plain, _ := FromError(FailedPrecondition("plain")); len(plain.Details()) != 0 {
+		t.Errorf("plain FailedPrecondition carries details %v, want none", plain.Details())
 	}
 }
