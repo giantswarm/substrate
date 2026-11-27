@@ -18,6 +18,8 @@ package ocispec
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +35,20 @@ import (
 
 // specFile is the OCI spec file name within a bundle.
 const specFile = "config.json"
+
+// MountDir is the directory under an actor's external volumes directory that
+// a mount of the external volume name binds from: the volume's own mount
+// point, or, for a mount of a sub-path or a read-only mount, a bind of its own
+// beside it that the worker makes before the sandbox starts
+// (internal/volumebind). A volume name is a DNS label, so the suffix never
+// names a volume.
+func MountDir(name, subPath string, readOnly bool) string {
+	if subPath == "" && !readOnly {
+		return name
+	}
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%t", subPath, readOnly))
+	return name + "." + hex.EncodeToString(sum[:6])
+}
 
 // Hostname is the UTS hostname for actor containers.
 const Hostname = "actor"
@@ -183,7 +199,11 @@ func Build(o Options) *specs.Spec {
 		bind(m.GetMountPath(), filepath.Join(actorDirs.GetDurableDirVolumeMountsDir(), m.GetName()), "rw")
 	}
 	for _, m := range container.GetExternalVolumeMounts() {
-		bind(m.GetMountPath(), filepath.Join(actorDirs.GetExternalVolumeMountsDir(), m.GetName()), "rw")
+		mode := "rw"
+		if m.GetReadOnly() {
+			mode = "ro"
+		}
+		bind(m.GetMountPath(), filepath.Join(actorDirs.GetExternalVolumeMountsDir(), MountDir(m.GetName(), m.GetSubPath(), m.GetReadOnly())), mode)
 	}
 	for _, m := range container.GetSystemInfoVolumeMounts() {
 		bind(m.GetMountPath(), filepath.Join(actorDirs.GetSystemInfoVolumeRootsDir(), m.GetName()), "ro")

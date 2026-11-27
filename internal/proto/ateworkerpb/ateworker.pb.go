@@ -1139,7 +1139,21 @@ type VolumeMount struct {
 	// +k8s:required
 	// +k8s:maxLength=4096
 	// +k8s:customValidation # clean absolute path, not /dev, outside /dev/pts, /proc and /sys
-	MountPath     string `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	MountPath string `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	// sub_path is the directory of an external volume to mount, relative to
+	// its root; empty mounts the root. The worker binds it beside the volume's
+	// mount point before the sandbox starts (internal/volumebind). Only
+	// external_volume_mounts set it.
+	//
+	// +k8s:optional
+	// +k8s:maxLength=4096
+	// +k8s:customValidation # clean relative path
+	SubPath string `protobuf:"bytes,10001,opt,name=sub_path,json=subPath,proto3" json:"sub_path,omitempty"`
+	// read_only mounts an external volume read-only. Only
+	// external_volume_mounts set it.
+	//
+	// +k8s:optional
+	ReadOnly      bool `protobuf:"varint,10002,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1186,6 +1200,20 @@ func (x *VolumeMount) GetMountPath() string {
 		return x.MountPath
 	}
 	return ""
+}
+
+func (x *VolumeMount) GetSubPath() string {
+	if x != nil {
+		return x.SubPath
+	}
+	return ""
+}
+
+func (x *VolumeMount) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 // WakeupProbe describes how to check that a container is ready to serve.
@@ -2203,11 +2231,13 @@ const file_internal_proto_ateworkerpb_ateworker_proto_rawDesc = "" +
 	"\x06limits\x18\x01 \x01(\v2\x14.ateworker.ResourcesR\x06limits\"U\n" +
 	"\tResources\x12%\n" +
 	"\x0ecpu_millicores\x18\x01 \x01(\x03R\rcpuMillicores\x12!\n" +
-	"\fmemory_bytes\x18\x02 \x01(\x03R\vmemoryBytes\"@\n" +
+	"\fmemory_bytes\x18\x02 \x01(\x03R\vmemoryBytes\"z\n" +
 	"\vVolumeMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"mount_path\x18\x02 \x01(\tR\tmountPath\"k\n" +
+	"mount_path\x18\x02 \x01(\tR\tmountPath\x12\x1a\n" +
+	"\bsub_path\x18\x91N \x01(\tR\asubPath\x12\x1c\n" +
+	"\tread_only\x18\x92N \x01(\bR\breadOnly\"k\n" +
 	"\vWakeupProbe\x123\n" +
 	"\bhttp_get\x18\x01 \x01(\v2\x18.ateworker.HttpGetActionR\ahttpGet\x12'\n" +
 	"\x0ftimeout_seconds\x18\x02 \x01(\x05R\x0etimeoutSeconds\"7\n" +

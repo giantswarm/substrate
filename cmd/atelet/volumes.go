@@ -54,6 +54,8 @@ func (s *Atelet) mountExternalVolumes(ctx context.Context, actorUID string, volu
 			TargetPath:     hostPath,
 			VolumeContext:  ext.GetVolumeContext(),
 			PublishContext: ext.GetPublishContext(),
+			Mode:           accessMode(ext),
+			ReadOnly:       ext.GetReadOnly(),
 		}); err != nil {
 			return fmt.Errorf("failed to mount volume %q to %q: %w", ext.GetStorageVolumeId(), hostPath, err)
 		}
@@ -82,7 +84,7 @@ func (s *Atelet) unmountExternalVolumes(ctx context.Context, actorUID string, vo
 			errs = append(errs, fmt.Errorf("failed to get volume plugin for %q (volume %q): %w", ext.GetVolumeType(), ext.GetStorageVolumeId(), err))
 			continue
 		}
-		if err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath); err != nil {
+		if err := plugin.UnmountVolume(ctx, ext.GetStorageVolumeId(), hostPath, accessMode(ext)); err != nil {
 			if status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
 				slog.WarnContext(ctx, "Volume not found during unmount, assuming already unmounted", slog.String("volume_id", ext.GetStorageVolumeId()), slog.Any("error", err))
 			} else {
@@ -91,6 +93,18 @@ func (s *Atelet) unmountExternalVolumes(ctx context.Context, actorUID string, vo
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// accessMode maps an external volume's access mode to the volume plugins'.
+func accessMode(ext *ateletpb.ExternalVolumeSource) volume.AccessMode {
+	switch ext.GetAccessMode() {
+	case ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY:
+		return volume.ReadOnlyMany
+	case ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY:
+		return volume.ReadWriteMany
+	default:
+		return volume.ReadWriteOnce
+	}
 }
 
 func (s *Atelet) getPlugin(ctx context.Context, driverName string) (volume.VolumePluginWorkerPlane, error) {

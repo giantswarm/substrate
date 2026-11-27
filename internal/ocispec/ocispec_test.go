@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -84,8 +85,12 @@ func TestBuild_VolumeMounts(t *testing.T) {
 				{Name: "data", MountPath: "/home/counter"},
 			},
 			SystemInfoVolumeMounts: []*ateworkerpb.VolumeMount{{Name: "sysinfo", MountPath: "/run/ate"}},
-			ExternalVolumeMounts:   []*ateworkerpb.VolumeMount{{Name: "csi", MountPath: "/mnt/csi"}},
-			ImageVolumeMounts:      []*ateworkerpb.VolumeMount{{Name: "agent", MountPath: "/ate"}},
+			ExternalVolumeMounts: []*ateworkerpb.VolumeMount{
+				{Name: "csi", MountPath: "/mnt/csi"},
+				{Name: "csi", MountPath: "/workspace", SubPath: "sessions/a"},
+				{Name: "csi", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
+			},
+			ImageVolumeMounts: []*ateworkerpb.VolumeMount{{Name: "agent", MountPath: "/ate"}},
 		},
 	})
 
@@ -98,6 +103,8 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		{"/home/counter", durableDir + "/data", []string{"bind", "rw", "nodev"}},
 		{"/run/ate", sysInfoDir + "/sysinfo", []string{"bind", "ro", "nodev"}},
 		{"/mnt/csi", volumesDir + "/csi", []string{"bind", "rw", "nodev"}},
+		{"/workspace", volumesDir + "/" + MountDir("csi", "sessions/a", false), []string{"bind", "rw", "nodev"}},
+		{"/mirrors", volumesDir + "/" + MountDir("csi", "mirrors", true), []string{"bind", "ro", "nodev"}},
 		{"/ate", imagecache.ImageVolumeMountPath(bundle, "agent"), []string{"bind", "ro", "nodev"}},
 	} {
 		m := mountFor(t, spec, tc.dest)
@@ -109,6 +116,31 @@ func TestBuild_VolumeMounts(t *testing.T) {
 		}
 		if !slices.Equal(m.Options, tc.wantOpts) {
 			t.Errorf("%s options = %v, want %v", tc.dest, m.Options, tc.wantOpts)
+		}
+	}
+}
+
+// A mount of a sub-path or a read-only mount binds a directory of its own,
+// one per sub-path and read-only flag, which never names a volume.
+func TestMountDir(t *testing.T) {
+	plain := MountDir("ws", "", false)
+	sub := MountDir("ws", "sessions/a", false)
+	subRO := MountDir("ws", "sessions/a", true)
+	rootRO := MountDir("ws", "", true)
+	other := MountDir("ws", "sessions/b", false)
+	if plain != "ws" {
+		t.Errorf("plain mount dir = %q, want the volume's own", plain)
+	}
+	seen := map[string]bool{}
+	for _, d := range []string{plain, sub, subRO, rootRO, other} {
+		if seen[d] {
+			t.Errorf("mount dir %q is not distinct", d)
+		}
+		seen[d] = true
+	}
+	for _, d := range []string{sub, subRO, rootRO, other} {
+		if !strings.HasPrefix(d, "ws.") {
+			t.Errorf("mount dir = %q, want ws.<hash>", d)
 		}
 	}
 }

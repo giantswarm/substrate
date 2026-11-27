@@ -36,6 +36,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -106,14 +107,16 @@ func logActorState(ctx context.Context, actor *ateapi.Actor, opName, state strin
 // each exported method begins with preview.ContextWithOptIn: the request was
 // already validated, and what the workflow writes is the system's own state.
 type ActorWorkflow struct {
-	store                   actorWorkflowStore
-	workerCache             *workercache.Cache
-	scheduler               scheduling.Scheduler
-	dialer                  *AteletDialer
-	storageClassLister      storagev1listers.StorageClassLister
-	instruments             *Instruments
-	egressGatewayAddress    string
-	pluginRegistry          VolumePluginRegistry
+	store                actorWorkflowStore
+	workerCache          *workercache.Cache
+	scheduler            scheduling.Scheduler
+	dialer               *AteletDialer
+	storageClassLister   storagev1listers.StorageClassLister
+	instruments          *Instruments
+	egressGatewayAddress string
+	pluginRegistry       VolumePluginRegistry
+	// persistentVolumeLister resolves an actor's existing volumes at resume.
+	persistentVolumeLister  corev1listers.PersistentVolumeLister
 	workflowDeadline        time.Duration
 	restoreBudget           time.Duration
 	objectStorePlugin       objectstore.ControlProviderClient

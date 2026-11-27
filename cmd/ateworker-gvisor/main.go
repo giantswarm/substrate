@@ -62,6 +62,7 @@ import (
 	"go.ate.dev/substrate/internal/sizing"
 	"go.ate.dev/substrate/internal/snapshotcache"
 	"go.ate.dev/substrate/internal/version"
+	"go.ate.dev/substrate/internal/volumebind"
 	"go.ate.dev/substrate/internal/wakeupprobe"
 	"go.ate.dev/substrate/internal/workerstats"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -735,6 +736,9 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 				slog.WarnContext(ctx, "Failed to unmount bundle rootfs overlays after Run failure",
 					"actorUID", req.GetActorUid(), "err", err)
 			}
+			if err := volumebind.Release(req.GetActorDirs().GetExternalVolumeMountsDir()); err != nil {
+				slog.WarnContext(cleanupCtx, "Failed to unbind volume directories after Run failure", slog.Any("err", err))
+			}
 			if err := s.unhostActor(cleanupCtx, req.GetActorUid()); err != nil {
 				slog.WarnContext(cleanupCtx, "Failed to clean up actor network after Run failure", slog.Any("err", err))
 			}
@@ -747,6 +751,11 @@ func (s *AteWorkerService) RunWorkload(ctx context.Context, req *ateworkerpb.Run
 	// the wakeup probe (see tunnel.Tunnel.ActivateEgress).
 	if err := s.tunnel.ActivateEgress(attribution, egress); err != nil {
 		return nil, err
+	}
+	// Bind the directories of external volumes that mounts name a sub-path of
+	// or mount read-only, in this pod's mount namespace like the rootfs below.
+	if err := volumebind.Prepare(req.GetActorDirs().GetExternalVolumeMountsDir(), req.GetSpec().GetContainers()); err != nil {
+		return nil, fmt.Errorf("while binding volume directories: %w", err)
 	}
 	containersToDelete = append(containersToDelete, ocispec.SandboxID)
 	// Attribute the sandbox's runsc CLI output to the actor.
@@ -1221,6 +1230,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 				slog.WarnContext(ctx, "Failed to unmount bundle rootfs overlays after Restore failure",
 					"actorUID", req.GetActorUid(), "err", err)
 			}
+			if err := volumebind.Release(req.GetActorDirs().GetExternalVolumeMountsDir()); err != nil {
+				slog.WarnContext(cleanupCtx, "Failed to unbind volume directories after Restore failure", slog.Any("err", err))
+			}
 			if err := s.unhostActor(cleanupCtx, req.GetActorUid()); err != nil {
 				slog.WarnContext(cleanupCtx, "Failed to clean up actor network after Restore failure", slog.Any("err", err))
 			}
@@ -1238,6 +1250,9 @@ func (s *AteWorkerService) RestoreWorkload(ctx context.Context, req *ateworkerpb
 	restoreArgs, err := fsRestoreArgs(checkpointDir, fidelity)
 	if err != nil {
 		return nil, err
+	}
+	if err := volumebind.Prepare(req.GetActorDirs().GetExternalVolumeMountsDir(), containers); err != nil {
+		return nil, fmt.Errorf("while binding volume directories: %w", err)
 	}
 
 	// Attribute the sandbox's runsc CLI output to the actor.
@@ -1439,6 +1454,9 @@ func (s *AteWorkerService) terminateWorkload(ctx context.Context, actorRef resou
 	// the container cleanup above.
 	if err := imagecache.UnmountAllUnder(actorDirs.GetOciBundleDir()); err != nil {
 		errs = append(errs, fmt.Errorf("while unmounting bundle rootfs overlays: %w", err))
+	}
+	if err := volumebind.Release(actorDirs.GetExternalVolumeMountsDir()); err != nil {
+		errs = append(errs, fmt.Errorf("while unbinding volume directories: %w", err))
 	}
 
 	if err := s.unhostActor(ctx, actorUID); err != nil {

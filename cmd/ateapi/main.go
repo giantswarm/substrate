@@ -292,6 +292,9 @@ func main() {
 	ateletPodInformerFactory, ateletPodInformer := controlapi.AteletInformer(clientset, ateletNamespace)
 	scInformerFactory := informers.NewSharedInformerFactory(clientset, 0)
 	storageClassLister := scInformerFactory.Storage().V1().StorageClasses().Lister()
+	// PersistentVolumes: the cluster's record of the existing volumes actors
+	// mount, which CreateActor checks and resume reads the volume context from.
+	persistentVolumeLister := scInformerFactory.Core().V1().PersistentVolumes().Lister()
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -356,6 +359,7 @@ func main() {
 		workerCache,
 		csiDriverConfigLister,
 		storageClassLister,
+		persistentVolumeLister,
 		ateletDialer,
 		instruments,
 		*defaultEgressGatewayAddress,

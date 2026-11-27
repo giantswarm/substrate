@@ -520,6 +520,25 @@ func TestValidateMountPath(t *testing.T) {
 	})
 }
 
+func TestValidateSubPath(t *testing.T) {
+	runStringRule(t, ValidateSubPath, []stringRuleCase{
+		{"empty is the root", "", false},
+		{"one element", "mirrors", false},
+		{"nested", "sessions/a", false},
+		{"absolute", "/abs", true},
+		{"trailing slash", "a/", true},
+		{"double slash", "a//b", true},
+		{"dot", ".", true},
+		{"dot segment", "a/./b", true},
+		{"dot-dot", "..", true},
+		{"dot-dot segment", "a/../b", true},
+		{"escaping", "../other", true},
+		{"control character", "a\x01b", true},
+		{"delete character", "a\x7fb", true},
+		{"dotted name", "a.b/..c", false},
+	})
+}
+
 func TestValidateHTTPGetPath(t *testing.T) {
 	runStringRule(t, ValidateHTTPGetPath, []stringRuleCase{
 		{"empty is left to tags", "", false},

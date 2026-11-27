@@ -156,6 +156,7 @@ func setupTestWithOptions(t *testing.T, ns string, options testOptions) *testCon
 	ateletFactory, ateletInformer := controlapi.AteletInformer(k8sClient, installdefaults.SystemNamespace)
 	scFactory := informers.NewSharedInformerFactory(k8sClient, 0)
 	scLister := scFactory.Storage().V1().StorageClasses().Lister()
+	pvLister := scFactory.Core().V1().PersistentVolumes().Lister()
 
 	substrateInformerFactory := externalversions.NewSharedInformerFactory(substrateClient, 0)
 	csiDriverConfigLister := substrateInformerFactory.Ate().V1().CSIDriverConfigs().Lister()
@@ -223,6 +224,7 @@ func setupTestWithOptions(t *testing.T, ns string, options testOptions) *testCon
 		wc,
 		csiDriverConfigLister,
 		scLister,
+		pvLister,
 		dialer,
 		instruments,
 		"",

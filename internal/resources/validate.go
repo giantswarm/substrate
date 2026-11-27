@@ -535,6 +535,27 @@ func ValidateMountPath(fldPath *field.Path, p string) field.ErrorList {
 	return nil
 }
 
+// ValidateSubPath requires a clean relative Unix path: no leading '/', no '.'
+// or '..' segments, no '//', no trailing '/', and no control characters.
+// Empty is the volume's root.
+func ValidateSubPath(fldPath *field.Path, p string) field.ErrorList {
+	if p == "" {
+		return nil
+	}
+	bad := strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/") ||
+		strings.Contains(p, "//") || mountPathBadSegmentRE.MatchString(p)
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			bad = true
+			break
+		}
+	}
+	if bad {
+		return field.ErrorList{field.Invalid(fldPath, p, "must be a clean relative Unix path: must not start or end with '/', and contain no '..', '.', '//', or control characters")}
+	}
+	return nil
+}
+
 // ValidateNestedMountPaths rejects mount paths that nest under or over one
 // another: volumes cannot mount onto other volumes. paths[i] is reported at
 // fldPath[i].mount_path. Identical paths are left to the list-key uniqueness

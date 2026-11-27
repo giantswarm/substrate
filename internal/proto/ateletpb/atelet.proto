@@ -660,6 +660,27 @@ message ExternalVolumeSource {
   // +k8s:optional
   // +k8s:customValidation # at most 40 KiB in total, ten times the CSI limit for map fields
   map<string, string> publish_context = 4;
+
+  // access_mode is how the volume is attached, staged and published; unset
+  // is READ_WRITE_ONCE. For an existing volume it is its PersistentVolume's
+  // own access mode, as the kubelet requests it.
+  //
+  // +k8s:optional
+  // +k8s:maximum=3 # keep in sync with VolumeAccessMode
+  VolumeAccessMode access_mode = 10001;
+
+  // read_only publishes the volume read-only, whatever its access mode.
+  //
+  // +k8s:optional
+  bool read_only = 10002;
+}
+
+// VolumeAccessMode mirrors ateapi.VolumeAccessMode.
+enum VolumeAccessMode {
+  VOLUME_ACCESS_MODE_UNSPECIFIED = 0;
+  VOLUME_ACCESS_MODE_READ_WRITE_ONCE = 1;
+  VOLUME_ACCESS_MODE_READ_ONLY_MANY = 2;
+  VOLUME_ACCESS_MODE_READ_WRITE_MANY = 3;
 }
 
 message ImageVolumeSource {
@@ -795,6 +816,19 @@ message VolumeMount {
   // +k8s:maxLength=4096
   // +k8s:customValidation # clean absolute path, not /dev, outside /dev/pts, /proc and /sys
   string mount_path = 2;
+
+  // sub_path is the directory of an external volume to mount, relative to
+  // its root; empty mounts the root.
+  //
+  // +k8s:optional
+  // +k8s:maxLength=4096
+  // +k8s:customValidation # clean relative path
+  string sub_path = 10001;
+
+  // read_only mounts an external volume read-only.
+  //
+  // +k8s:optional
+  bool read_only = 10002;
 }
 
 message Container {

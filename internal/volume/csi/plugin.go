@@ -16,8 +16,10 @@ package csi
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -214,7 +216,7 @@ func (p *Plugin) AttachVolume(ctx context.Context, req volume.AttachVolumeReques
 	csiReq := &csi.ControllerPublishVolumeRequest{
 		VolumeId:         req.VolumeID,
 		NodeId:           req.Node,
-		VolumeCapability: getStandardCapabilities()[0], // Use primary capability
+		VolumeCapability: mountCapability(req.Mode),
 		Readonly:         false,
 	}
 
@@ -257,7 +259,14 @@ func (p *Plugin) DetachVolume(ctx context.Context, volumeID string, node string)
 
 // MountVolume maps to CSI Node NodePublishVolume.
 // It also handles NodeStageVolume staging if required by the driver.
+// Like the kubelet, it requests the volume's own access mode and expresses a
+// read-only mount as the publish's readonly flag: a driver may support only
+// the volume's mode (the AWS EFS driver refuses MULTI_NODE_READER_ONLY for a
+// read-write-many volume).
 func (p *Plugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest) error {
+	if p.stagesShared(req.Mode) {
+		defer lockStaging(p.volumeStagingDir(req.VolumeID))()
+	}
 	stagingPath, err := p.stageVolume(ctx, req)
 	if err != nil {
 		return err
@@ -267,26 +276,36 @@ func (p *Plugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest)
 		VolumeId:          req.VolumeID,
 		StagingTargetPath: stagingPath,
 		TargetPath:        req.TargetPath,
-		VolumeCapability:  getStandardCapabilities()[0],
-		Readonly:          false,
+		VolumeCapability:  mountCapability(req.Mode),
+		Readonly:          req.ReadOnly || req.Mode == volume.ReadOnlyMany,
 		VolumeContext:     req.VolumeContext,
 		PublishContext:    req.PublishContext,
 	}
 
 	if _, err := p.client.NodePublishVolume(ctx, csiReq); err != nil {
-		return fmt.Errorf("CSI NodePublishVolume failed: %w", err)
+		err = fmt.Errorf("CSI NodePublishVolume failed: %w", err)
+		if stagingPath != "" && req.Mode.MultiNode() {
+			if releaseErr := p.releaseSharedStaging(ctx, req.VolumeID, req.TargetPath); releaseErr != nil {
+				slog.WarnContext(ctx, "failed to release the staging of a volume whose publish failed", slog.String("volume_id", req.VolumeID), slog.Any("error", releaseErr))
+			}
+		}
+		return err
 	}
 	return nil
 }
 
 // stageVolume calls NodeStageVolume if the driver supports it. It returns the staging
-// path, or an empty string if the volume was not staged.
+// path, or an empty string if the volume was not staged. A volume of a
+// multi-node mode is staged at one path per node, which every target shares
+// (the CSI spec allows one staging_target_path per volume): staging it again
+// is the driver's idempotent no-op, and the target is recorded so that the
+// last target's unmount unstages it.
 func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest) (string, error) {
 	if !p.SupportsNodeCapability(csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME) {
 		return "", nil
 	}
 
-	stagingPath := filepath.Join(p.stagingDirPrefix, req.VolumeID)
+	stagingPath := p.stagingPath(req.VolumeID, req.Mode)
 	if err := os.MkdirAll(stagingPath, 0750); err != nil {
 		return "", fmt.Errorf("failed to create staging directory %q: %w", stagingPath, err)
 	}
@@ -294,7 +313,7 @@ func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest)
 	csiReq := &csi.NodeStageVolumeRequest{
 		VolumeId:          req.VolumeID,
 		StagingTargetPath: stagingPath,
-		VolumeCapability:  getStandardCapabilities()[0], // Use primary capability
+		VolumeCapability:  mountCapability(req.Mode),
 		VolumeContext:     req.VolumeContext,
 		PublishContext:    req.PublishContext,
 	}
@@ -309,12 +328,23 @@ func (p *Plugin) stageVolume(ctx context.Context, req volume.MountVolumeRequest)
 	if err != nil {
 		return "", fmt.Errorf("CSI NodeStageVolume failed: %w", err)
 	}
+	if req.Mode.MultiNode() {
+		if err := p.recordTarget(req.VolumeID, req.TargetPath); err != nil {
+			if releaseErr := p.releaseSharedStaging(ctx, req.VolumeID, req.TargetPath); releaseErr != nil {
+				slog.WarnContext(ctx, "failed to release the staging of a volume whose target was not recorded", slog.String("volume_id", req.VolumeID), slog.Any("error", releaseErr))
+			}
+			return "", err
+		}
+	}
 	return stagingPath, nil
 }
 
 // UnmountVolume maps to CSI Node NodeUnpublishVolume.
 // It also handles NodeUnstageVolume if staging was used.
-func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, mode volume.AccessMode) error {
+	if p.stagesShared(mode) {
+		defer lockStaging(p.volumeStagingDir(volumeID))()
+	}
 	req := &csi.NodeUnpublishVolumeRequest{
 		VolumeId:   volumeID,
 		TargetPath: targetPath,
@@ -324,17 +354,25 @@ func (p *Plugin) UnmountVolume(ctx context.Context, volumeID string, targetPath 
 		return fmt.Errorf("CSI NodeUnpublishVolume failed: %w", err)
 	}
 
-	return p.unstageVolume(ctx, volumeID)
+	return p.unstageVolume(ctx, volumeID, targetPath, mode)
 }
 
 // unstageVolume calls NodeUnstageVolume and removes the staging directory if the
-// driver supports staging.
-func (p *Plugin) unstageVolume(ctx context.Context, volumeID string) error {
+// driver supports staging. A volume of a multi-node mode stays staged while
+// another target on the node still has it.
+func (p *Plugin) unstageVolume(ctx context.Context, volumeID, targetPath string, mode volume.AccessMode) error {
 	if !p.SupportsNodeCapability(csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME) {
 		return nil
 	}
+	if mode.MultiNode() {
+		return p.releaseSharedStaging(ctx, volumeID, targetPath)
+	}
+	return p.unstageAt(ctx, volumeID, p.stagingPath(volumeID, mode))
+}
 
-	stagingPath := filepath.Join(p.stagingDirPrefix, volumeID)
+// unstageAt calls NodeUnstageVolume for one staging path and removes its
+// directory.
+func (p *Plugin) unstageAt(ctx context.Context, volumeID, stagingPath string) error {
 	req := &csi.NodeUnstageVolumeRequest{
 		VolumeId:          volumeID,
 		StagingTargetPath: stagingPath,
@@ -350,6 +388,113 @@ func (p *Plugin) unstageVolume(ctx context.Context, volumeID string) error {
 
 	removeStagingDir(ctx, stagingPath)
 	return nil
+}
+
+// The layout of a multi-node volume's staging directory on the node
+// (volumeStagingDir): the one staging path every target shares, and a file
+// per target that has the volume published, named by targetKey. A release
+// before this layout staged each target at <volumeStagingDir>/<targetKey>;
+// such a staging is unstaged where it is.
+const (
+	sharedStagingDir = "staged"
+	stagedTargetsDir = "targets"
+)
+
+// stagesShared reports whether a mount of the mode goes through the shared
+// staging of a multi-node volume.
+func (p *Plugin) stagesShared(mode volume.AccessMode) bool {
+	return mode.MultiNode() && p.SupportsNodeCapability(csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME)
+}
+
+// volumeStagingDir is the directory of a volume's staging on the node.
+func (p *Plugin) volumeStagingDir(volumeID string) string {
+	return filepath.Join(p.stagingDirPrefix, volumeID)
+}
+
+// stagingPath is where a volume is staged on the node: once per node, a
+// multi-node volume's shared by every target.
+func (p *Plugin) stagingPath(volumeID string, mode volume.AccessMode) string {
+	if !mode.MultiNode() {
+		return p.volumeStagingDir(volumeID)
+	}
+	return filepath.Join(p.volumeStagingDir(volumeID), sharedStagingDir)
+}
+
+// targetKey names a target path within a volume's staging directory.
+func targetKey(targetPath string) string {
+	sum := sha256.Sum256([]byte(targetPath))
+	return hex.EncodeToString(sum[:8])
+}
+
+// recordTarget records that a target has a multi-node volume published.
+func (p *Plugin) recordTarget(volumeID, targetPath string) error {
+	dir := filepath.Join(p.volumeStagingDir(volumeID), stagedTargetsDir)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return fmt.Errorf("failed to create the staged targets directory %q: %w", dir, err)
+	}
+	record := filepath.Join(dir, targetKey(targetPath))
+	if err := os.WriteFile(record, nil, 0640); err != nil {
+		return fmt.Errorf("failed to record the staged target %q: %w", record, err)
+	}
+	return nil
+}
+
+// releaseSharedStaging drops a target's hold on a multi-node volume's
+// staging and unstages the volume once no target holds it. A target a
+// release before the shared layout staged on its own is unstaged at its own
+// path.
+func (p *Plugin) releaseSharedStaging(ctx context.Context, volumeID, targetPath string) error {
+	dir := p.volumeStagingDir(volumeID)
+	key := targetKey(targetPath)
+	if fi, err := os.Stat(filepath.Join(dir, key)); err == nil && fi.IsDir() {
+		if err := p.unstageAt(ctx, volumeID, filepath.Join(dir, key)); err != nil {
+			return err
+		}
+		_ = os.Remove(dir)
+		return nil
+	}
+
+	targets := filepath.Join(dir, stagedTargetsDir)
+	if err := os.Remove(filepath.Join(targets, key)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove the staged target record of %q: %w", targetPath, err)
+	}
+	remaining, err := os.ReadDir(targets)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read the staged targets of volume %q: %w", volumeID, err)
+	}
+	if len(remaining) > 0 {
+		return nil
+	}
+	if err := p.unstageAt(ctx, volumeID, filepath.Join(dir, sharedStagingDir)); err != nil {
+		return err
+	}
+	_ = os.Remove(targets)
+	_ = os.Remove(dir)
+	return nil
+}
+
+// stagingLocks serializes the staging of one multi-node volume across every
+// Plugin of the process, by its staging directory: a mount must not stage
+// while the last other target's unmount unstages.
+var stagingLocks sync.Map
+
+// lockStaging locks a volume's staging and returns the unlock.
+func lockStaging(dir string) func() {
+	mu, _ := stagingLocks.LoadOrStore(dir, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	return mu.(*sync.Mutex).Unlock
+}
+
+// mountCapability is the mount capability of an access mode.
+func mountCapability(mode volume.AccessMode) *csi.VolumeCapability {
+	capability := getStandardCapabilities()[0]
+	switch mode {
+	case volume.ReadOnlyMany:
+		capability.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY
+	case volume.ReadWriteMany:
+		capability.AccessMode.Mode = csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER
+	}
+	return capability
 }
 
 // removeStagingDir removes an empty staging directory, logging any failure.

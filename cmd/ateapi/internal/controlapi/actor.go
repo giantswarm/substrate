@@ -82,11 +82,24 @@ func (s *ServiceImpl) CreateActor(ctx context.Context, inActor *ateapi.Actor) (*
 		return nil, err
 	}
 
+	if err := validateExistingVolumes(ctx, s.pluginRegistry, s.persistentVolumeLister, template, inActor.GetExistingVolumes()); err != nil {
+		return nil, err
+	}
+
 	// Resolve the explicit tag, or freeze the template's current golden default.
+	// The golden actor supplies no existing volumes, so its snapshot was
+	// captured without their mounts: an actor that supplies any boots fresh
+	// instead of restoring guest state built under another mount set.
 	tagRef := inActor.GetSourceTag()
-	if tagRef == nil {
+	switch {
+	case tagRef == nil && len(inActor.GetExistingVolumes()) > 0:
+	case tagRef == nil:
 		tagRef = template.GetStatus().GetGoldenSnapshotStatus().GetGoldenTag()
-	} else {
+	case len(inActor.GetExistingVolumes()) > 0:
+		// A tag does not record which existing volumes its guest state was
+		// captured with.
+		return nil, apierror.FailedPrecondition("Tag cloning does not support actors with existing volumes")
+	default:
 		// NOTE: whether the ExternalVolumes gate is enabled or not, we do not
 		// support cloning from a tag that has external volumes.
 		for _, volume := range template.GetVolumes() {

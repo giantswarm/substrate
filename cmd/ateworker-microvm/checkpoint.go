@@ -37,6 +37,7 @@ import (
 	"go.ate.dev/substrate/internal/imagecache"
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 	"go.ate.dev/substrate/internal/snapshotcache"
+	"go.ate.dev/substrate/internal/volumebind"
 	"go.ate.dev/substrate/internal/workerstats"
 	"golang.org/x/sync/errgroup"
 )
@@ -482,6 +483,12 @@ func (s *AteWorkerService) teardownActor(ctx context.Context, id string, actorDi
 	// the upper-dir removal below (removing a live overlay's upperdir would
 	// corrupt the mount rather than delete the files).
 	s.cleanupSandboxState(ctx, id)
+
+	// The binds of external volume directories go once the share that carried
+	// them into the guest is gone, before atelet unmounts the volumes.
+	if err := volumebind.Release(actorDirs.GetExternalVolumeMountsDir()); err != nil {
+		errs = append(errs, fmt.Errorf("while unbinding volume directories: %w", err))
+	}
 
 	// Remove the rootfs upper dir: ateworker owns it — atelet's actor-dir reset
 	// doesn't know it — and its absence is what marks a worker as holding no

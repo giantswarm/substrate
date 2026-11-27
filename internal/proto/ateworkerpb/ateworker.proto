@@ -404,6 +404,20 @@ message VolumeMount {
   // +k8s:maxLength=4096
   // +k8s:customValidation # clean absolute path, not /dev, outside /dev/pts, /proc and /sys
   string mount_path = 2;
+  // sub_path is the directory of an external volume to mount, relative to
+  // its root; empty mounts the root. The worker binds it beside the volume's
+  // mount point before the sandbox starts (internal/volumebind). Only
+  // external_volume_mounts set it.
+  //
+  // +k8s:optional
+  // +k8s:maxLength=4096
+  // +k8s:customValidation # clean relative path
+  string sub_path = 10001;
+  // read_only mounts an external volume read-only. Only
+  // external_volume_mounts set it.
+  //
+  // +k8s:optional
+  bool read_only = 10002;
 }
 
 // WakeupProbe describes how to check that a container is ready to serve.

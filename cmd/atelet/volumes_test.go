@@ -37,15 +37,18 @@ type mountCall struct {
 	volumeID   string
 	targetPath string
 	attributes map[string]string
+	mode       volume.AccessMode
+	readOnly   bool
 }
 
 type fakeWorkerPlugin struct {
-	mountErr    error
-	mountErrs   map[string]error
-	unmountErr  error
-	unmountErrs map[string]error
-	unmounted   []string
-	mountCalls  []mountCall
+	mountErr     error
+	mountErrs    map[string]error
+	unmountErr   error
+	unmountErrs  map[string]error
+	unmounted    []string
+	unmountModes []volume.AccessMode
+	mountCalls   []mountCall
 }
 
 func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolumeRequest) error {
@@ -53,6 +56,8 @@ func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolu
 		volumeID:   req.VolumeID,
 		targetPath: req.TargetPath,
 		attributes: req.VolumeContext,
+		mode:       req.Mode,
+		readOnly:   req.ReadOnly,
 	})
 	if f.mountErrs != nil {
 		if err, ok := f.mountErrs[req.VolumeID]; ok {
@@ -62,8 +67,9 @@ func (f *fakeWorkerPlugin) MountVolume(ctx context.Context, req volume.MountVolu
 	return f.mountErr
 }
 
-func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string) error {
+func (f *fakeWorkerPlugin) UnmountVolume(ctx context.Context, volumeID string, targetPath string, mode volume.AccessMode) error {
 	f.unmounted = append(f.unmounted, volumeID)
+	f.unmountModes = append(f.unmountModes, mode)
 	if f.unmountErrs != nil {
 		if err, ok := f.unmountErrs[volumeID]; ok {
 			return err
@@ -220,6 +226,48 @@ func TestMountExternalVolumes(t *testing.T) {
 		}
 		if diff := cmp.Diff(wantCalls, fake.mountCalls, cmp.AllowUnexported(mountCall{})); diff != "" {
 			t.Errorf("mountCalls mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("an existing volume mounts and unmounts with its access mode", func(t *testing.T) {
+		useTempNodeDirs(t)
+
+		fake := &fakeWorkerPlugin{}
+		s := &Atelet{
+			volumePlugins: map[string]volume.VolumePluginWorkerPlane{
+				"mock-driver": fake,
+			},
+		}
+		shared := func(name string, mode ateletpb.VolumeAccessMode, readOnly bool) *ateletpb.Volume {
+			return &ateletpb.Volume{Name: name, External: &ateletpb.ExternalVolumeSource{
+				StorageVolumeId: "shared", VolumeType: "mock-driver", AccessMode: mode, ReadOnly: readOnly,
+			}}
+		}
+		vols := []*ateletpb.Volume{
+			shared("workspace", ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY, false),
+			shared("mirrors", ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY, true),
+			shared("archive", ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY, true),
+		}
+		if err := s.mountExternalVolumes(ctx, actorUID, vols); err != nil {
+			t.Fatalf("mountExternalVolumes: %v", err)
+		}
+		type published struct {
+			Mode     volume.AccessMode
+			ReadOnly bool
+		}
+		var got []published
+		for _, c := range fake.mountCalls {
+			got = append(got, published{c.mode, c.readOnly})
+		}
+		want := []published{{volume.ReadWriteMany, false}, {volume.ReadWriteMany, true}, {volume.ReadOnlyMany, true}}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("published mismatch (-want +got):\n%s", diff)
+		}
+		if err := s.unmountExternalVolumes(ctx, actorUID, vols); err != nil {
+			t.Fatalf("unmountExternalVolumes: %v", err)
+		}
+		if diff := cmp.Diff([]volume.AccessMode{volume.ReadWriteMany, volume.ReadWriteMany, volume.ReadOnlyMany}, fake.unmountModes); diff != "" {
+			t.Errorf("unmount modes mismatch (-want +got):\n%s", diff)
 		}
 	})
 

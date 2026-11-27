@@ -55,15 +55,17 @@ func ValidateActorTemplateUpdate(ctx context.Context, fldPath *field.Path, newVa
 }
 
 // ValidateCustom_CreateActorTemplateRequest_ActorTemplate holds the rules
-// that span more than one field of a template.
+// that span more than one field of a template: a mount must reference a
+// declared volume, and only a mount of an existing volume may set sub_path or
+// read_only.
 func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *ateapi.ActorTemplate) field.ErrorList {
 	var errs field.ErrorList
 	if value.GetGoldenEgressPolicy() != nil && value.GetSnapshotConfig().GetGoldenSnapshotConfig().GetMode() == ateapi.GoldenSnapshotMode_GOLDEN_SNAPSHOT_MODE_DISABLED {
 		errs = append(errs, field.Forbidden(fldPath.Child("golden_egress_policy"), "requires golden snapshots to be enabled"))
 	}
-	declared := make(map[string]bool, len(value.GetVolumes()))
+	declared := make(map[string]*ateapi.Volume, len(value.GetVolumes()))
 	for _, vol := range value.GetVolumes() {
-		declared[vol.GetName()] = true
+		declared[vol.GetName()] = vol
 	}
 	for i, ctr := range value.GetContainers() {
 		for j, mount := range ctr.GetVolumeMounts() {
@@ -71,10 +73,20 @@ func ValidateCustom_CreateActorTemplateRequest_ActorTemplate(_ context.Context, 
 			if name == "" {
 				continue // required is enforced by tags
 			}
-			if !declared[name] {
-				errs = append(errs, field.Invalid(
-					fldPath.Child("containers").Index(i).Child("volume_mounts").Index(j).Child("name"),
-					name, "must reference a volume declared in the template"))
+			mountPath := fldPath.Child("containers").Index(i).Child("volume_mounts").Index(j)
+			vol, ok := declared[name]
+			if !ok {
+				errs = append(errs, field.Invalid(mountPath.Child("name"), name, "must reference a volume declared in the template"))
+				continue
+			}
+			if vol.GetExistingVolume() != nil {
+				continue
+			}
+			if mount.GetSubPath() != "" {
+				errs = append(errs, field.Invalid(mountPath.Child("sub_path"), mount.GetSubPath(), "may be set only on a mount of an existing volume"))
+			}
+			if mount.GetReadOnly() {
+				errs = append(errs, field.Invalid(mountPath.Child("read_only"), true, "may be set only on a mount of an existing volume"))
 			}
 		}
 	}
@@ -100,6 +112,10 @@ func ValidateCustom_HttpGetAction_Path(_ context.Context, _ operation.Operation,
 
 func ValidateCustom_VolumeMount_MountPath(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
 	return resources.ValidateMountPath(fldPath, *value)
+}
+
+func ValidateCustom_VolumeMount_SubPath(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
+	return resources.ValidateSubPath(fldPath, *value)
 }
 
 // ValidateCustom_Container_VolumeMounts rejects mounts that nest under one

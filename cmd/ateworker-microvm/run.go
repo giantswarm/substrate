@@ -46,6 +46,7 @@ import (
 	"go.ate.dev/substrate/internal/proto/ateworkerpb"
 	"go.ate.dev/substrate/internal/resources"
 	"go.ate.dev/substrate/internal/sizing"
+	"go.ate.dev/substrate/internal/volumebind"
 	"go.ate.dev/substrate/internal/wakeupprobe"
 	"golang.org/x/sys/unix"
 )
@@ -711,6 +712,11 @@ func (s *AteWorkerService) stageMergedRootfs(ctx context.Context, rr resolvedRun
 		}
 	}
 	if hasCsiVolumes(containers) {
+		// The directories mounts name a sub-path of, or mount read-only, are
+		// bound beside their volumes first, so the share carries them too.
+		if err := volumebind.Prepare(actorDirs.GetExternalVolumeMountsDir(), containers); err != nil {
+			return nil, fmt.Errorf("while binding volume directories: %w", err)
+		}
 		if err := s.stageCsiVolumes(ctx, id, actorDirs.GetExternalVolumeMountsDir()); err != nil {
 			return nil, fmt.Errorf("while staging CSI volumes: %w", err)
 		}

@@ -161,6 +161,74 @@ func TestValidateCreateActorTemplateRequest(t *testing.T) {
 		})},
 		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("name"), "ghost-vol", "")},
 	}, {
+		"existing volume mounted twice, at a sub-path and read-only",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{
+				{Name: "workspace", MountPath: "/workspace", SubPath: "sessions/a"},
+				{Name: "workspace", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
+			}
+		})},
+		nil,
+	}, {
+		"sub_path and read_only on a mount of another kind of volume",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "data", DurableDir: &ateapi.DurableDirVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "data", MountPath: "/var/data", SubPath: "a", ReadOnly: true}}
+		})},
+		field.ErrorList{
+			field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), "a", ""),
+			field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("read_only"), true, ""),
+		},
+	}, {
+		"existing volume and another source",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}, DurableDir: &ateapi.DurableDirVolumeSource{}}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "volumes").Index(0), nil, "").WithOrigin("union")},
+	}, {
+		"sub_path '/abs'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "/abs"}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
+		"sub_path 'a/'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "a/"}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
+		"sub_path 'a//b'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "a//b"}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
+		"sub_path 'a/../b'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "a/../b"}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
+		"sub_path '.'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "."}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
+		"sub_path 'a\\x01b'",
+		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
+			tmpl.Volumes = []*ateapi.Volume{{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}}
+			tmpl.Containers[0].VolumeMounts = []*ateapi.VolumeMount{{Name: "workspace", MountPath: "/workspace", SubPath: "a\x01b"}}
+		})},
+		field.ErrorList{field.Invalid(field.NewPath("actor_template", "containers").Index(0).Child("volume_mounts").Index(0).Child("sub_path"), nil, "")},
+	}, {
 		"missing snapshot_config is allowed",
 		&ateapi.CreateActorTemplateRequest{ActorTemplate: validActorTemplate(func(tmpl *ateapi.ActorTemplate) {
 			tmpl.SnapshotConfig = nil

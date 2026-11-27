@@ -782,6 +782,41 @@ func TestBuildWorkerWorkloadSpecForwardsContainerSpecs(t *testing.T) {
 	}
 }
 
+func TestBuildWorkerWorkloadSpecForwardsExternalSubPaths(t *testing.T) {
+	in := &ateletpb.WorkloadSpec{
+		Volumes: []*ateletpb.Volume{
+			{Name: "workspace", External: &ateletpb.ExternalVolumeSource{StorageVolumeId: "h", AccessMode: ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY}},
+			{Name: "mirrors", External: &ateletpb.ExternalVolumeSource{StorageVolumeId: "h", AccessMode: ateletpb.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY, ReadOnly: true}},
+		},
+		Containers: []*ateletpb.Container{{
+			Name: "main",
+			VolumeMounts: []*ateletpb.VolumeMount{
+				{Name: "workspace", MountPath: "/workspace", SubPath: "sessions/a"},
+				{Name: "workspace", MountPath: "/shared", SubPath: "shared", ReadOnly: true},
+				{Name: "mirrors", MountPath: "/mirrors", SubPath: "mirrors"},
+			},
+		}},
+	}
+	// A read-only volume makes every mount of it read-only.
+	want := &ateworkerpb.WorkloadSpec{
+		Containers: []*ateworkerpb.Container{{
+			Name: "main",
+			ExternalVolumeMounts: []*ateworkerpb.VolumeMount{
+				{Name: "workspace", MountPath: "/workspace", SubPath: "sessions/a"},
+				{Name: "workspace", MountPath: "/shared", SubPath: "shared", ReadOnly: true},
+				{Name: "mirrors", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true},
+			},
+		}},
+	}
+	got, err := buildWorkerWorkloadSpec(in, nil)
+	if err != nil {
+		t.Fatalf("buildWorkerWorkloadSpec failed: %v", err)
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("buildWorkerWorkloadSpec mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestBuildWorkerWorkloadSpecForwardsDurableDirMounts(t *testing.T) {
 	in := &ateletpb.WorkloadSpec{
 		Volumes: []*ateletpb.Volume{

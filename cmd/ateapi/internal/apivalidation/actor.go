@@ -142,3 +142,15 @@ func ValidateCustom_ExternalVolumeStatus_StorageVolumeId(_ context.Context, _ op
 func ValidateCustom_ExternalVolumeStatus_VolumeContext(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ map[string]string) field.ErrorList {
 	return resources.ValidateCSIMap(fldPath, value)
 }
+
+func ValidateCustom_ExistingVolume_Driver(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
+	return resources.ValidateVolumeType(fldPath, *value)
+}
+
+func ValidateCustom_ExistingVolume_VolumeHandle(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
+	return resources.ValidateStorageVolumeID(fldPath, *value)
+}
+
+func ValidateCustom_ExistingVolume_SubPath(_ context.Context, _ operation.Operation, fldPath *field.Path, value, _ *string) field.ErrorList {
+	return resources.ValidateSubPath(fldPath, *value)
+}

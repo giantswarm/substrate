@@ -28,6 +28,7 @@ import (
 	"go.ate.dev/substrate/internal/volume"
 	"go.ate.dev/substrate/internal/volume/csi"
 	atelisters "go.ate.dev/substrate/pkg/client/listers/ate/v1"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	storagev1listers "k8s.io/client-go/listers/storage/v1"
 )
 
@@ -80,6 +81,7 @@ func NewRPCService(
 	workerCache *workercache.Cache,
 	csiDriverConfigLister atelisters.CSIDriverConfigLister,
 	storageClassLister storagev1listers.StorageClassLister,
+	persistentVolumeLister corev1listers.PersistentVolumeLister,
 	dialer *AteletDialer,
 	instruments *Instruments,
 	egressGatewayAddress string,
@@ -93,6 +95,7 @@ func NewRPCService(
 ) *RPCService {
 	impl := newServiceImpl(persistence, storageClassLister)
 	impl.clusterSnapshotLocation = snapshotLocation
+	impl.persistentVolumeLister = persistentVolumeLister
 	s := &RPCService{
 		impl:                  impl,
 		persistence:           persistence,
@@ -107,6 +110,8 @@ func NewRPCService(
 	}
 	s.actorWorkflow = NewActorWorkflow(impl, workerCache, dialer, storageClassLister, instruments, egressGatewayAddress, s, actorWorkflowDeadline, actorRestoreBudget, objectStorePlugin)
 	s.actorWorkflow.clusterSnapshotLocation = snapshotLocation
+	s.actorWorkflow.persistentVolumeLister = persistentVolumeLister
+	impl.pluginRegistry = s
 	s.workerWorkflow = NewWorkerWorkflow(impl, dialer)
 	return s
 }
@@ -180,6 +185,11 @@ type ServiceImpl struct {
 	store store.Interface
 
 	storageClassLister storagev1listers.StorageClassLister
+
+	// pluginRegistry and persistentVolumeLister resolve what CreateActor
+	// checks an actor's existing volumes against.
+	pluginRegistry         VolumePluginRegistry
+	persistentVolumeLister corev1listers.PersistentVolumeLister
 
 	// clusterSnapshotLocation is ate-api-server's --snapshot-location; see
 	// resolveSnapshotLocation.

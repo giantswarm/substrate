@@ -36,6 +36,59 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// VolumeAccessMode mirrors ateapi.VolumeAccessMode.
+type VolumeAccessMode int32
+
+const (
+	VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED     VolumeAccessMode = 0
+	VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_ONCE VolumeAccessMode = 1
+	VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY  VolumeAccessMode = 2
+	VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY VolumeAccessMode = 3
+)
+
+// Enum value maps for VolumeAccessMode.
+var (
+	VolumeAccessMode_name = map[int32]string{
+		0: "VOLUME_ACCESS_MODE_UNSPECIFIED",
+		1: "VOLUME_ACCESS_MODE_READ_WRITE_ONCE",
+		2: "VOLUME_ACCESS_MODE_READ_ONLY_MANY",
+		3: "VOLUME_ACCESS_MODE_READ_WRITE_MANY",
+	}
+	VolumeAccessMode_value = map[string]int32{
+		"VOLUME_ACCESS_MODE_UNSPECIFIED":     0,
+		"VOLUME_ACCESS_MODE_READ_WRITE_ONCE": 1,
+		"VOLUME_ACCESS_MODE_READ_ONLY_MANY":  2,
+		"VOLUME_ACCESS_MODE_READ_WRITE_MANY": 3,
+	}
+)
+
+func (x VolumeAccessMode) Enum() *VolumeAccessMode {
+	p := new(VolumeAccessMode)
+	*p = x
+	return p
+}
+
+func (x VolumeAccessMode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (VolumeAccessMode) Descriptor() protoreflect.EnumDescriptor {
+	return file_internal_proto_ateletpb_atelet_proto_enumTypes[0].Descriptor()
+}
+
+func (VolumeAccessMode) Type() protoreflect.EnumType {
+	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[0]
+}
+
+func (x VolumeAccessMode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use VolumeAccessMode.Descriptor instead.
+func (VolumeAccessMode) EnumDescriptor() ([]byte, []int) {
+	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{0}
+}
+
 // ActorMetadataField selects one identity field of the actor.
 type ActorMetadataField int32
 
@@ -73,11 +126,11 @@ func (x ActorMetadataField) String() string {
 }
 
 func (ActorMetadataField) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_proto_ateletpb_atelet_proto_enumTypes[0].Descriptor()
+	return file_internal_proto_ateletpb_atelet_proto_enumTypes[1].Descriptor()
 }
 
 func (ActorMetadataField) Type() protoreflect.EnumType {
-	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[0]
+	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[1]
 }
 
 func (x ActorMetadataField) Number() protoreflect.EnumNumber {
@@ -86,7 +139,7 @@ func (x ActorMetadataField) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActorMetadataField.Descriptor instead.
 func (ActorMetadataField) EnumDescriptor() ([]byte, []int) {
-	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{0}
+	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{1}
 }
 
 // SnapshotFidelity mirrors the public ateapi enum: the state layers a
@@ -134,11 +187,11 @@ func (x SnapshotFidelity) String() string {
 }
 
 func (SnapshotFidelity) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_proto_ateletpb_atelet_proto_enumTypes[1].Descriptor()
+	return file_internal_proto_ateletpb_atelet_proto_enumTypes[2].Descriptor()
 }
 
 func (SnapshotFidelity) Type() protoreflect.EnumType {
-	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[1]
+	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[2]
 }
 
 func (x SnapshotFidelity) Number() protoreflect.EnumNumber {
@@ -147,7 +200,7 @@ func (x SnapshotFidelity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SnapshotFidelity.Descriptor instead.
 func (SnapshotFidelity) EnumDescriptor() ([]byte, []int) {
-	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{1}
+	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{2}
 }
 
 // SnapshotSharing is how a snapshot in object storage may be consumed, as
@@ -190,11 +243,11 @@ func (x SnapshotSharing) String() string {
 }
 
 func (SnapshotSharing) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_proto_ateletpb_atelet_proto_enumTypes[2].Descriptor()
+	return file_internal_proto_ateletpb_atelet_proto_enumTypes[3].Descriptor()
 }
 
 func (SnapshotSharing) Type() protoreflect.EnumType {
-	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[2]
+	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[3]
 }
 
 func (x SnapshotSharing) Number() protoreflect.EnumNumber {
@@ -203,7 +256,7 @@ func (x SnapshotSharing) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SnapshotSharing.Descriptor instead.
 func (SnapshotSharing) EnumDescriptor() ([]byte, []int) {
-	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{2}
+	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{3}
 }
 
 // UploadMode is when a checkpoint's snapshot is uploaded.
@@ -255,11 +308,11 @@ func (x UploadMode) String() string {
 }
 
 func (UploadMode) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_proto_ateletpb_atelet_proto_enumTypes[3].Descriptor()
+	return file_internal_proto_ateletpb_atelet_proto_enumTypes[4].Descriptor()
 }
 
 func (UploadMode) Type() protoreflect.EnumType {
-	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[3]
+	return &file_internal_proto_ateletpb_atelet_proto_enumTypes[4]
 }
 
 func (x UploadMode) Number() protoreflect.EnumNumber {
@@ -268,7 +321,7 @@ func (x UploadMode) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use UploadMode.Descriptor instead.
 func (UploadMode) EnumDescriptor() ([]byte, []int) {
-	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{3}
+	return file_internal_proto_ateletpb_atelet_proto_rawDescGZIP(), []int{4}
 }
 
 type AcquireWorkerEpochRequest struct {
@@ -2352,8 +2405,19 @@ type ExternalVolumeSource struct {
 	// +k8s:optional
 	// +k8s:customValidation # at most 40 KiB in total, ten times the CSI limit for map fields
 	PublishContext map[string]string `protobuf:"bytes,4,rep,name=publish_context,json=publishContext,proto3" json:"publish_context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// access_mode is how the volume is attached, staged and published; unset
+	// is READ_WRITE_ONCE. For an existing volume it is its PersistentVolume's
+	// own access mode, as the kubelet requests it.
+	//
+	// +k8s:optional
+	// +k8s:maximum=3 # keep in sync with VolumeAccessMode
+	AccessMode VolumeAccessMode `protobuf:"varint,10001,opt,name=access_mode,json=accessMode,proto3,enum=atelet.VolumeAccessMode" json:"access_mode,omitempty"`
+	// read_only publishes the volume read-only, whatever its access mode.
+	//
+	// +k8s:optional
+	ReadOnly      bool `protobuf:"varint,10002,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ExternalVolumeSource) Reset() {
@@ -2412,6 +2476,20 @@ func (x *ExternalVolumeSource) GetPublishContext() map[string]string {
 		return x.PublishContext
 	}
 	return nil
+}
+
+func (x *ExternalVolumeSource) GetAccessMode() VolumeAccessMode {
+	if x != nil {
+		return x.AccessMode
+	}
+	return VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED
+}
+
+func (x *ExternalVolumeSource) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 type ImageVolumeSource struct {
@@ -2860,7 +2938,18 @@ type VolumeMount struct {
 	// +k8s:required
 	// +k8s:maxLength=4096
 	// +k8s:customValidation # clean absolute path, not /dev, outside /dev/pts, /proc and /sys
-	MountPath     string `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	MountPath string `protobuf:"bytes,2,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	// sub_path is the directory of an external volume to mount, relative to
+	// its root; empty mounts the root.
+	//
+	// +k8s:optional
+	// +k8s:maxLength=4096
+	// +k8s:customValidation # clean relative path
+	SubPath string `protobuf:"bytes,10001,opt,name=sub_path,json=subPath,proto3" json:"sub_path,omitempty"`
+	// read_only mounts an external volume read-only.
+	//
+	// +k8s:optional
+	ReadOnly      bool `protobuf:"varint,10002,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2907,6 +2996,20 @@ func (x *VolumeMount) GetMountPath() string {
 		return x.MountPath
 	}
 	return ""
+}
+
+func (x *VolumeMount) GetSubPath() string {
+	if x != nil {
+		return x.SubPath
+	}
+	return ""
+}
+
+func (x *VolumeMount) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 type Container struct {
@@ -4543,13 +4646,16 @@ const file_internal_proto_ateletpb_atelet_proto_rawDesc = "" +
 	"containers\x18\x01 \x03(\v2\x11.atelet.ContainerR\n" +
 	"containers\x12(\n" +
 	"\avolumes\x18\x02 \x03(\v2\x0e.atelet.VolumeR\avolumes\"\x18\n" +
-	"\x16DurableDirVolumeSource\"\x9b\x03\n" +
+	"\x16DurableDirVolumeSource\"\xf5\x03\n" +
 	"\x14ExternalVolumeSource\x12*\n" +
 	"\x11storage_volume_id\x18\x01 \x01(\tR\x0fstorageVolumeId\x12\x1f\n" +
 	"\vvolume_type\x18\x02 \x01(\tR\n" +
 	"volumeType\x12V\n" +
 	"\x0evolume_context\x18\x03 \x03(\v2/.atelet.ExternalVolumeSource.VolumeContextEntryR\rvolumeContext\x12Y\n" +
-	"\x0fpublish_context\x18\x04 \x03(\v20.atelet.ExternalVolumeSource.PublishContextEntryR\x0epublishContext\x1a@\n" +
+	"\x0fpublish_context\x18\x04 \x03(\v20.atelet.ExternalVolumeSource.PublishContextEntryR\x0epublishContext\x12:\n" +
+	"\vaccess_mode\x18\x91N \x01(\x0e2\x18.atelet.VolumeAccessModeR\n" +
+	"accessMode\x12\x1c\n" +
+	"\tread_only\x18\x92N \x01(\bR\breadOnly\x1a@\n" +
 	"\x12VolumeContextEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aA\n" +
@@ -4578,11 +4684,13 @@ const file_internal_proto_ateletpb_atelet_proto_rawDesc = "" +
 	"\bexternal\x18\x03 \x01(\v2\x1c.atelet.ExternalVolumeSourceR\bexternal\x12?\n" +
 	"\vsystem_info\x18\x04 \x01(\v2\x1e.atelet.SystemInfoVolumeSourceR\n" +
 	"systemInfo\x12/\n" +
-	"\x05image\x18\x05 \x01(\v2\x19.atelet.ImageVolumeSourceR\x05image\"@\n" +
+	"\x05image\x18\x05 \x01(\v2\x19.atelet.ImageVolumeSourceR\x05image\"z\n" +
 	"\vVolumeMount\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"mount_path\x18\x02 \x01(\tR\tmountPath\"\xf7\x02\n" +
+	"mount_path\x18\x02 \x01(\tR\tmountPath\x12\x1a\n" +
+	"\bsub_path\x18\x91N \x01(\tR\asubPath\x12\x1c\n" +
+	"\tread_only\x18\x92N \x01(\bR\breadOnly\"\xf7\x02\n" +
 	"\tContainer\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12\x18\n" +
@@ -4676,7 +4784,12 @@ const file_internal_proto_ateletpb_atelet_proto_rawDesc = "" +
 	"actor_name\x18\x02 \x01(\tR\tactorName\x12\x1b\n" +
 	"\tactor_uid\x18\x03 \x01(\tR\bactorUid\"G\n" +
 	"\x13DetachActorResponse\x120\n" +
-	"\x05state\x18\x01 \x01(\v2\x1a.atelet.ActorSnapshotStateR\x05state*\x9a\x01\n" +
+	"\x05state\x18\x01 \x01(\v2\x1a.atelet.ActorSnapshotStateR\x05state*\xad\x01\n" +
+	"\x10VolumeAccessMode\x12\"\n" +
+	"\x1eVOLUME_ACCESS_MODE_UNSPECIFIED\x10\x00\x12&\n" +
+	"\"VOLUME_ACCESS_MODE_READ_WRITE_ONCE\x10\x01\x12%\n" +
+	"!VOLUME_ACCESS_MODE_READ_ONLY_MANY\x10\x02\x12&\n" +
+	"\"VOLUME_ACCESS_MODE_READ_WRITE_MANY\x10\x03*\x9a\x01\n" +
 	"\x12ActorMetadataField\x12$\n" +
 	" ACTOR_METADATA_FIELD_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19ACTOR_METADATA_FIELD_NAME\x10\x01\x12!\n" +
@@ -4725,176 +4838,178 @@ func file_internal_proto_ateletpb_atelet_proto_rawDescGZIP() []byte {
 	return file_internal_proto_ateletpb_atelet_proto_rawDescData
 }
 
-var file_internal_proto_ateletpb_atelet_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_internal_proto_ateletpb_atelet_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
 var file_internal_proto_ateletpb_atelet_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
 var file_internal_proto_ateletpb_atelet_proto_goTypes = []any{
-	(ActorMetadataField)(0),                  // 0: atelet.ActorMetadataField
-	(SnapshotFidelity)(0),                    // 1: atelet.SnapshotFidelity
-	(SnapshotSharing)(0),                     // 2: atelet.SnapshotSharing
-	(UploadMode)(0),                          // 3: atelet.UploadMode
-	(*AcquireWorkerEpochRequest)(nil),        // 4: atelet.AcquireWorkerEpochRequest
-	(*AcquireWorkerEpochResponse)(nil),       // 5: atelet.AcquireWorkerEpochResponse
-	(*RegisterWorkerRequest)(nil),            // 6: atelet.RegisterWorkerRequest
-	(*SetWorkerSandboxRuntimesRequest)(nil),  // 7: atelet.SetWorkerSandboxRuntimesRequest
-	(*SetWorkerSandboxRuntimesResponse)(nil), // 8: atelet.SetWorkerSandboxRuntimesResponse
-	(*WorkerSandboxClass)(nil),               // 9: atelet.WorkerSandboxClass
-	(*WorkerSandboxRuntime)(nil),             // 10: atelet.WorkerSandboxRuntime
-	(*RuntimeOverhead)(nil),                  // 11: atelet.RuntimeOverhead
-	(*ActorSandboxRuntime)(nil),              // 12: atelet.ActorSandboxRuntime
-	(*VersionedSandboxCompat)(nil),           // 13: atelet.VersionedSandboxCompat
-	(*AttributeEntry)(nil),                   // 14: atelet.AttributeEntry
-	(*WorkerResources)(nil),                  // 15: atelet.WorkerResources
-	(*ResourceRequirements)(nil),             // 16: atelet.ResourceRequirements
-	(*Resources)(nil),                        // 17: atelet.Resources
-	(*RegisterWorkerResponse)(nil),           // 18: atelet.RegisterWorkerResponse
-	(*RequestActorSuspendRequest)(nil),       // 19: atelet.RequestActorSuspendRequest
-	(*RequestActorSuspendResponse)(nil),      // 20: atelet.RequestActorSuspendResponse
-	(*ReportActorCrashedRequest)(nil),        // 21: atelet.ReportActorCrashedRequest
-	(*ReportActorCrashedResponse)(nil),       // 22: atelet.ReportActorCrashedResponse
-	(*GetActorEgressPolicyRequest)(nil),      // 23: atelet.GetActorEgressPolicyRequest
-	(*GetActorEgressPolicyResponse)(nil),     // 24: atelet.GetActorEgressPolicyResponse
-	(*EgressPolicy)(nil),                     // 25: atelet.EgressPolicy
-	(*EgressRule)(nil),                       // 26: atelet.EgressRule
-	(*EgressDestinations)(nil),               // 27: atelet.EgressDestinations
-	(*EgressPorts)(nil),                      // 28: atelet.EgressPorts
-	(*EgressAllPorts)(nil),                   // 29: atelet.EgressAllPorts
-	(*MintActorCertificateRequest)(nil),      // 30: atelet.MintActorCertificateRequest
-	(*MintActorCertificateResponse)(nil),     // 31: atelet.MintActorCertificateResponse
-	(*TerminateRequest)(nil),                 // 32: atelet.TerminateRequest
-	(*TerminateResponse)(nil),                // 33: atelet.TerminateResponse
-	(*RunRequest)(nil),                       // 34: atelet.RunRequest
-	(*EgressGateway)(nil),                    // 35: atelet.EgressGateway
-	(*WorkloadSpec)(nil),                     // 36: atelet.WorkloadSpec
-	(*DurableDirVolumeSource)(nil),           // 37: atelet.DurableDirVolumeSource
-	(*ExternalVolumeSource)(nil),             // 38: atelet.ExternalVolumeSource
-	(*ImageVolumeSource)(nil),                // 39: atelet.ImageVolumeSource
-	(*ActorMetadataItem)(nil),                // 40: atelet.ActorMetadataItem
-	(*ActorMetadataDataSource)(nil),          // 41: atelet.ActorMetadataDataSource
-	(*TrustBundleDataSource)(nil),            // 42: atelet.TrustBundleDataSource
-	(*SystemInfoDataSource)(nil),             // 43: atelet.SystemInfoDataSource
-	(*SystemInfoVolumeSource)(nil),           // 44: atelet.SystemInfoVolumeSource
-	(*Volume)(nil),                           // 45: atelet.Volume
-	(*VolumeMount)(nil),                      // 46: atelet.VolumeMount
-	(*Container)(nil),                        // 47: atelet.Container
-	(*SecurityContext)(nil),                  // 48: atelet.SecurityContext
-	(*Capabilities)(nil),                     // 49: atelet.Capabilities
-	(*EnvVar)(nil),                           // 50: atelet.EnvVar
-	(*WakeupProbe)(nil),                      // 51: atelet.WakeupProbe
-	(*HttpGetAction)(nil),                    // 52: atelet.HttpGetAction
-	(*RunResponse)(nil),                      // 53: atelet.RunResponse
-	(*ObjectStorage)(nil),                    // 54: atelet.ObjectStorage
-	(*Snapshot)(nil),                         // 55: atelet.Snapshot
-	(*SnapshotReport)(nil),                   // 56: atelet.SnapshotReport
-	(*ActorSnapshotState)(nil),               // 57: atelet.ActorSnapshotState
-	(*UploadConfig)(nil),                     // 58: atelet.UploadConfig
-	(*CheckpointRequest)(nil),                // 59: atelet.CheckpointRequest
-	(*CheckpointResponse)(nil),               // 60: atelet.CheckpointResponse
-	(*RestoreRequest)(nil),                   // 61: atelet.RestoreRequest
-	(*RestoreResponse)(nil),                  // 62: atelet.RestoreResponse
-	(*PromoteSnapshotRequest)(nil),           // 63: atelet.PromoteSnapshotRequest
-	(*PromoteSnapshotResponse)(nil),          // 64: atelet.PromoteSnapshotResponse
-	(*DetachActorRequest)(nil),               // 65: atelet.DetachActorRequest
-	(*DetachActorResponse)(nil),              // 66: atelet.DetachActorResponse
-	nil,                                      // 67: atelet.ExternalVolumeSource.VolumeContextEntry
-	nil,                                      // 68: atelet.ExternalVolumeSource.PublishContextEntry
-	(*timestamppb.Timestamp)(nil),            // 69: google.protobuf.Timestamp
+	(VolumeAccessMode)(0),                    // 0: atelet.VolumeAccessMode
+	(ActorMetadataField)(0),                  // 1: atelet.ActorMetadataField
+	(SnapshotFidelity)(0),                    // 2: atelet.SnapshotFidelity
+	(SnapshotSharing)(0),                     // 3: atelet.SnapshotSharing
+	(UploadMode)(0),                          // 4: atelet.UploadMode
+	(*AcquireWorkerEpochRequest)(nil),        // 5: atelet.AcquireWorkerEpochRequest
+	(*AcquireWorkerEpochResponse)(nil),       // 6: atelet.AcquireWorkerEpochResponse
+	(*RegisterWorkerRequest)(nil),            // 7: atelet.RegisterWorkerRequest
+	(*SetWorkerSandboxRuntimesRequest)(nil),  // 8: atelet.SetWorkerSandboxRuntimesRequest
+	(*SetWorkerSandboxRuntimesResponse)(nil), // 9: atelet.SetWorkerSandboxRuntimesResponse
+	(*WorkerSandboxClass)(nil),               // 10: atelet.WorkerSandboxClass
+	(*WorkerSandboxRuntime)(nil),             // 11: atelet.WorkerSandboxRuntime
+	(*RuntimeOverhead)(nil),                  // 12: atelet.RuntimeOverhead
+	(*ActorSandboxRuntime)(nil),              // 13: atelet.ActorSandboxRuntime
+	(*VersionedSandboxCompat)(nil),           // 14: atelet.VersionedSandboxCompat
+	(*AttributeEntry)(nil),                   // 15: atelet.AttributeEntry
+	(*WorkerResources)(nil),                  // 16: atelet.WorkerResources
+	(*ResourceRequirements)(nil),             // 17: atelet.ResourceRequirements
+	(*Resources)(nil),                        // 18: atelet.Resources
+	(*RegisterWorkerResponse)(nil),           // 19: atelet.RegisterWorkerResponse
+	(*RequestActorSuspendRequest)(nil),       // 20: atelet.RequestActorSuspendRequest
+	(*RequestActorSuspendResponse)(nil),      // 21: atelet.RequestActorSuspendResponse
+	(*ReportActorCrashedRequest)(nil),        // 22: atelet.ReportActorCrashedRequest
+	(*ReportActorCrashedResponse)(nil),       // 23: atelet.ReportActorCrashedResponse
+	(*GetActorEgressPolicyRequest)(nil),      // 24: atelet.GetActorEgressPolicyRequest
+	(*GetActorEgressPolicyResponse)(nil),     // 25: atelet.GetActorEgressPolicyResponse
+	(*EgressPolicy)(nil),                     // 26: atelet.EgressPolicy
+	(*EgressRule)(nil),                       // 27: atelet.EgressRule
+	(*EgressDestinations)(nil),               // 28: atelet.EgressDestinations
+	(*EgressPorts)(nil),                      // 29: atelet.EgressPorts
+	(*EgressAllPorts)(nil),                   // 30: atelet.EgressAllPorts
+	(*MintActorCertificateRequest)(nil),      // 31: atelet.MintActorCertificateRequest
+	(*MintActorCertificateResponse)(nil),     // 32: atelet.MintActorCertificateResponse
+	(*TerminateRequest)(nil),                 // 33: atelet.TerminateRequest
+	(*TerminateResponse)(nil),                // 34: atelet.TerminateResponse
+	(*RunRequest)(nil),                       // 35: atelet.RunRequest
+	(*EgressGateway)(nil),                    // 36: atelet.EgressGateway
+	(*WorkloadSpec)(nil),                     // 37: atelet.WorkloadSpec
+	(*DurableDirVolumeSource)(nil),           // 38: atelet.DurableDirVolumeSource
+	(*ExternalVolumeSource)(nil),             // 39: atelet.ExternalVolumeSource
+	(*ImageVolumeSource)(nil),                // 40: atelet.ImageVolumeSource
+	(*ActorMetadataItem)(nil),                // 41: atelet.ActorMetadataItem
+	(*ActorMetadataDataSource)(nil),          // 42: atelet.ActorMetadataDataSource
+	(*TrustBundleDataSource)(nil),            // 43: atelet.TrustBundleDataSource
+	(*SystemInfoDataSource)(nil),             // 44: atelet.SystemInfoDataSource
+	(*SystemInfoVolumeSource)(nil),           // 45: atelet.SystemInfoVolumeSource
+	(*Volume)(nil),                           // 46: atelet.Volume
+	(*VolumeMount)(nil),                      // 47: atelet.VolumeMount
+	(*Container)(nil),                        // 48: atelet.Container
+	(*SecurityContext)(nil),                  // 49: atelet.SecurityContext
+	(*Capabilities)(nil),                     // 50: atelet.Capabilities
+	(*EnvVar)(nil),                           // 51: atelet.EnvVar
+	(*WakeupProbe)(nil),                      // 52: atelet.WakeupProbe
+	(*HttpGetAction)(nil),                    // 53: atelet.HttpGetAction
+	(*RunResponse)(nil),                      // 54: atelet.RunResponse
+	(*ObjectStorage)(nil),                    // 55: atelet.ObjectStorage
+	(*Snapshot)(nil),                         // 56: atelet.Snapshot
+	(*SnapshotReport)(nil),                   // 57: atelet.SnapshotReport
+	(*ActorSnapshotState)(nil),               // 58: atelet.ActorSnapshotState
+	(*UploadConfig)(nil),                     // 59: atelet.UploadConfig
+	(*CheckpointRequest)(nil),                // 60: atelet.CheckpointRequest
+	(*CheckpointResponse)(nil),               // 61: atelet.CheckpointResponse
+	(*RestoreRequest)(nil),                   // 62: atelet.RestoreRequest
+	(*RestoreResponse)(nil),                  // 63: atelet.RestoreResponse
+	(*PromoteSnapshotRequest)(nil),           // 64: atelet.PromoteSnapshotRequest
+	(*PromoteSnapshotResponse)(nil),          // 65: atelet.PromoteSnapshotResponse
+	(*DetachActorRequest)(nil),               // 66: atelet.DetachActorRequest
+	(*DetachActorResponse)(nil),              // 67: atelet.DetachActorResponse
+	nil,                                      // 68: atelet.ExternalVolumeSource.VolumeContextEntry
+	nil,                                      // 69: atelet.ExternalVolumeSource.PublishContextEntry
+	(*timestamppb.Timestamp)(nil),            // 70: google.protobuf.Timestamp
 }
 var file_internal_proto_ateletpb_atelet_proto_depIdxs = []int32{
-	15, // 0: atelet.RegisterWorkerRequest.capacity:type_name -> atelet.WorkerResources
-	9,  // 1: atelet.SetWorkerSandboxRuntimesRequest.sandbox_classes:type_name -> atelet.WorkerSandboxClass
-	10, // 2: atelet.WorkerSandboxClass.default_runtime:type_name -> atelet.WorkerSandboxRuntime
-	10, // 3: atelet.WorkerSandboxClass.restorable_runtimes:type_name -> atelet.WorkerSandboxRuntime
-	13, // 4: atelet.WorkerSandboxRuntime.version:type_name -> atelet.VersionedSandboxCompat
-	11, // 5: atelet.WorkerSandboxRuntime.actor_overhead:type_name -> atelet.RuntimeOverhead
-	13, // 6: atelet.ActorSandboxRuntime.version:type_name -> atelet.VersionedSandboxCompat
-	14, // 7: atelet.VersionedSandboxCompat.attributes:type_name -> atelet.AttributeEntry
-	17, // 8: atelet.ResourceRequirements.limits:type_name -> atelet.Resources
-	25, // 9: atelet.GetActorEgressPolicyResponse.egress_policy:type_name -> atelet.EgressPolicy
-	26, // 10: atelet.EgressPolicy.rules:type_name -> atelet.EgressRule
-	27, // 11: atelet.EgressRule.http:type_name -> atelet.EgressDestinations
-	27, // 12: atelet.EgressRule.https:type_name -> atelet.EgressDestinations
-	27, // 13: atelet.EgressRule.tls_passthrough:type_name -> atelet.EgressDestinations
-	28, // 14: atelet.EgressDestinations.ports:type_name -> atelet.EgressPorts
-	29, // 15: atelet.EgressPorts.all:type_name -> atelet.EgressAllPorts
-	36, // 16: atelet.TerminateRequest.spec:type_name -> atelet.WorkloadSpec
-	36, // 17: atelet.RunRequest.spec:type_name -> atelet.WorkloadSpec
-	35, // 18: atelet.RunRequest.egress_gateway:type_name -> atelet.EgressGateway
-	16, // 19: atelet.RunRequest.resources:type_name -> atelet.ResourceRequirements
-	12, // 20: atelet.RunRequest.sandbox_runtime:type_name -> atelet.ActorSandboxRuntime
-	47, // 21: atelet.WorkloadSpec.containers:type_name -> atelet.Container
-	45, // 22: atelet.WorkloadSpec.volumes:type_name -> atelet.Volume
-	67, // 23: atelet.ExternalVolumeSource.volume_context:type_name -> atelet.ExternalVolumeSource.VolumeContextEntry
-	68, // 24: atelet.ExternalVolumeSource.publish_context:type_name -> atelet.ExternalVolumeSource.PublishContextEntry
-	0,  // 25: atelet.ActorMetadataItem.field:type_name -> atelet.ActorMetadataField
-	40, // 26: atelet.ActorMetadataDataSource.items:type_name -> atelet.ActorMetadataItem
-	41, // 27: atelet.SystemInfoDataSource.actor_metadata:type_name -> atelet.ActorMetadataDataSource
-	42, // 28: atelet.SystemInfoDataSource.trust_bundle:type_name -> atelet.TrustBundleDataSource
-	43, // 29: atelet.SystemInfoVolumeSource.data_sources:type_name -> atelet.SystemInfoDataSource
-	37, // 30: atelet.Volume.durable_dir:type_name -> atelet.DurableDirVolumeSource
-	38, // 31: atelet.Volume.external:type_name -> atelet.ExternalVolumeSource
-	44, // 32: atelet.Volume.system_info:type_name -> atelet.SystemInfoVolumeSource
-	39, // 33: atelet.Volume.image:type_name -> atelet.ImageVolumeSource
-	50, // 34: atelet.Container.env:type_name -> atelet.EnvVar
-	51, // 35: atelet.Container.wakeup_probe:type_name -> atelet.WakeupProbe
-	46, // 36: atelet.Container.volume_mounts:type_name -> atelet.VolumeMount
-	48, // 37: atelet.Container.security_context:type_name -> atelet.SecurityContext
-	16, // 38: atelet.Container.resources:type_name -> atelet.ResourceRequirements
-	49, // 39: atelet.SecurityContext.capabilities:type_name -> atelet.Capabilities
-	52, // 40: atelet.WakeupProbe.http_get:type_name -> atelet.HttpGetAction
-	2,  // 41: atelet.ObjectStorage.sharing:type_name -> atelet.SnapshotSharing
-	1,  // 42: atelet.Snapshot.fidelity:type_name -> atelet.SnapshotFidelity
-	54, // 43: atelet.Snapshot.object:type_name -> atelet.ObjectStorage
-	55, // 44: atelet.SnapshotReport.snapshot:type_name -> atelet.Snapshot
-	69, // 45: atelet.SnapshotReport.local_commit_time:type_name -> google.protobuf.Timestamp
-	69, // 46: atelet.SnapshotReport.durable_complete_time:type_name -> google.protobuf.Timestamp
-	56, // 47: atelet.ActorSnapshotState.latest_local:type_name -> atelet.SnapshotReport
-	56, // 48: atelet.ActorSnapshotState.uploading:type_name -> atelet.SnapshotReport
-	56, // 49: atelet.ActorSnapshotState.latest_durable:type_name -> atelet.SnapshotReport
-	69, // 50: atelet.ActorSnapshotState.upload_due_time:type_name -> google.protobuf.Timestamp
-	3,  // 51: atelet.UploadConfig.mode:type_name -> atelet.UploadMode
-	36, // 52: atelet.CheckpointRequest.spec:type_name -> atelet.WorkloadSpec
-	55, // 53: atelet.CheckpointRequest.snapshot:type_name -> atelet.Snapshot
-	58, // 54: atelet.CheckpointRequest.upload_config:type_name -> atelet.UploadConfig
-	57, // 55: atelet.CheckpointResponse.state:type_name -> atelet.ActorSnapshotState
-	36, // 56: atelet.RestoreRequest.spec:type_name -> atelet.WorkloadSpec
-	55, // 57: atelet.RestoreRequest.snapshot:type_name -> atelet.Snapshot
-	35, // 58: atelet.RestoreRequest.egress_gateway:type_name -> atelet.EgressGateway
-	16, // 59: atelet.RestoreRequest.resources:type_name -> atelet.ResourceRequirements
-	12, // 60: atelet.RestoreRequest.sandbox_runtime:type_name -> atelet.ActorSandboxRuntime
-	55, // 61: atelet.PromoteSnapshotRequest.snapshot:type_name -> atelet.Snapshot
-	57, // 62: atelet.PromoteSnapshotResponse.state:type_name -> atelet.ActorSnapshotState
-	57, // 63: atelet.DetachActorResponse.state:type_name -> atelet.ActorSnapshotState
-	30, // 64: atelet.WorkerSupport.MintActorCertificate:input_type -> atelet.MintActorCertificateRequest
-	4,  // 65: atelet.WorkerSupport.AcquireWorkerEpoch:input_type -> atelet.AcquireWorkerEpochRequest
-	6,  // 66: atelet.WorkerSupport.RegisterWorker:input_type -> atelet.RegisterWorkerRequest
-	7,  // 67: atelet.WorkerSupport.SetWorkerSandboxRuntimes:input_type -> atelet.SetWorkerSandboxRuntimesRequest
-	19, // 68: atelet.WorkerSupport.RequestActorSuspend:input_type -> atelet.RequestActorSuspendRequest
-	23, // 69: atelet.WorkerSupport.GetActorEgressPolicy:input_type -> atelet.GetActorEgressPolicyRequest
-	21, // 70: atelet.WorkerSupport.ReportActorCrashed:input_type -> atelet.ReportActorCrashedRequest
-	34, // 71: atelet.Atelet.Run:input_type -> atelet.RunRequest
-	59, // 72: atelet.Atelet.Checkpoint:input_type -> atelet.CheckpointRequest
-	61, // 73: atelet.Atelet.Restore:input_type -> atelet.RestoreRequest
-	63, // 74: atelet.Atelet.PromoteSnapshot:input_type -> atelet.PromoteSnapshotRequest
-	65, // 75: atelet.Atelet.DetachActor:input_type -> atelet.DetachActorRequest
-	32, // 76: atelet.Atelet.Terminate:input_type -> atelet.TerminateRequest
-	31, // 77: atelet.WorkerSupport.MintActorCertificate:output_type -> atelet.MintActorCertificateResponse
-	5,  // 78: atelet.WorkerSupport.AcquireWorkerEpoch:output_type -> atelet.AcquireWorkerEpochResponse
-	18, // 79: atelet.WorkerSupport.RegisterWorker:output_type -> atelet.RegisterWorkerResponse
-	8,  // 80: atelet.WorkerSupport.SetWorkerSandboxRuntimes:output_type -> atelet.SetWorkerSandboxRuntimesResponse
-	20, // 81: atelet.WorkerSupport.RequestActorSuspend:output_type -> atelet.RequestActorSuspendResponse
-	24, // 82: atelet.WorkerSupport.GetActorEgressPolicy:output_type -> atelet.GetActorEgressPolicyResponse
-	22, // 83: atelet.WorkerSupport.ReportActorCrashed:output_type -> atelet.ReportActorCrashedResponse
-	53, // 84: atelet.Atelet.Run:output_type -> atelet.RunResponse
-	60, // 85: atelet.Atelet.Checkpoint:output_type -> atelet.CheckpointResponse
-	62, // 86: atelet.Atelet.Restore:output_type -> atelet.RestoreResponse
-	64, // 87: atelet.Atelet.PromoteSnapshot:output_type -> atelet.PromoteSnapshotResponse
-	66, // 88: atelet.Atelet.DetachActor:output_type -> atelet.DetachActorResponse
-	33, // 89: atelet.Atelet.Terminate:output_type -> atelet.TerminateResponse
-	77, // [77:90] is the sub-list for method output_type
-	64, // [64:77] is the sub-list for method input_type
-	64, // [64:64] is the sub-list for extension type_name
-	64, // [64:64] is the sub-list for extension extendee
-	0,  // [0:64] is the sub-list for field type_name
+	16, // 0: atelet.RegisterWorkerRequest.capacity:type_name -> atelet.WorkerResources
+	10, // 1: atelet.SetWorkerSandboxRuntimesRequest.sandbox_classes:type_name -> atelet.WorkerSandboxClass
+	11, // 2: atelet.WorkerSandboxClass.default_runtime:type_name -> atelet.WorkerSandboxRuntime
+	11, // 3: atelet.WorkerSandboxClass.restorable_runtimes:type_name -> atelet.WorkerSandboxRuntime
+	14, // 4: atelet.WorkerSandboxRuntime.version:type_name -> atelet.VersionedSandboxCompat
+	12, // 5: atelet.WorkerSandboxRuntime.actor_overhead:type_name -> atelet.RuntimeOverhead
+	14, // 6: atelet.ActorSandboxRuntime.version:type_name -> atelet.VersionedSandboxCompat
+	15, // 7: atelet.VersionedSandboxCompat.attributes:type_name -> atelet.AttributeEntry
+	18, // 8: atelet.ResourceRequirements.limits:type_name -> atelet.Resources
+	26, // 9: atelet.GetActorEgressPolicyResponse.egress_policy:type_name -> atelet.EgressPolicy
+	27, // 10: atelet.EgressPolicy.rules:type_name -> atelet.EgressRule
+	28, // 11: atelet.EgressRule.http:type_name -> atelet.EgressDestinations
+	28, // 12: atelet.EgressRule.https:type_name -> atelet.EgressDestinations
+	28, // 13: atelet.EgressRule.tls_passthrough:type_name -> atelet.EgressDestinations
+	29, // 14: atelet.EgressDestinations.ports:type_name -> atelet.EgressPorts
+	30, // 15: atelet.EgressPorts.all:type_name -> atelet.EgressAllPorts
+	37, // 16: atelet.TerminateRequest.spec:type_name -> atelet.WorkloadSpec
+	37, // 17: atelet.RunRequest.spec:type_name -> atelet.WorkloadSpec
+	36, // 18: atelet.RunRequest.egress_gateway:type_name -> atelet.EgressGateway
+	17, // 19: atelet.RunRequest.resources:type_name -> atelet.ResourceRequirements
+	13, // 20: atelet.RunRequest.sandbox_runtime:type_name -> atelet.ActorSandboxRuntime
+	48, // 21: atelet.WorkloadSpec.containers:type_name -> atelet.Container
+	46, // 22: atelet.WorkloadSpec.volumes:type_name -> atelet.Volume
+	68, // 23: atelet.ExternalVolumeSource.volume_context:type_name -> atelet.ExternalVolumeSource.VolumeContextEntry
+	69, // 24: atelet.ExternalVolumeSource.publish_context:type_name -> atelet.ExternalVolumeSource.PublishContextEntry
+	0,  // 25: atelet.ExternalVolumeSource.access_mode:type_name -> atelet.VolumeAccessMode
+	1,  // 26: atelet.ActorMetadataItem.field:type_name -> atelet.ActorMetadataField
+	41, // 27: atelet.ActorMetadataDataSource.items:type_name -> atelet.ActorMetadataItem
+	42, // 28: atelet.SystemInfoDataSource.actor_metadata:type_name -> atelet.ActorMetadataDataSource
+	43, // 29: atelet.SystemInfoDataSource.trust_bundle:type_name -> atelet.TrustBundleDataSource
+	44, // 30: atelet.SystemInfoVolumeSource.data_sources:type_name -> atelet.SystemInfoDataSource
+	38, // 31: atelet.Volume.durable_dir:type_name -> atelet.DurableDirVolumeSource
+	39, // 32: atelet.Volume.external:type_name -> atelet.ExternalVolumeSource
+	45, // 33: atelet.Volume.system_info:type_name -> atelet.SystemInfoVolumeSource
+	40, // 34: atelet.Volume.image:type_name -> atelet.ImageVolumeSource
+	51, // 35: atelet.Container.env:type_name -> atelet.EnvVar
+	52, // 36: atelet.Container.wakeup_probe:type_name -> atelet.WakeupProbe
+	47, // 37: atelet.Container.volume_mounts:type_name -> atelet.VolumeMount
+	49, // 38: atelet.Container.security_context:type_name -> atelet.SecurityContext
+	17, // 39: atelet.Container.resources:type_name -> atelet.ResourceRequirements
+	50, // 40: atelet.SecurityContext.capabilities:type_name -> atelet.Capabilities
+	53, // 41: atelet.WakeupProbe.http_get:type_name -> atelet.HttpGetAction
+	3,  // 42: atelet.ObjectStorage.sharing:type_name -> atelet.SnapshotSharing
+	2,  // 43: atelet.Snapshot.fidelity:type_name -> atelet.SnapshotFidelity
+	55, // 44: atelet.Snapshot.object:type_name -> atelet.ObjectStorage
+	56, // 45: atelet.SnapshotReport.snapshot:type_name -> atelet.Snapshot
+	70, // 46: atelet.SnapshotReport.local_commit_time:type_name -> google.protobuf.Timestamp
+	70, // 47: atelet.SnapshotReport.durable_complete_time:type_name -> google.protobuf.Timestamp
+	57, // 48: atelet.ActorSnapshotState.latest_local:type_name -> atelet.SnapshotReport
+	57, // 49: atelet.ActorSnapshotState.uploading:type_name -> atelet.SnapshotReport
+	57, // 50: atelet.ActorSnapshotState.latest_durable:type_name -> atelet.SnapshotReport
+	70, // 51: atelet.ActorSnapshotState.upload_due_time:type_name -> google.protobuf.Timestamp
+	4,  // 52: atelet.UploadConfig.mode:type_name -> atelet.UploadMode
+	37, // 53: atelet.CheckpointRequest.spec:type_name -> atelet.WorkloadSpec
+	56, // 54: atelet.CheckpointRequest.snapshot:type_name -> atelet.Snapshot
+	59, // 55: atelet.CheckpointRequest.upload_config:type_name -> atelet.UploadConfig
+	58, // 56: atelet.CheckpointResponse.state:type_name -> atelet.ActorSnapshotState
+	37, // 57: atelet.RestoreRequest.spec:type_name -> atelet.WorkloadSpec
+	56, // 58: atelet.RestoreRequest.snapshot:type_name -> atelet.Snapshot
+	36, // 59: atelet.RestoreRequest.egress_gateway:type_name -> atelet.EgressGateway
+	17, // 60: atelet.RestoreRequest.resources:type_name -> atelet.ResourceRequirements
+	13, // 61: atelet.RestoreRequest.sandbox_runtime:type_name -> atelet.ActorSandboxRuntime
+	56, // 62: atelet.PromoteSnapshotRequest.snapshot:type_name -> atelet.Snapshot
+	58, // 63: atelet.PromoteSnapshotResponse.state:type_name -> atelet.ActorSnapshotState
+	58, // 64: atelet.DetachActorResponse.state:type_name -> atelet.ActorSnapshotState
+	31, // 65: atelet.WorkerSupport.MintActorCertificate:input_type -> atelet.MintActorCertificateRequest
+	5,  // 66: atelet.WorkerSupport.AcquireWorkerEpoch:input_type -> atelet.AcquireWorkerEpochRequest
+	7,  // 67: atelet.WorkerSupport.RegisterWorker:input_type -> atelet.RegisterWorkerRequest
+	8,  // 68: atelet.WorkerSupport.SetWorkerSandboxRuntimes:input_type -> atelet.SetWorkerSandboxRuntimesRequest
+	20, // 69: atelet.WorkerSupport.RequestActorSuspend:input_type -> atelet.RequestActorSuspendRequest
+	24, // 70: atelet.WorkerSupport.GetActorEgressPolicy:input_type -> atelet.GetActorEgressPolicyRequest
+	22, // 71: atelet.WorkerSupport.ReportActorCrashed:input_type -> atelet.ReportActorCrashedRequest
+	35, // 72: atelet.Atelet.Run:input_type -> atelet.RunRequest
+	60, // 73: atelet.Atelet.Checkpoint:input_type -> atelet.CheckpointRequest
+	62, // 74: atelet.Atelet.Restore:input_type -> atelet.RestoreRequest
+	64, // 75: atelet.Atelet.PromoteSnapshot:input_type -> atelet.PromoteSnapshotRequest
+	66, // 76: atelet.Atelet.DetachActor:input_type -> atelet.DetachActorRequest
+	33, // 77: atelet.Atelet.Terminate:input_type -> atelet.TerminateRequest
+	32, // 78: atelet.WorkerSupport.MintActorCertificate:output_type -> atelet.MintActorCertificateResponse
+	6,  // 79: atelet.WorkerSupport.AcquireWorkerEpoch:output_type -> atelet.AcquireWorkerEpochResponse
+	19, // 80: atelet.WorkerSupport.RegisterWorker:output_type -> atelet.RegisterWorkerResponse
+	9,  // 81: atelet.WorkerSupport.SetWorkerSandboxRuntimes:output_type -> atelet.SetWorkerSandboxRuntimesResponse
+	21, // 82: atelet.WorkerSupport.RequestActorSuspend:output_type -> atelet.RequestActorSuspendResponse
+	25, // 83: atelet.WorkerSupport.GetActorEgressPolicy:output_type -> atelet.GetActorEgressPolicyResponse
+	23, // 84: atelet.WorkerSupport.ReportActorCrashed:output_type -> atelet.ReportActorCrashedResponse
+	54, // 85: atelet.Atelet.Run:output_type -> atelet.RunResponse
+	61, // 86: atelet.Atelet.Checkpoint:output_type -> atelet.CheckpointResponse
+	63, // 87: atelet.Atelet.Restore:output_type -> atelet.RestoreResponse
+	65, // 88: atelet.Atelet.PromoteSnapshot:output_type -> atelet.PromoteSnapshotResponse
+	67, // 89: atelet.Atelet.DetachActor:output_type -> atelet.DetachActorResponse
+	34, // 90: atelet.Atelet.Terminate:output_type -> atelet.TerminateResponse
+	78, // [78:91] is the sub-list for method output_type
+	65, // [65:78] is the sub-list for method input_type
+	65, // [65:65] is the sub-list for extension type_name
+	65, // [65:65] is the sub-list for extension extendee
+	0,  // [0:65] is the sub-list for field type_name
 }
 
 func init() { file_internal_proto_ateletpb_atelet_proto_init() }
@@ -4909,7 +5024,7 @@ func file_internal_proto_ateletpb_atelet_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_proto_ateletpb_atelet_proto_rawDesc), len(file_internal_proto_ateletpb_atelet_proto_rawDesc)),
-			NumEnums:      4,
+			NumEnums:      5,
 			NumMessages:   65,
 			NumExtensions: 0,
 			NumServices:   2,

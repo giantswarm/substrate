@@ -152,6 +152,61 @@ func TestValidateCreateActorRequest(t *testing.T) {
 		"invalid actor.source_tag.name",
 		validReq(validActor(withSourceTag("as", "invalid value"))),
 		field.ErrorList{field.Invalid(field.NewPath("actor", "source_tag", "name"), nil, "").WithOrigin("format=k8s-short-name")},
+	}, {
+		"valid existing volume",
+		validReq(validActor(withExistingVolume(nil))),
+		nil,
+	}, {
+		"existing volume without a driver",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.Driver = "" }))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("driver"), "")},
+	}, {
+		"existing volume with an invalid driver",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.Driver = "Not A Driver" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("driver"), "Not A Driver", "")},
+	}, {
+		"existing volume without a handle",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.VolumeHandle = "" }))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("volume_handle"), "")},
+	}, {
+		"existing volume handle with a control character",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.VolumeHandle = "a\x01b" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("volume_handle"), "a\x01b", "")},
+	}, {
+		"existing volume read-only many",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) {
+			ev.AccessMode = ateapi.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_ONLY_MANY
+		}))),
+		nil,
+	}, {
+		"existing volume single-node",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) {
+			ev.AccessMode = ateapi.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_ONCE
+		}))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("access_mode"), nil, "").WithOrigin("minimum")},
+	}, {
+		"existing volume without an access mode",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) {
+			ev.AccessMode = ateapi.VolumeAccessMode_VOLUME_ACCESS_MODE_UNSPECIFIED
+		}))),
+		field.ErrorList{field.Required(field.NewPath("actor", "existing_volumes").Index(0).Child("access_mode"), "")},
+	}, {
+		"existing volume escaping its root",
+		validReq(validActor(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.SubPath = "../other" }))),
+		field.ErrorList{field.Invalid(field.NewPath("actor", "existing_volumes").Index(0).Child("sub_path"), "../other", "")},
+	}, {
+		"existing volume named twice",
+		validReq(validActor(func(a *ateapi.Actor) {
+			withExistingVolume(nil)(a)
+			first := a.ExistingVolumes[0]
+			a.ExistingVolumes = append(a.ExistingVolumes, &ateapi.ExistingVolume{
+				Name:         first.GetName(),
+				Driver:       first.GetDriver(),
+				VolumeHandle: first.GetVolumeHandle(),
+				AccessMode:   first.GetAccessMode(),
+			})
+		})),
+		field.ErrorList{field.Duplicate(field.NewPath("actor", "existing_volumes").Index(1), nil)},
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -246,6 +301,20 @@ func TestValidateActorUpdate(t *testing.T) {
 		oldVal: validInput(withSourceTag("as1", "nm1")),
 		newVal: validOutput(withSourceTag("as2", "nm2")),
 		want:   field.ErrorList{field.Invalid(field.NewPath("source_tag"), nil, "").WithOrigin("immutable")},
+	}, {
+		name:   "add actor.existing_volumes",
+		oldVal: validInput(),
+		newVal: validOutput(withExistingVolume(nil)),
+		want:   field.ErrorList{field.Invalid(field.NewPath("existing_volumes"), nil, "").WithOrigin("immutable")},
+	}, {
+		name:   "change actor.existing_volumes",
+		oldVal: validInput(withExistingVolume(nil)),
+		newVal: validOutput(withExistingVolume(func(ev *ateapi.ExistingVolume) { ev.SubPath = "sessions/b" })),
+		want:   field.ErrorList{field.Invalid(field.NewPath("existing_volumes"), nil, "").WithOrigin("immutable")},
+	}, {
+		name:   "keep actor.existing_volumes",
+		oldVal: validInput(withExistingVolume(nil)),
+		newVal: validOutput(withExistingVolume(nil)),
 	}, {
 		name:   "set valid worker_selector",
 		oldVal: validInput(),
@@ -1081,6 +1150,24 @@ func withActorActorTemplate(atespace, name string) func(*ateapi.Actor) {
 
 // withActorSourceTag returns a modifier func (see validActor) which sets
 // the actor's source_tag to a valid value.
+// withExistingVolume returns a modifier func (see validActor) which gives the
+// actor one valid existing volume, changed by mod when it is not nil.
+func withExistingVolume(mod func(*ateapi.ExistingVolume)) func(*ateapi.Actor) {
+	return func(a *ateapi.Actor) {
+		ev := &ateapi.ExistingVolume{
+			Name:         "workspace",
+			Driver:       "nfs.csi.k8s.io",
+			VolumeHandle: "nfs-server#share#workspace-1",
+			AccessMode:   ateapi.VolumeAccessMode_VOLUME_ACCESS_MODE_READ_WRITE_MANY,
+			SubPath:      "sessions/a",
+		}
+		if mod != nil {
+			mod(ev)
+		}
+		a.ExistingVolumes = []*ateapi.ExistingVolume{ev}
+	}
+}
+
 func withActorSourceTag(atespace, name string) func(*ateapi.Actor) {
 	return func(a *ateapi.Actor) { a.SourceTag = &ateapi.ObjectRef{Atespace: atespace, Name: name} }
 }

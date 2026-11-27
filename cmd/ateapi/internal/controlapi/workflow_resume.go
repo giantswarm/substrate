@@ -696,13 +696,16 @@ func (w *ActorWorkflow) ensureVolumesAttached(ctx context.Context, actor *ateapi
 		if err != nil {
 			return nil, fmt.Errorf("failed to get volume plugin for %q: %w", vol.GetVolumeType(), err)
 		}
-		resp, err := plugin.AttachVolume(ctx, volume.AttachVolumeRequest{VolumeID: vol.GetStorageVolumeId(), Node: node})
+		resp, err := plugin.AttachVolume(ctx, volume.AttachVolumeRequest{VolumeID: vol.GetStorageVolumeId(), Node: node, Mode: volume.ReadWriteOnce})
 		if err != nil {
 			return nil, fmt.Errorf("failed to attach volume %q to node %q: %w", vol.GetStorageVolumeId(), node, err)
 		}
 		if len(resp.PublishContext) > 0 {
 			volumePublishContexts[vol.GetName()] = resp.PublishContext
 		}
+	}
+	if err := attachExistingVolumes(ctx, w.pluginRegistry, w.persistentVolumeLister, actor, actorTemplate, node, volumePublishContexts); err != nil {
+		return nil, err
 	}
 	return volumePublishContexts, nil
 }
@@ -743,6 +746,9 @@ func (w *ActorWorkflow) ensureAteletRestored(ctx context.Context, actorRef resou
 
 	workloadSpec, err := workloadSpecFromActorTemplate(actorTemplate, actor, volumePublishContexts)
 	if err != nil {
+		return tele, 0, err
+	}
+	if err := fillExistingVolumeContext(workloadSpec, w.persistentVolumeLister, actor); err != nil {
 		return tele, 0, err
 	}
 	egressGateway := w.egressGateway()
