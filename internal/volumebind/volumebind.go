@@ -16,10 +16,11 @@
 
 // Package volumebind binds directories of an actor's mounted external
 // volumes beside their mount points, read-only where asked, for the mounts
-// that name a sub-path or are read-only (ocispec.MountDir). The worker runs
-// it: it sees the volumes the CSI node plugin published on the host and may
-// mount, which atelet may not, and the sandbox runtime it starts resolves the
-// binds in its mount namespace.
+// that name a sub-path or are read-only (ocispec.MountDir), and creates the
+// directory of a read-write mount whose last component is missing. The
+// worker runs it: it sees the volumes the CSI node plugin published on the
+// host and may mount, which atelet may not, and the sandbox runtime it starts
+// resolves the binds in its mount namespace.
 package volumebind
 
 import (
@@ -34,10 +35,17 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// boundMount is a container's external volume mount that binds a directory
+// of its own (ocispec.MountDir).
+type boundMount struct {
+	container *ateworkerpb.Container
+	mount     *ateworkerpb.VolumeMount
+}
+
 // boundMounts returns the containers' external volume mounts that bind a
 // directory of their own, once per directory.
-func boundMounts(containers []*ateworkerpb.Container) []*ateworkerpb.VolumeMount {
-	var out []*ateworkerpb.VolumeMount
+func boundMounts(containers []*ateworkerpb.Container) []boundMount {
+	var out []boundMount
 	seen := map[string]bool{}
 	for _, ctr := range containers {
 		for _, vm := range ctr.GetExternalVolumeMounts() {
@@ -46,7 +54,7 @@ func boundMounts(containers []*ateworkerpb.Container) []*ateworkerpb.VolumeMount
 				continue
 			}
 			seen[dir] = true
-			out = append(out, vm)
+			out = append(out, boundMount{container: ctr, mount: vm})
 		}
 	}
 	return out
@@ -54,14 +62,31 @@ func boundMounts(containers []*ateworkerpb.Container) []*ateworkerpb.VolumeMount
 
 // Prepare binds every directory the containers' external volume mounts bind
 // from (ocispec.MountDir) under volumesDir, after releasing every bind an
-// earlier activation left there. It runs before the sandbox starts. A
-// directory that cannot be bound fails it, so the actor never starts without
-// a mount it names.
+// earlier activation left there. The directory of a read-write mount is
+// created first when its last component is missing (createVolumeDir), owned
+// by the user the mounting container runs as: the caller that creates the
+// actor may name a directory of its own that nothing has made yet. A
+// read-only mount's directory must exist. It runs before the sandbox starts.
+// A directory that cannot be bound fails it, so the actor never starts
+// without a mount it names.
 func Prepare(volumesDir string, containers []*ateworkerpb.Container) error {
 	if err := Release(volumesDir); err != nil {
 		return err
 	}
-	for _, vm := range boundMounts(containers) {
+	mounts := boundMounts(containers)
+	// Every creation before any bind, so that a read-only mount of a directory
+	// a read-write mount creates finds it whatever the order of the mounts.
+	for _, bm := range mounts {
+		if bm.mount.GetReadOnly() {
+			continue
+		}
+		user := bm.container.GetContainerSpec().GetUser()
+		if err := createVolumeDir(filepath.Join(volumesDir, bm.mount.GetName()), bm.mount.GetSubPath(), user.GetUid(), user.GetGid()); err != nil {
+			return fmt.Errorf("volume %q: %w", bm.mount.GetName(), err)
+		}
+	}
+	for _, bm := range mounts {
+		vm := bm.mount
 		root := filepath.Join(volumesDir, vm.GetName())
 		target := filepath.Join(volumesDir, ocispec.MountDir(vm.GetName(), vm.GetSubPath(), vm.GetReadOnly()))
 		if err := bindVolumeDir(root, vm.GetSubPath(), target, vm.GetReadOnly()); err != nil {
@@ -130,6 +155,59 @@ func openVolumeDir(root, subPath string) (int, error) {
 		return -1, fmt.Errorf("opening sub_path %q of the volume: %w", subPath, err)
 	}
 	return fd, nil
+}
+
+// createVolumeDir creates the directory subPath of the volume mounted at
+// root when its last component is missing, owned by uid:gid and mode 0770
+// whatever the umask, beneath its parent resolved like openVolumeDir resolves
+// a sub-path. The parent must exist: an actor is given a directory of its
+// own, not a tree, so a missing parent fails as it does at the bind.
+// Whatever exists under the name is left as it is, and the bind that follows
+// judges it: a directory binds, a symbolic link or a file fails. The volume's
+// own refusal (a read-only file system, a permission) is reported with its
+// reason.
+func createVolumeDir(root, subPath string, uid, gid uint32) error {
+	name := filepath.Base(subPath)
+	if subPath == "" || name == "." || name == ".." {
+		return nil
+	}
+	parentFd, err := openVolumeDir(root, parentDir(subPath))
+	if err != nil {
+		return fmt.Errorf("creating sub_path %q: its parent: %w", subPath, err)
+	}
+	defer unix.Close(parentFd)
+	switch err := unix.Mkdirat(parentFd, name, 0o770); {
+	case errors.Is(err, unix.EEXIST):
+		return nil
+	case err != nil:
+		return fmt.Errorf("creating sub_path %q on the volume: %w", subPath, err)
+	}
+	// The directory is the container's own: its user owns it, and the mode
+	// mkdirat left after the umask becomes 0770.
+	fd, err := unix.Openat2(parentFd, name, &unix.OpenHow{
+		Flags:   unix.O_RDONLY | unix.O_DIRECTORY | unix.O_CLOEXEC,
+		Resolve: volumeDirResolve,
+	})
+	if err != nil {
+		return fmt.Errorf("opening the created sub_path %q: %w", subPath, err)
+	}
+	defer unix.Close(fd)
+	if err := unix.Fchown(fd, int(uid), int(gid)); err != nil {
+		return fmt.Errorf("giving the created sub_path %q to uid %d, gid %d: %w", subPath, uid, gid, err)
+	}
+	if err := unix.Fchmod(fd, 0o770); err != nil {
+		return fmt.Errorf("setting the mode of the created sub_path %q: %w", subPath, err)
+	}
+	return nil
+}
+
+// parentDir is subPath's parent in the form of a sub-path: empty for the
+// volume's root.
+func parentDir(subPath string) string {
+	if dir := filepath.Dir(subPath); dir != "." {
+		return dir
+	}
+	return ""
 }
 
 // bindVolumeDir bind-mounts the directory subPath of the volume mounted at

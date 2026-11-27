@@ -660,6 +660,9 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 	}
 	trustMount := &ateapi.VolumeMount{Name: "egress-trust", MountPath: "/run/egress"}
 	withTrust := []*ateapi.Volume{dataVolume, trustBundleVolume("egress")}
+	workspaceVolume := &ateapi.Volume{Name: "workspace", ExistingVolume: &ateapi.ExistingVolumeSource{}}
+	workspaceMount := &ateapi.VolumeMount{Name: "workspace", MountPath: "/workspace"}
+	withWorkspace := []*ateapi.Volume{dataVolume, workspaceVolume}
 
 	tests := []struct {
 		name             string
@@ -751,6 +754,28 @@ func TestValidateTemplateVolumesUnchanged(t *testing.T) {
 		name:    "durable mount path changed beside a system_info volume",
 		oldTmpl: template(oneVolume, container("main", dataMount)),
 		newTmpl: template(withTrust, container("main", &ateapi.VolumeMount{Name: "data", MountPath: "/mnt/data"}, trustMount)),
+		wantErr: true,
+	}, {
+		name:    "existing volume and mount added",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template(withWorkspace, container("main", dataMount, workspaceMount)),
+	}, {
+		name:    "existing volume and mount removed",
+		oldTmpl: template(withWorkspace, container("main", workspaceMount, dataMount)),
+		newTmpl: template(oneVolume, container("main", dataMount)),
+	}, {
+		name:    "existing volume mount moved to a sub-path, read-only",
+		oldTmpl: template(withWorkspace, container("main", dataMount, workspaceMount)),
+		newTmpl: template(withWorkspace, container("main", dataMount, &ateapi.VolumeMount{Name: "workspace", MountPath: "/mirrors", SubPath: "mirrors", ReadOnly: true})),
+	}, {
+		name:    "durable volume added beside an existing volume",
+		oldTmpl: template(withWorkspace, container("main", dataMount, workspaceMount)),
+		newTmpl: template([]*ateapi.Volume{dataVolume, workspaceVolume, scratchVolume}, container("main", dataMount, workspaceMount)),
+		wantErr: true,
+	}, {
+		name:    "durable volume replaced by an existing volume of the same name",
+		oldTmpl: template(oneVolume, container("main", dataMount)),
+		newTmpl: template([]*ateapi.Volume{{Name: "data", ExistingVolume: &ateapi.ExistingVolumeSource{}}}, container("main", dataMount)),
 		wantErr: true,
 	}, {
 		name:    "durable volume replaced by a system_info volume of the same name",
