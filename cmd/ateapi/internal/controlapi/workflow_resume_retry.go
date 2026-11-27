@@ -138,7 +138,7 @@ func recoverableCrash(actor *ateapi.Actor) bool {
 // rolling pool has none free. A call whose attempts or context run out
 // answers Unavailable naming the crash, so the caller's retry resumes the
 // actor. Any other failure is returned as it is.
-func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef) (*ateapi.Actor, bool, error) {
+func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.ActorRef, token *ateapi.FencingToken) (*ateapi.Actor, bool, error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	delay := transientResumeRetryDelay
 	// crash is the last transient crash this call met: once one is known,
@@ -146,7 +146,7 @@ func (w *ActorWorkflow) ResumeActor(ctx context.Context, actorRef resources.Acto
 	// one with the same backoff.
 	var crash string
 	for attempt := 1; ; attempt++ {
-		actor, resumed, err := w.resumeActorOnce(ctx, actorRef)
+		actor, resumed, err := w.resumeActorOnce(ctx, actorRef, token)
 		if err == nil {
 			return actor, resumed, nil
 		}

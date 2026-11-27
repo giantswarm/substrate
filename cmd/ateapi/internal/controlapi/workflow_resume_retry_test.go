@@ -176,7 +176,7 @@ func TestSuspendActorCutByWorkerLoss(t *testing.T) {
 			someActorSnapshotURI(t, testStorageLocation, actorRef.Atespace, "snap-1"), ateapi.SnapshotStorageState_SNAPSHOT_STORAGE_STATE_COMPLETED)}
 	})
 
-	_, err := w.SuspendActor(ctx, actorRef, suspendSync)
+	_, err := w.SuspendActor(ctx, actorRef, suspendSync, nil)
 	if got := apierror.Code(err); got != codes.Unavailable {
 		t.Fatalf("SuspendActor() = %v (code %v), want Unavailable", err, got)
 	}

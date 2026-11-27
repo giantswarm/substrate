@@ -520,7 +520,7 @@ func (s *RPCService) ResumeActor(ctx context.Context, req *ateapi.ResumeActorReq
 	actorRef := resources.ActorRefFromObjectRef(req.GetActor())
 	setSpanActorRefAttributes(ctx, actorRef)
 
-	actor, resumed, err := s.actorWorkflow.ResumeActor(ctx, actorRef)
+	actor, resumed, err := s.actorWorkflow.ResumeActor(ctx, actorRef, req.GetFencingToken())
 	if err != nil {
 		return nil, s.lifecycleError(ctx, actorRef, err)
 	}
@@ -536,7 +536,7 @@ func (s *RPCService) SuspendActor(ctx context.Context, req *ateapi.SuspendActorR
 	actorRef := resources.ActorRefFromObjectRef(req.GetActor())
 	setSpanActorRefAttributes(ctx, actorRef)
 
-	actor, err := s.actorWorkflow.SuspendActor(ctx, actorRef, suspendModeFromOptions(req.GetOptions()))
+	actor, err := s.actorWorkflow.SuspendActor(ctx, actorRef, suspendModeFromOptions(req.GetOptions()), req.GetFencingToken())
 	if err != nil {
 		return nil, s.lifecycleError(ctx, actorRef, err)
 	}

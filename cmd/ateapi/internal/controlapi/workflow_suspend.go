@@ -73,9 +73,9 @@ func (m suspendMode) uploadMode() ateletpb.UploadMode {
 // snapshot when recoverableCrash allows it, and answers Unavailable naming
 // the crash, also while that recovery is unfinished, so the caller's retry
 // finds the actor at rest. Any other failure is returned as it is.
-func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, mode suspendMode) (*ateapi.Actor, error) {
+func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.ActorRef, mode suspendMode, token *ateapi.FencingToken) (*ateapi.Actor, error) {
 	ctx = preview.ContextWithOptIn(ctx)
-	actor, err := w.suspendActorOnce(ctx, actorRef, mode)
+	actor, err := w.suspendActorOnce(ctx, actorRef, mode, token)
 	if err == nil {
 		return actor, nil
 	}
@@ -96,7 +96,7 @@ func (w *ActorWorkflow) SuspendActor(ctx context.Context, actorRef resources.Act
 // is returned as it is, whatever the mode. Idempotent: a re-entered workflow
 // fast-forwards past the steps a previous attempt completed, deriving
 // progress from the persisted actor alone.
-func (w *ActorWorkflow) suspendActorOnce(ctx context.Context, actorRef resources.ActorRef, mode suspendMode) (_ *ateapi.Actor, err error) {
+func (w *ActorWorkflow) suspendActorOnce(ctx context.Context, actorRef resources.ActorRef, mode suspendMode, token *ateapi.FencingToken) (_ *ateapi.Actor, err error) {
 	ctx = preview.ContextWithOptIn(ctx)
 	start := time.Now()
 	var actor *ateapi.Actor
@@ -125,6 +125,9 @@ func (w *ActorWorkflow) suspendActorOnce(ctx context.Context, actorRef resources
 
 	actor, actorTemplate, err = w.loadActorForSuspend(leaseCtx, actorRef)
 	if err != nil {
+		return nil, err
+	}
+	if actor, err = w.ensureFencingTokenAdmitted(leaseCtx, actorRef, actor, token); err != nil {
 		return nil, err
 	}
 	// A SUSPENDED actor has nothing left to do, whatever the mode and wherever
