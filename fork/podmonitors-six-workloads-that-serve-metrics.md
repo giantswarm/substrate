@@ -1,0 +1,34 @@
+---
+id: podmonitors-six-workloads-that-serve-metrics
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+commits:
+  - 'feat(chart): PodMonitors for the workloads that serve metrics'
+upstream:
+  outcome: open
+  refs: [agent-substrate/substrate#1781, kagent-dev/substrate#46]
+  exit: kd#46 merged
+depends_on: []
+verified: 2026-11-27
+---
+# PodMonitors for the six workloads that serve metrics
+
+## Change
+
+PodMonitors for the six workloads that serve metrics (`metrics.podMonitor`, off by default; one object per workload, each pinned to the port name its own pod declares and, for the credential provider, to the `substrate.fullname` label)
+
+## Reason
+
+the fleet's `alloy-metrics` discovers ServiceMonitors, PodMonitors and ScrapeConfigs only — `observability-operator`'s metrics collector configures no `discovery.kubernetes`, so the `prometheus.io/scrape` annotations three of these workloads carry are ignored and the whole ate metric registry is served and thrown away: actor crashes, lifecycle and scheduler durations, checkpoint and restore phases, actor CPU and memory, image-cache hits, worker pool desired against ready, router route duration and parking, and `ate-controller`'s `controller_runtime_*` and `workqueue_*`. The platform enables them with the tenant label
+
+## History
+
+[kagent-dev/substrate#46](https://github.com/kagent-dev/substrate/pull/46) — **open**, carried until it merges and the next re-pin drops it. `kagent-dev/substrate` is the upstream for a chart change: `agent-substrate/substrate` packages no chart at all, and deploys from `manifests/ate-install/` with Kustomize
+
+`3fb1622a`
+
+2026-10-20: agent-substrate/substrate#1781, ours, was closed on 2026-09-21 and re-filed the same day as [kagent-dev/substrate#46](https://github.com/kagent-dev/substrate/pull/46), the exit, so the outcome stays open.
+
+2026-11-27: replayed onto kagent-dev/substrate v1.0.1 (`release-1.0@7ce6f439`): no monitors for objectstore-plugin or ate-idp-server: neither serves metrics at v1.0.1..

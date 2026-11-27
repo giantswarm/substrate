@@ -1,0 +1,34 @@
+---
+id: atelets-priorityclass-takes-preemption-policy
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+commits:
+  - 'feat(helm): atelet''s PriorityClass takes its preemption policy'
+upstream:
+  outcome: to-file
+  refs: [agent-substrate/substrate#247]
+  exit: kd chart PR
+depends_on: []
+verified: 2026-11-27
+---
+# atelet's PriorityClass takes its preemption policy
+
+## Change
+
+atelet's PriorityClass takes its preemption policy (`atelet.priorityClass.preemptionPolicy`: `PreemptLowerPriority`, the default and upstream's behaviour, or `Never`; the non-preempting class is `ate-node-critical-non-preempting`, because a PriorityClass's `preemptionPolicy` is immutable)
+
+## Reason
+
+a first install over full nodes let the atelet DaemonSet evict the cluster's own workloads (monitoring, admission webhooks), which paged the installation; with `Never` atelet keeps its priority but waits for room ([giantswarm/agent-platform#731](https://github.com/giantswarm/agent-platform/issues/731))
+
+## History
+
+to prepare: the patch is upstream-shaped (a knob, default unchanged); no upstream item (agent-substrate/substrate#247 added `priorityClassName` for workers only)
+
+`768e18ed`, [#87](https://github.com/giantswarm/substrate/pull/87)
+
+2026-10-20: agent-substrate/substrate#247 (merged 2026-06-17, `962ff6b1`, in the pin) added the workers' `priorityClassName` only, not this knob, so the outcome stays to-file.
+
+2026-11-27: replayed onto kagent-dev/substrate v1.0.1 (`release-1.0@7ce6f439`): value `atelet.priorityClassName` (default `system-cluster-critical`); the chart renders no PriorityClass, the preemption policy is the platform's..

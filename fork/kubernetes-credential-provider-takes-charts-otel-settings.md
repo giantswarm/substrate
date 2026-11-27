@@ -1,0 +1,32 @@
+---
+id: kubernetes-credential-provider-takes-charts-otel-settings
+fork: substrate
+theme: chart-knobs
+category: feature
+status: carried
+commits:
+  - 'fix(helm): give the credential provider the chart''s otel settings'
+upstream:
+  outcome: to-file
+  refs: [kagent-dev/substrate#46, kagent-dev/substrate#48]
+  exit: kd chart PR
+depends_on: [podmonitors-six-workloads-that-serve-metrics]
+verified: 2026-11-27
+---
+# The Kubernetes credential provider takes the chart's `otel` settings like every other Go component
+
+## Change
+
+The Kubernetes credential provider takes the chart's `otel` settings like every other Go component (`substrate.otel.env` and `OTEL_RESOURCE_ATTRIBUTES` on the `k8s-credential-provider` container; a chart unit test)
+
+## Reason
+
+the container rendered no environment at all, so its SDK pushed metrics to the default `localhost:4317` whatever `otel` said: a cluster without a collector logged `failed to upload metrics … dial tcp [::1]:4317` once a minute, and with one its telemetry never reached it ([giantswarm/agent-platform#463](https://github.com/giantswarm/agent-platform/issues/463)); the provider twin of the egress `ext-proc` row
+
+## History
+
+upstream-ready for [kagent-dev/substrate](https://github.com/kagent-dev/substrate), which ships the chart (its `charts/substrate/templates/k8s-credential-provider.yaml` has the same gap); waits for a free slot there, with kagent-dev/substrate#46 and #48 open
+
+`f5d3b0d0` ([#116](https://github.com/giantswarm/substrate/pull/116))
+
+2026-11-27: replayed onto kagent-dev/substrate v1.0.1 (`release-1.0@7ce6f439`); shape on v1.0.1: `substrate.otel.env` on the provider container.
