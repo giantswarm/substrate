@@ -94,7 +94,7 @@ empty-volume restore from the 1.x layout; the chart knobs the platform sets (`po
 `atelet.{nodeSelector,tolerations,affinity,priorityClassName,updateStrategy,registryCredentialSecrets,serviceAccount}`,
 `atelet.imageCache.pinnedImages`, `ateController.busyWorker`, `ateApi.{serviceAccount,extraEnv}`,
 `credentialProvider.rbac.namespaces`, the WorkerPool template's spread and affinity); the version pins (Go 1.27.4,
-x/net v0.62.0, klauspost/compress v1.20.2, go-jose v4.1.8); and `cmd/ate-convert`, which moves a 1.x installation onto
+x/net v0.62.0, klauspost/compress v1.20.2, go-jose v4.1.8, OpenTelemetry v1.47.0 for GO-2026-6974); and `cmd/ate-convert`, which moves a 1.x installation onto
 2.x and leaves with the fleet. The ledger files name each one's commits, upstream item and exit.
 
 Dropped at the 2026-11-27 re-pin onto v1.0.1, each by the upstream mechanism (file:line at v1.0.1) or the place it
