@@ -322,3 +322,38 @@ go run ./cmd/ate-setup deploy atelet --config ~/ate-upgrade/old.yaml --rollout-t
 ```bash
 go run ./cmd/ate-setup deploy podcertificate-controller --config ~/ate-upgrade/old.yaml
 ```
+
+## Giant Swarm line: the 1.x to 2.0 step
+
+2.0.0 is the Giant Swarm line on upstream v1.0.1. It is a new major release, so the rolling upgrade above does not
+apply: a 1.x installation (the line on upstream v0.5.0-alpha2, last 1.18.x) moves onto it only by converting its
+state with `ate-convert`, with Substrate stopped. Every running actor resumes once afterwards at `VOLUMES` fidelity:
+its durable directories come back byte for byte, its process memory and its non-durable root filesystem changes do not.
+
+What changes for consumers in the same rollout:
+
+- the API is `substrate.ateapi.v1` and `substrate.credprovider.v1` (Go module `go.ate.dev/substrate`); kagent, the
+  agentgateway line, muster's credential provider and every proto consumer move together;
+- the line's carried fields keep their meaning at their numbers: `CredentialHeader.path_prefix` (5), `EgressRule.tcp`
+  (4), `FencingToken` on Suspend and Resume (10001), existing volumes (10001/10002); PauseActor is gone;
+- WorkerPool, SandboxConfig and CSIDriverConfig are `ate.dev/v1` only, the worker image is `ateworker-gvisor`;
+- the chart deploys no PostgreSQL and no pod-certificate controller (`charts/substrate-podcert`), and values moved:
+  `atelet.registryCredentialSecrets`, `atelet.priorityClassName`, `ateApi.*` (was `ateApiServer.*`),
+  `atenetEgress.agentgateway.resources`, `atenetEgress.extraCredentialProviders`; `postgres-ca-pool` must exist for
+  `substrate-podcert`.
+
+Steps, in order (each refuses to start when the previous one is not done):
+
+1. Back up: an on-demand PostgreSQL backup, a copy of the snapshot bucket, VolumeSnapshots of workspace volumes.
+2. Stop every caller of the control API (kagent's controller).
+3. On 1.x, suspend every running actor and wait until none is in transition.
+4. Scale ate-api-server, ate-controller, atelets and the egress gateway to zero.
+5. Create the 2.x database roles and schema `substrate` with the 2.x `postgressetup` script.
+6. `ate-convert --dry-run`, then `ate-convert` (snapshots, then rows), then `ate-convert --verify`. It reads schema
+   `public` and never writes it; it converts each snapshot in place, beside the 1.x objects and `manifest.fork.json`.
+7. `ate-convert crds prepare`, apply the 2.0.0 `substrate-crds`, `ate-convert crds restore`.
+8. Wipe `/var/lib/ate/image-cache` on every node (the cache layout changed), then install 2.0.0 against schema
+   `substrate`.
+
+Rollback: reinstall the 1.x release against schema `public` (untouched), copy each `manifest.fork.json` back over
+`manifest.json`, and reverse step 7. Anything done on 2.0.0 after the cutover is lost by a rollback.
